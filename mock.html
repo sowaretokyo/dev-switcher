@@ -1,0 +1,2169 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}img,svg,video{display:block;max-width:100%}</style>
+</head>
+<body>
+<title>Dev Switcher — UI/UX 設計</title>
+<style>
+/* ==========================================================================
+   TOKENS
+   ========================================================================== */
+:root{
+  color-scheme: light dark;
+
+  --paper:#E8EAED;
+  --paper-2:#F2F4F6;
+  --paper-3:#FAFBFC;
+  --ink:#15181D;
+  --ink-2:#454C55;
+  --ink-3:#767D86;
+  --rule:rgba(21,24,29,.13);
+  --rule-2:rgba(21,24,29,.28);
+
+  --ok:#1B8E42;
+  --warn:#A96400;
+  --bad:#C4302B;
+  --info:#0B5FCC;
+
+  --desk-a:#5C7192;
+  --desk-b:#7E90AC;
+  --desk-c:#3F5470;
+
+  /* macOS mock — light appearance */
+  --m-pop:rgba(246,246,247,.74);
+  --m-pop-solid:#F6F6F7;
+  --m-text:rgba(0,0,0,.88);
+  --m-text-2:rgba(0,0,0,.55);
+  --m-text-3:rgba(0,0,0,.32);
+  --m-sep:rgba(0,0,0,.10);
+  --m-sep-2:rgba(0,0,0,.06);
+  --m-hover:rgba(0,0,0,.055);
+  --m-fill:rgba(0,0,0,.045);
+  --m-accent:#007AFF;
+  --m-green:#28CD41;
+  --m-orange:#FF9F0A;
+  --m-red:#FF3B30;
+  --m-gray:#8E8E93;
+  --m-win:#ECECEC;
+  --m-win-bar:rgba(0,0,0,.03);
+  --m-field:#FFFFFF;
+  --m-shadow:0 14px 42px rgba(0,0,0,.28), 0 1px 3px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.12);
+
+  --w-text:720px;
+  --w-wide:960px;
+  --gutter:24px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#101216; --paper-2:#171A1F; --paper-3:#1D2127;
+    --ink:#E8EBEF; --ink-2:#A9B1BB; --ink-3:#767E88;
+    --rule:rgba(255,255,255,.11); --rule-2:rgba(255,255,255,.24);
+    --ok:#3ED26B; --warn:#FFA827; --bad:#FF5F55; --info:#4E9BFF;
+    --desk-a:#1B2436; --desk-b:#2A3348; --desk-c:#0F1522;
+    --m-pop:rgba(44,44,46,.74); --m-pop-solid:#2C2C2E;
+    --m-text:rgba(255,255,255,.90); --m-text-2:rgba(255,255,255,.56);
+    --m-text-3:rgba(255,255,255,.30);
+    --m-sep:rgba(255,255,255,.12); --m-sep-2:rgba(255,255,255,.07);
+    --m-hover:rgba(255,255,255,.08); --m-fill:rgba(255,255,255,.06);
+    --m-accent:#0A84FF; --m-green:#32D74B; --m-orange:#FF9F0A;
+    --m-red:#FF453A; --m-gray:#98989D;
+    --m-win:#282A2E; --m-win-bar:rgba(255,255,255,.035); --m-field:#1C1C1E;
+    --m-shadow:0 16px 46px rgba(0,0,0,.58), 0 1px 3px rgba(0,0,0,.4), 0 0 0 .5px rgba(255,255,255,.11);
+  }
+}
+:root[data-theme="light"]{
+  --paper:#E8EAED; --paper-2:#F2F4F6; --paper-3:#FAFBFC;
+  --ink:#15181D; --ink-2:#454C55; --ink-3:#767D86;
+  --rule:rgba(21,24,29,.13); --rule-2:rgba(21,24,29,.28);
+  --ok:#1B8E42; --warn:#A96400; --bad:#C4302B; --info:#0B5FCC;
+  --desk-a:#5C7192; --desk-b:#7E90AC; --desk-c:#3F5470;
+  --m-pop:rgba(246,246,247,.74); --m-pop-solid:#F6F6F7;
+  --m-text:rgba(0,0,0,.88); --m-text-2:rgba(0,0,0,.55); --m-text-3:rgba(0,0,0,.32);
+  --m-sep:rgba(0,0,0,.10); --m-sep-2:rgba(0,0,0,.06);
+  --m-hover:rgba(0,0,0,.055); --m-fill:rgba(0,0,0,.045);
+  --m-accent:#007AFF; --m-green:#28CD41; --m-orange:#FF9F0A;
+  --m-red:#FF3B30; --m-gray:#8E8E93;
+  --m-win:#ECECEC; --m-win-bar:rgba(0,0,0,.03); --m-field:#FFFFFF;
+  --m-shadow:0 14px 42px rgba(0,0,0,.28), 0 1px 3px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.12);
+}
+:root[data-theme="dark"]{
+  --paper:#101216; --paper-2:#171A1F; --paper-3:#1D2127;
+  --ink:#E8EBEF; --ink-2:#A9B1BB; --ink-3:#767E88;
+  --rule:rgba(255,255,255,.11); --rule-2:rgba(255,255,255,.24);
+  --ok:#3ED26B; --warn:#FFA827; --bad:#FF5F55; --info:#4E9BFF;
+  --desk-a:#1B2436; --desk-b:#2A3348; --desk-c:#0F1522;
+  --m-pop:rgba(44,44,46,.74); --m-pop-solid:#2C2C2E;
+  --m-text:rgba(255,255,255,.90); --m-text-2:rgba(255,255,255,.56);
+  --m-text-3:rgba(255,255,255,.30);
+  --m-sep:rgba(255,255,255,.12); --m-sep-2:rgba(255,255,255,.07);
+  --m-hover:rgba(255,255,255,.08); --m-fill:rgba(255,255,255,.06);
+  --m-accent:#0A84FF; --m-green:#32D74B; --m-orange:#FF9F0A;
+  --m-red:#FF453A; --m-gray:#98989D;
+  --m-win:#282A2E; --m-win-bar:rgba(255,255,255,.035); --m-field:#1C1C1E;
+  --m-shadow:0 16px 46px rgba(0,0,0,.58), 0 1px 3px rgba(0,0,0,.4), 0 0 0 .5px rgba(255,255,255,.11);
+}
+
+/* ==========================================================================
+   LAYOUT PRIMITIVES
+   Only .inner and .wide may constrain horizontal size. Nothing else sets
+   width or max-width on a block element. That keeps every left edge aligned.
+   ========================================================================== */
+*{box-sizing:border-box}
+.band{padding-inline:var(--gutter)}
+.inner{max-width:var(--w-text); margin-inline:auto}
+.wide{max-width:var(--w-wide); margin-inline:auto}
+.flow{display:flex; flex-direction:column; gap:20px}
+.flow-sm{display:flex; flex-direction:column; gap:12px}
+.flow-lg{display:flex; flex-direction:column; gap:30px}
+
+/* ==========================================================================
+   PAGE TYPE
+   ========================================================================== */
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"Helvetica Neue",Helvetica,"Hiragino Sans","Yu Gothic",Arial,sans-serif;
+  font-size:15px; line-height:1.78;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+h1,h2,h3{font-family:"Iowan Old Style",Charter,Georgia,"Times New Roman",serif; margin:0}
+h1{font-size:clamp(29px,5vw,45px); line-height:1.07; font-weight:700; letter-spacing:-.018em; text-wrap:balance}
+h2{font-size:clamp(21px,2.6vw,28px); line-height:1.2; font-weight:700; letter-spacing:-.014em; text-wrap:balance}
+h3{font-size:17px; line-height:1.42; font-weight:700; letter-spacing:-.006em}
+p{margin:0}
+.mono,code{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+
+.hdr{background:var(--paper-2); border-bottom:1px solid var(--rule);
+  padding-block:clamp(38px,7vw,80px) clamp(26px,4vw,42px)}
+.hdr-mark{display:flex; align-items:center; gap:9px; color:var(--ink)}
+.hdr-mark svg{width:24px; height:24px; display:block}
+.hdr-mark span{font-size:12.5px; font-weight:600}
+.lede{font-size:17px; line-height:1.68; color:var(--ink-2); max-width:56ch}
+.lede strong{color:var(--ink); font-weight:600}
+.specs{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:14px 24px; border-top:1px solid var(--rule); padding-top:16px}
+.specs div{display:flex; flex-direction:column; gap:1px}
+.specs dt{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
+.specs dd{margin:0; font-size:13.5px; font-weight:600; line-height:1.5}
+
+.sec{padding-block:clamp(44px,6vw,74px) 0}
+.shead{display:flex; flex-direction:column; gap:5px; border-top:1px solid var(--rule-2); padding-top:13px}
+.snum{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px;
+  letter-spacing:.15em; color:var(--ink-3)}
+.ssub{font-size:14px; color:var(--ink-2); line-height:1.6}
+.prose{display:flex; flex-direction:column; gap:15px}
+.prose p{color:var(--ink-2); max-width:64ch}
+.prose strong{color:var(--ink); font-weight:600}
+.sub{display:flex; flex-direction:column; gap:13px}
+
+.callout{border-left:2px solid var(--ink); padding:1px 0 1px 15px; color:var(--ink); max-width:64ch}
+.callout .k{font-weight:700}
+.callout.warn{border-color:var(--warn)}
+.callout.bad{border-color:var(--bad)}
+.callout.info{border-color:var(--info)}
+
+.kv{display:flex; flex-direction:column; border-top:1px solid var(--rule)}
+.kv-row{display:grid; grid-template-columns:150px minmax(0,1fr); gap:3px 22px;
+  padding:13px 0; border-bottom:1px solid var(--rule); align-items:start}
+.kv-row dt{font-size:13px; font-weight:700; line-height:1.6}
+.kv-row dd{margin:0; font-size:14px; line-height:1.65; color:var(--ink-2)}
+@media (max-width:600px){ .kv-row{grid-template-columns:minmax(0,1fr); gap:2px} }
+
+.tbl{overflow-x:auto; -webkit-overflow-scrolling:touch}
+table{border-collapse:collapse; font-size:13.5px; min-width:100%}
+th{text-align:left; font-family:ui-monospace,"SF Mono",Menlo,monospace;
+  font-size:10.5px; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:500; padding:0 18px 8px 0;
+  border-bottom:1px solid var(--rule-2); white-space:nowrap}
+th:last-child, td:last-child{padding-right:0}
+td{padding:11px 18px 11px 0; border-bottom:1px solid var(--rule); vertical-align:top;
+  color:var(--ink-2); line-height:1.6}
+td:first-child{color:var(--ink); font-weight:600}
+td .mono{font-size:12.5px}
+tbody tr:last-child td{border-bottom:none}
+.nw{white-space:nowrap}
+
+.chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  padding:1px 9px 1px 7px; border-radius:99px; border:1px solid var(--rule-2);
+  white-space:nowrap; line-height:1.7}
+.chip::before{content:""; width:7px; height:7px; border-radius:99px; background:currentColor; flex:none}
+.c-ok{color:var(--ok)} .c-warn{color:var(--warn)} .c-bad{color:var(--bad)}
+.c-idle{color:var(--ink-3)} .c-info{color:var(--info)}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+
+.lanes{display:flex; flex-direction:column; gap:9px}
+.lane{display:flex; flex-wrap:wrap; align-items:center; gap:7px}
+.node{display:inline-flex; align-items:center; gap:7px; padding:6px 12px;
+  border:1px solid var(--rule-2); border-radius:7px; background:var(--paper-3);
+  font-size:13px; font-weight:600; white-space:nowrap}
+.node i{width:8px; height:8px; border-radius:99px; flex:none; font-style:normal}
+.arw{font-size:13px; color:var(--ink-3); flex:none}
+.gate-chip{display:inline-flex; align-items:center; gap:7px; padding:6px 12px;
+  border:1px dashed var(--ink-3); border-radius:7px; font-size:12.5px;
+  color:var(--ink); font-weight:600; white-space:nowrap}
+.lane-note{font-size:12.5px; color:var(--ink-3); line-height:1.5}
+
+.swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px}
+.sw{border:1px solid var(--rule); border-radius:8px; overflow:hidden; background:var(--paper-3)}
+.sw .cap{height:50px; display:block}
+.sw .lb{padding:8px 10px 9px; display:flex; flex-direction:column; gap:1px}
+.sw .lb b{font-size:12px; font-weight:700}
+.sw .lb span{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px; color:var(--ink-3)}
+
+.scale{display:flex; flex-direction:column; border-top:1px solid var(--rule)}
+.scale-row{display:grid; grid-template-columns:minmax(0,1fr) 128px; gap:18px;
+  align-items:baseline; padding:12px 0; border-bottom:1px solid var(--rule)}
+.scale-row .spec{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px;
+  color:var(--ink-3); text-align:right; line-height:1.5}
+.samp{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans",sans-serif; color:var(--ink)}
+
+.spacing{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end}
+.sp{display:flex; flex-direction:column; gap:5px; align-items:center}
+.sp .bar{background:var(--ink-3); height:8px; border-radius:2px; opacity:.5}
+.sp .lb{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px; color:var(--ink-3)}
+
+.rev{display:flex; flex-direction:column; border-top:1px solid var(--rule-2)}
+.rev-item{display:grid; grid-template-columns:24px minmax(0,1fr); gap:14px;
+  padding:16px 0; border-bottom:1px solid var(--rule); align-items:start}
+.rev-item .n{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px;
+  color:var(--ink-3); padding-top:5px}
+.rev-body{display:flex; flex-direction:column; gap:7px}
+.rev-body p{font-size:14px; color:var(--ink-2); line-height:1.65; max-width:62ch}
+.rev-body .q{font-size:13.5px; color:var(--ink); padding-left:13px;
+  border-left:2px solid var(--warn); line-height:1.65; max-width:62ch}
+
+.ft{border-top:1px solid var(--rule); margin-top:70px; padding-block:22px 90px}
+.ft-in{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  font-size:12px; color:var(--ink-3)}
+
+/* ==========================================================================
+   PLATE
+   ========================================================================== */
+.plate{
+  border-radius:12px; overflow:hidden; border:1px solid var(--rule-2);
+  background:
+    radial-gradient(120% 130% at 78% -10%, var(--desk-a) 0%, transparent 58%),
+    radial-gradient(100% 120% at 8% 108%, var(--desk-c) 0%, transparent 62%),
+    linear-gradient(160deg, var(--desk-b), var(--desk-a));
+  padding-bottom:34px;
+}
+.menubar{
+  height:26px; display:flex; align-items:center; gap:14px; padding:0 12px 0 14px;
+  background:rgba(0,0,0,.17);
+  backdrop-filter:blur(24px) saturate(180%); -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:.5px solid rgba(255,255,255,.10);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans",sans-serif;
+  font-size:11.5px; color:#fff; user-select:none; white-space:nowrap;
+}
+.menubar .mb-left{margin-right:auto; font-weight:700; font-size:12.5px;
+  display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden}
+.menubar .mb-left b{font-weight:400; opacity:.86}
+.mb-icon{display:inline-flex; align-items:center; justify-content:center; flex:none;
+  padding:2px 5px; border-radius:5px; position:relative; background:rgba(255,255,255,.24)}
+.mb-icon svg{width:16px; height:16px; display:block}
+.mb-dot{position:absolute; right:1px; bottom:1px; width:6px; height:6px; border-radius:99px;
+  box-shadow:0 0 0 1.5px rgba(0,0,0,.3)}
+.mb-hide{display:none}
+@media (min-width:660px){ .mb-hide{display:inline} }
+
+.stage{display:flex; justify-content:center; padding:22px 16px 0; overflow-x:auto}
+.stage.stage-pop{padding-top:8px; align-items:flex-start}
+@media (min-width:820px){ .stage.stage-pop{justify-content:flex-end; padding-right:150px} }
+
+.figcap{display:flex; gap:12px; align-items:baseline; font-size:12.5px;
+  color:var(--ink-3); line-height:1.6}
+.figcap b{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2); flex:none}
+.ctrls{display:flex; flex-wrap:wrap; align-items:center; gap:7px}
+.ctrls-lb{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); flex:none; margin-right:3px}
+.ctrl{appearance:none; border:1px solid var(--rule-2); background:var(--paper-3);
+  color:var(--ink-2); font:inherit; font-size:12.5px; font-weight:600;
+  padding:5px 12px; border-radius:6px; cursor:pointer; line-height:1.5;
+  transition:background .12s ease, color .12s ease, border-color .12s ease}
+.ctrl:hover{background:var(--paper-2); color:var(--ink)}
+.ctrl[aria-pressed="true"]{background:var(--ink); color:var(--paper-2); border-color:var(--ink)}
+.ctrl:focus-visible{outline:2px solid var(--info); outline-offset:2px}
+
+/* ==========================================================================
+   macOS MOCK — shared
+   ========================================================================== */
+.mac{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Hiragino Sans",sans-serif;
+  font-size:13px; line-height:1.45; color:var(--m-text);
+  -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; flex:none;
+}
+.pchip{width:20px; height:20px; border-radius:5.5px; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700; color:#fff;
+  box-shadow:inset 0 0 0 .5px rgba(0,0,0,.14), 0 1px 1.5px rgba(0,0,0,.14)}
+.pchip.sm{width:16px; height:16px; border-radius:4.5px; font-size:8.5px}
+.dot{width:8px; height:8px; border-radius:99px; flex:none; display:inline-block}
+.dot.running{background:var(--m-green)}
+.dot.stopped{background:var(--m-gray); opacity:.5}
+.dot.warn{background:var(--m-orange)}
+.dot.fail{background:var(--m-red)}
+.dot.busy{background:var(--m-accent); animation:pulse 1.15s ease-in-out infinite}
+/* 対象外は色を持たない＝状態ではない。中空の丸で描く（決定 h） */
+.dot.excluded{background:transparent; box-shadow:inset 0 0 0 1px var(--m-text-3)}
+@keyframes pulse{0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.35; transform:scale(.78)}}
+
+.tl{display:flex; gap:8px; flex:none}
+.tl i{width:12px; height:12px; border-radius:99px; display:block;
+  box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)}
+.tl i:nth-child(1){background:#FF5F57} .tl i:nth-child(2){background:#FEBC2E} .tl i:nth-child(3){background:#28C840}
+
+.btn{appearance:none; border:none; font:inherit; font-size:12px; font-weight:500;
+  color:var(--m-text); background:var(--m-fill); border-radius:6px;
+  padding:0 10px; height:24px; display:inline-flex; align-items:center; gap:5px;
+  cursor:pointer; white-space:nowrap; box-shadow:inset 0 0 0 .5px var(--m-sep);
+  transition:background .1s ease}
+.btn:hover{background:var(--m-hover)}
+.btn:focus-visible{outline:2px solid var(--m-accent); outline-offset:1px}
+.btn.prim{background:var(--m-accent); color:#fff; box-shadow:none; font-weight:600}
+.btn.prim:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--m-red)}
+.btn.split{padding-right:6px; gap:6px}
+.btn .div{width:.5px; height:14px; background:var(--m-sep); margin-left:2px}
+.btn .car{display:flex; opacity:.55}
+.btn[disabled]{opacity:.38; pointer-events:none}
+.btn.tiny{height:21px; font-size:11px; padding:0 9px}
+.btn.lg{height:26px; font-size:13px; padding:0 15px}
+.seg{display:inline-flex; background:var(--m-fill); border-radius:6px; padding:1.5px;
+  box-shadow:inset 0 0 0 .5px var(--m-sep); flex:none}
+.seg span{font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:4.5px;
+  color:var(--m-text-2); cursor:pointer; line-height:1.5}
+.seg span[aria-pressed="true"]{background:var(--m-win); color:var(--m-text); box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+/* ==========================================================================
+   MAIN WINDOW
+   ========================================================================== */
+.win2{width:880px; max-width:100%; border-radius:10px; overflow:hidden;
+  background:var(--m-win); box-shadow:var(--m-shadow); position:relative}
+.tbar{height:46px; display:flex; align-items:center; gap:9px; padding:0 13px;
+  background:var(--m-win-bar); border-bottom:.5px solid var(--m-sep); position:relative; z-index:2}
+.tbar .spacer{flex:1}
+.tb-proj{display:flex; align-items:center; gap:8px; margin-left:8px; min-width:0}
+.tb-name{font-size:13.5px; font-weight:600; letter-spacing:-.008em; white-space:nowrap}
+.tb-state{font-size:11.5px; color:var(--m-text-2); display:flex; align-items:center;
+  gap:6px; white-space:nowrap}
+
+.w2body{display:flex; height:498px; position:relative}
+
+/* sidebar */
+.side{width:214px; flex:none; border-right:.5px solid var(--m-sep);
+  background:var(--m-win-bar); display:flex; flex-direction:column}
+.side-scroll{flex:1; min-height:0; overflow:auto; padding:6px 8px 8px}
+.side-sec{font-size:9.5px; font-weight:700; letter-spacing:.07em; color:var(--m-text-3);
+  padding:9px 8px 3px}
+.srow{display:flex; align-items:center; gap:8px; height:27px; padding:0 8px;
+  border-radius:6px; cursor:pointer; font-size:12.5px; position:relative}
+.srow:hover{background:var(--m-hover)}
+.srow[aria-selected="true"]{background:var(--m-accent); color:#fff}
+.srow[aria-selected="true"] .tw,.srow[aria-selected="true"] .pt{color:rgba(255,255,255,.72)}
+.srow[aria-selected="true"] .dot.stopped{background:#fff; opacity:.6}
+.srow .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.srow .tw{font-size:10.5px; color:var(--m-text-3); flex:none}
+.srow .pt{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px;
+  color:var(--m-text-3); flex:none; letter-spacing:-.02em}
+.srow .pt .more{opacity:.72}
+.srow .pt.excl{font-family:inherit; font-size:10px; letter-spacing:0}
+.srow.svc{padding-left:24px; height:25px}
+.srow .tri{position:absolute; left:5px; width:11px; display:flex; justify-content:center;
+  color:var(--m-text-3); transition:transform .12s ease}
+.srow[aria-selected="true"] .tri{color:rgba(255,255,255,.8)}
+.srow.open .tri{transform:rotate(90deg)}
+.errb{font-size:9px; font-weight:700; color:#fff; background:var(--m-red);
+  border-radius:99px; min-width:14px; height:14px; padding:0 4px; flex:none;
+  display:flex; align-items:center; justify-content:center}
+.srow[aria-selected="true"] .errb{background:rgba(0,0,0,.34)}
+.side-cap{font-size:9.5px; color:var(--m-text-3); padding:5px 8px 2px 24px;
+  display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none}
+.side-cap:hover{color:var(--m-text-2)}
+.side-foot{border-top:.5px solid var(--m-sep); padding:5px 6px; flex:none; display:flex; gap:2px}
+.fbtn{appearance:none; border:none; background:transparent; font:inherit; font-size:12.5px;
+  color:var(--m-text); padding:0 8px; height:26px; border-radius:6px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:7px}
+.fbtn:hover{background:var(--m-hover)}
+.side-foot .spacer{flex:1}
+
+/* detail */
+.detail{flex:1; min-width:0; display:flex; flex-direction:column; background:var(--m-field)}
+.dhead{height:33px; flex:none; display:flex; align-items:center; gap:9px; padding:0 11px;
+  border-bottom:.5px solid var(--m-sep); background:var(--m-win)}
+.dhead .nm{font-size:12.5px; font-weight:600}
+.dhead .dm{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px; color:var(--m-text-2)}
+.dhead .rq{font-size:10px; font-weight:600; color:var(--m-text-3)}
+.dhead .spacer{flex:1}
+.dhead .st{font-size:11px; color:var(--m-text-2); display:flex; align-items:center; gap:6px}
+.sbtn{appearance:none; border:none; background:transparent; padding:0 6px; height:20px;
+  border-radius:5px; display:flex; align-items:center; gap:5px; font:inherit; font-size:11px;
+  font-weight:600; color:var(--m-text-2); cursor:pointer}
+.sbtn:hover{background:var(--m-hover); color:var(--m-text)}
+.sbtn[aria-pressed="true"]{background:var(--m-accent); color:#fff}
+
+.banner{display:flex; align-items:center; gap:9px; padding:8px 11px; flex:none;
+  border-bottom:.5px solid var(--m-sep); font-size:11.5px; background:rgba(10,132,255,.10)}
+.banner .tx{flex:1; min-width:0; line-height:1.45}
+.banner .tx b{font-weight:600}
+
+.logbar{display:flex; align-items:center; gap:7px; padding:7px 11px; flex:none;
+  border-bottom:.5px solid var(--m-sep); background:var(--m-win)}
+.lsearch{flex:1; min-width:0; height:22px; border-radius:6px; background:var(--m-field);
+  box-shadow:inset 0 0 0 .5px var(--m-sep); display:flex; align-items:center; gap:6px;
+  padding:0 8px; font-size:11.5px; color:var(--m-text-3)}
+.logout{flex:1; min-height:0; overflow:auto; padding:8px 11px 20px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px; line-height:1.65}
+.ll{display:flex; gap:9px; padding:1px 0}
+.ll .ts{color:var(--m-text-3); flex:none}
+.ll .tx{flex:1; min-width:0; color:var(--m-text-2); white-space:pre-wrap; word-break:break-word}
+.ll.lvl-warn .tx{color:var(--m-orange)}
+.ll.lvl-err .tx{color:var(--m-red)}
+.ll.cont .ts{visibility:hidden}
+
+.dempty{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; padding:28px; text-align:center}
+.dempty .big{font-size:15px; font-weight:600}
+.dempty .sm{font-size:12px; color:var(--m-text-2); line-height:1.6}
+.dempty .svclist{display:flex; flex-wrap:wrap; gap:6px; justify-content:center}
+.dempty .sv{font-size:11px; color:var(--m-text-2); background:var(--m-fill);
+  box-shadow:inset 0 0 0 .5px var(--m-sep); border-radius:99px; padding:3px 10px;
+  display:flex; align-items:center; gap:6px; border:none; font-family:inherit}
+.dempty .sv .p{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; color:var(--m-text-3)}
+/* 停止中は「今回何を起動するか」を選べる（決定 h）。稼働中は結果の表示だけ。 */
+button.sv{cursor:pointer}
+button.sv:hover{background:var(--m-hover)}
+button.sv[aria-pressed="true"]{box-shadow:inset 0 0 0 1px var(--m-accent); color:var(--m-text)}
+button.sv.off{opacity:.5}
+
+/* ⋯ メニュー（決定 i） */
+.pmenu{position:absolute; top:36px; right:10px; z-index:4; width:196px; padding:4px;
+  border-radius:8px; background:var(--m-win); box-shadow:0 8px 26px rgba(0,0,0,.3), 0 0 0 .5px var(--m-sep)}
+.pmenu button{display:flex; align-items:center; width:100%; height:26px; padding:0 9px;
+  border:none; background:transparent; font:inherit; font-size:12.5px; color:var(--m-text);
+  border-radius:5px; cursor:pointer; text-align:left}
+.pmenu button:hover{background:var(--m-accent); color:#fff}
+.pmenu .msep{height:1px; background:var(--m-sep); margin:4px 6px}
+.detail{position:relative}
+
+/* inspector */
+.insp{width:236px; flex:none; border-left:.5px solid var(--m-sep); background:var(--m-win);
+  display:flex; flex-direction:column}
+.insp-h{height:33px; flex:none; display:flex; align-items:center; padding:0 11px;
+  border-bottom:.5px solid var(--m-sep); font-size:11.5px; font-weight:600}
+.insp-h .spacer{flex:1}
+.insp-b{padding:12px 11px; display:flex; flex-direction:column; gap:10px}
+.qrcard{background:#fff; border-radius:8px; padding:12px; display:flex;
+  align-items:center; justify-content:center; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.14)}
+.qrcard svg{display:block}
+.urlrow{display:flex; align-items:center; gap:6px; height:23px; padding:0 3px 0 8px;
+  border-radius:6px; background:var(--m-field); box-shadow:inset 0 0 0 .5px var(--m-sep)}
+.urlrow .u{flex:1; min-width:0; font-family:ui-monospace,"SF Mono",Menlo,monospace;
+  font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.insp-line{display:flex; align-items:center; gap:8px}
+.insp-line .lb{font-size:11px; color:var(--m-text-2); flex:none}
+.insp-acts{display:flex; gap:6px}
+.insp-acts .btn{flex:1; justify-content:center}
+.insp-warn{display:flex; gap:8px; align-items:flex-start; padding:9px 11px;
+  border-top:.5px solid var(--m-sep); background:rgba(255,159,10,.12)}
+.insp-warn .ic{flex:none; color:var(--m-orange); display:flex; margin-top:1px}
+.insp-warn .tx{font-size:10.5px; line-height:1.5}
+.insp-warn .tx em{font-style:normal; color:var(--m-text-2)}
+
+/* ==========================================================================
+   SHEET
+   ========================================================================== */
+.scrim{position:absolute; left:0; right:0; top:46px; bottom:0; z-index:6;
+  background:rgba(0,0,0,.16); display:flex; justify-content:center; align-items:flex-start}
+.sheet{width:452px; max-width:calc(100% - 40px); background:var(--m-win);
+  border-radius:0 0 9px 9px; box-shadow:0 18px 44px rgba(0,0,0,.34);
+  overflow:hidden; animation:sheetin .2s cubic-bezier(.2,.8,.3,1)}
+.sheet.sheet-w{width:600px}
+@keyframes sheetin{from{transform:translateY(-16px); opacity:.4} to{transform:none; opacity:1}}
+
+/* transition */
+.tr{padding:14px 16px 13px}
+.tr-head{display:flex; align-items:center; gap:8px}
+.tr-head .nm{font-size:13.5px; font-weight:600}
+.tr-head .ar{color:var(--m-text-3); font-size:12px; margin:0 1px}
+.tr-sub{font-size:11px; color:var(--m-text-2); padding:3px 0 10px}
+.tr-phase{font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--m-text-3); padding:6px 0 4px}
+.tr-step{display:flex; align-items:center; gap:9px; height:22px}
+.tr-step .ic{width:12px; display:flex; justify-content:center; flex:none}
+.tr-step .nm{font-size:12.5px; flex:1; min-width:0}
+.tr-step .st{font-size:11px; color:var(--m-text-3); flex:none}
+.tr-step.done .nm{color:var(--m-text-2)}
+.tr-step.wait .nm{color:var(--m-text-3)}
+.tr-step.now .nm{font-weight:600}
+.tick{width:11px; height:11px; display:block}
+.tick.ok{color:var(--m-green)}
+.tick.wait{color:var(--m-text-3)}
+.spin{width:11px; height:11px; border-radius:99px; border:1.6px solid var(--m-accent);
+  border-right-color:transparent; animation:spin .7s linear infinite; display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ゲートは2つの独立した検証（I-3）。1行ではなく2行で出す。 */
+.gate{display:flex; flex-direction:column; gap:5px; margin:9px 0; padding:8px 11px;
+  border-radius:7px; border:1px dashed var(--m-sep)}
+.gate.armed{border-style:solid; border-color:var(--m-accent); background:rgba(10,132,255,.09)}
+.gate.blocked{border-style:solid; border-color:var(--m-red); background:rgba(255,59,48,.10)}
+.gate-line{display:flex; align-items:center; gap:9px}
+.gate .gt{font-size:11.5px; font-weight:600; flex:1; min-width:0}
+.gate .gs{font-size:10.5px; color:var(--m-text-2); flex:none;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.gate .ic{flex:none; display:flex; width:12px; justify-content:center}
+.tr-foot{display:flex; align-items:flex-start; gap:9px; margin-top:12px}
+.tr-foot .hint{font-size:10.5px; color:var(--m-text-3); line-height:1.4; flex:1; padding-top:2px}
+
+/* error */
+.err{padding:15px 16px 14px}
+.err-top{display:flex; gap:10px; align-items:flex-start}
+.err-top .ic{flex:none; margin-top:1px; color:var(--m-red); display:flex}
+.err-h{font-size:13.5px; font-weight:600; line-height:1.4}
+.err-p{font-size:12px; color:var(--m-text-2); margin-top:3px; line-height:1.5}
+.err-block{margin-top:12px; border-radius:7px; background:var(--m-fill);
+  box-shadow:inset 0 0 0 .5px var(--m-sep); overflow:hidden; padding-bottom:5px}
+.err-block-t{font-size:10px; font-weight:600; letter-spacing:.06em; color:var(--m-text-3); padding:8px 11px 4px}
+.err-row{display:flex; align-items:center; gap:10px; padding:3px 11px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px;
+  color:var(--m-text-2); line-height:1.5}
+.err-row .p1{color:var(--m-text); font-weight:600; flex:none}
+.err-row .p2{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.log{margin-top:12px; border-radius:7px; background:var(--m-field);
+  box-shadow:inset 0 0 0 .5px var(--m-sep); padding:9px 11px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px;
+  line-height:1.7; color:var(--m-text-2); overflow-x:auto; white-space:pre}
+.log .e{color:var(--m-red)}
+.err-acts{display:flex; align-items:center; gap:7px; margin-top:13px}
+.err-acts .spacer{flex:1}
+.truth{margin-top:13px; padding-top:10px; border-top:1px solid var(--m-sep);
+  display:flex; gap:9px; align-items:flex-start}
+.truth .lb{font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--m-text-3);
+  flex:none; padding-top:2px}
+.truth .tx{font-size:11.5px; color:var(--m-text); line-height:1.55}
+.truth .tx em{font-style:normal; color:var(--m-text-2)}
+
+/* wizard sheet */
+.wz{display:flex; min-height:308px}
+.rail{width:172px; flex:none; padding:14px 10px; border-right:.5px solid var(--m-sep);
+  background:var(--m-win-bar); display:flex; flex-direction:column; gap:1px}
+.rail-t{font-size:9.5px; font-weight:700; letter-spacing:.07em; color:var(--m-text-3); padding:0 8px 7px}
+.step{display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:6px;
+  cursor:pointer; font-size:12.5px; color:var(--m-text-2); text-align:left;
+  appearance:none; border:none; background:transparent; font-family:inherit; width:100%}
+.step:hover{background:var(--m-hover)}
+.step .n{width:17px; height:17px; border-radius:99px; flex:none; font-size:10px; font-weight:600;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--m-fill); box-shadow:inset 0 0 0 .5px var(--m-sep); color:var(--m-text-2)}
+.step[aria-current="true"]{background:var(--m-accent); color:#fff; font-weight:600}
+.step[aria-current="true"] .n{background:rgba(255,255,255,.24); color:#fff; box-shadow:none}
+.step.ok .n{background:var(--m-green); color:#fff; box-shadow:none}
+.wz-main{flex:1; min-width:0; padding:16px 18px 0; display:flex; flex-direction:column}
+.wz-h{font-size:14.5px; font-weight:600}
+.wz-s{font-size:11.5px; color:var(--m-text-2); margin-top:4px; line-height:1.55}
+.wz-c{margin-top:14px; flex:1}
+.wz-f{display:flex; align-items:center; gap:8px; padding:11px 18px; margin:0 -18px;
+  border-top:.5px solid var(--m-sep); background:var(--m-win-bar)}
+.wz-f .spacer{flex:1}
+.wz-f .hint{font-size:11px; color:var(--m-text-3)}
+.field{display:flex; align-items:center; gap:11px; margin-bottom:10px}
+.field .lb{width:62px; flex:none; font-size:12px; text-align:right; color:var(--m-text-2)}
+.inp{flex:1; min-width:0; height:23px; border-radius:6px; background:var(--m-field);
+  box-shadow:inset 0 0 0 .5px var(--m-sep-2), 0 0 0 .5px var(--m-sep);
+  display:flex; align-items:center; padding:0 9px; font-size:12px; color:var(--m-text);
+  overflow:hidden; white-space:nowrap}
+.inp.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px}
+.colors{display:flex; gap:6px}
+.cw{width:18px; height:18px; border-radius:5px; cursor:pointer; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)}
+.cw[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--m-win), 0 0 0 3px var(--m-accent)}
+.rows{border-radius:7px; background:var(--m-field); box-shadow:inset 0 0 0 .5px var(--m-sep); overflow:hidden}
+.row{display:flex; align-items:center; gap:10px; padding:7px 11px;
+  border-bottom:.5px solid var(--m-sep-2); font-size:12px}
+.row:last-child{border-bottom:none}
+.cbx{width:14px; height:14px; border-radius:3.5px; flex:none; display:flex;
+  align-items:center; justify-content:center; background:var(--m-accent); color:#fff}
+.cbx.off{background:transparent; box-shadow:inset 0 0 0 1px var(--m-text-3)}
+.row .nm{font-weight:500; flex:none}
+.row .src{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px;
+  color:var(--m-text-3); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.row .pt{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10.5px; color:var(--m-text-2); flex:none}
+.note{display:flex; align-items:center; gap:8px; margin-top:11px; padding:7px 10px;
+  border-radius:7px; background:var(--m-fill); font-size:11px; color:var(--m-text-2); line-height:1.45}
+.note b{color:var(--m-text); font-weight:600}
+.orders{display:flex; gap:12px}
+.order{flex:1; min-width:0}
+.order-t{font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--m-text-3); padding-bottom:5px}
+.ord-row{display:flex; align-items:center; gap:9px; padding:6px 10px;
+  border-bottom:.5px solid var(--m-sep-2); font-size:11.5px}
+.ord-row:last-child{border-bottom:none}
+.ord-row .n{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px;
+  color:var(--m-text-3); flex:none; width:9px}
+.ord-row .nm{flex:1; min-width:0}
+.ord-row .gr{color:var(--m-text-3); flex:none; font-size:11px}
+.ord-row.locked{opacity:.6}
+.pf-row{display:flex; align-items:center; gap:9px; padding:5px 11px; font-size:11.5px}
+.pf-row .ic{flex:none; display:flex; width:12px; justify-content:center}
+.pf-row .tx{flex:1; min-width:0}
+.pf-row .tx em{font-style:normal; color:var(--m-text-2); font-size:11px}
+
+/* ==========================================================================
+   MENU BAR POPOVER (v2)
+   ========================================================================== */
+.popwrap{position:relative; padding-top:7px}
+.pop-arrow{position:absolute; top:2px; right:26px; width:13px; height:13px; border-radius:2px;
+  background:var(--m-pop); transform:rotate(45deg); display:none;
+  backdrop-filter:blur(34px) saturate(180%); -webkit-backdrop-filter:blur(34px) saturate(180%)}
+@media (min-width:820px){ .pop-arrow{display:block} }
+.pop{width:300px; border-radius:12px; background:var(--m-pop); position:relative;
+  backdrop-filter:blur(34px) saturate(180%); -webkit-backdrop-filter:blur(34px) saturate(180%);
+  box-shadow:var(--m-shadow); overflow:hidden}
+.pop-active{padding:11px 12px 9px}
+.pop-top{display:flex; align-items:center; gap:9px}
+.pop-name{font-size:14.5px; font-weight:600; flex:1; min-width:0; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap}
+.pop-state{font-size:11.5px; color:var(--m-text-2); display:flex; align-items:center; gap:6px; flex:none}
+.pop-dots{display:flex; align-items:center; gap:7px; margin:9px 0 2px; padding-left:1px}
+.pop-dots .sv{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--m-text-2)}
+.pop-acts{display:flex; align-items:center; gap:6px; margin-top:10px}
+.pop-acts .spacer{flex:1}
+.hair{height:1px; background:var(--m-sep); margin:5px 12px}
+.pop-sec{font-size:10.5px; font-weight:600; color:var(--m-text-2); padding:7px 14px 3px}
+.pop-list{padding:0 6px 4px}
+.pop-item{display:flex; align-items:center; gap:9px; height:29px; padding:0 8px;
+  border-radius:6px; cursor:pointer}
+.pop-item:hover{background:var(--m-hover)}
+.pop-item .nm{font-size:12.5px; flex:1; min-width:0; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap}
+.pop-item .tw{font-size:10.5px; color:var(--m-text-3)}
+.pop-foot{display:flex; align-items:center; padding:3px 6px 6px}
+.pop-foot .spacer{flex:1}
+
+@media (prefers-reduced-motion: reduce){
+  .dot.busy{animation:none; opacity:.85}
+  .sheet{animation:none}
+  .spin{animation-duration:2.4s}
+}
+</style>
+
+<header class="band hdr">
+  <div class="inner flow">
+    <div class="hdr-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/>
+      </svg>
+      <span>Dev Switcher</span>
+    </div>
+    <h1>ローカル開発環境を、<br>1クリックで持ち替える。</h1>
+    <p class="lede">
+      同時起動しない ＝ 常に最大1つ。この制約はプロセス管理の都合ではなく、UIの中心的な設計材料です。
+      形態は<strong>メインウィンドウ1枚</strong>。切替はもちろん、ログも Expo の QR もすべてここに入ります。
+      メニューバーは v2 で足す前提で、置き場所だけ確保しておきます。
+    </p>
+    <dl class="specs">
+      <div><dt>Platform</dt><dd>macOS / 通常アプリ</dd></div>
+      <div><dt>Window</dt><dd>880 × 544 pt（最小 720 × 460）</dd></div>
+      <div><dt>Sidebar</dt><dd>214 pt</dd></div>
+      <div><dt>Date</dt><dd>2026-07-31</dd></div>
+    </dl>
+  </div>
+</header>
+
+<!-- ================= 00 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">00</div>
+      <h2>設計の前提</h2>
+      <p class="ssub">ここから他のすべてが導かれます。</p>
+    </div>
+    <p class="callout">
+      <span class="k">同時に動くのは常に1つ。</span>
+      だからサイドバーは「稼働中」と「プロジェクト」の2ブロックに割れ、
+      稼働中の1件だけがサービスを展開します。<strong>詳細を持てるのは動いている1つだけ</strong>という構造が、
+      そのままツリーの形になります。
+    </p>
+    <div class="prose">
+      <p>この一点で、よくある「プロセス管理ツール的な表」が消えます。ポート・PID・ステータス列が全プロジェクト分並ぶ画面は、
+      同時起動する世界のUIです。1つしか動かないなら、詳細は動いている1つにだけ必要で、残りは<strong>名前と行き先</strong>だけあればいい。</p>
+      <p>もうひとつの軸は安全性です。「ポート競合や終了失敗時は次を起動しない」は文言でなく<strong>画面構造</strong>で守ります。
+      切替と失敗は<strong>シート</strong>（モーダル）で出し、その間サイドバーに手が届きません。押せるボタンが無ければ、危険な同時操作は起こりません。</p>
+    </div>
+
+    <div class="sub">
+      <h3>ウィンドウにした理由</h3>
+      <div class="prose">
+        <p>最初はメニューバーのポップオーバーで設計しましたが、ウィザード・ログ・Expo QR と<strong>3つもポップオーバーの外に出す</strong>ことになりました。
+        収まらないものが多すぎるというシグナルです。加えて頻度が非対称でした。</p>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>操作</th><th>頻度</th><th>所要</th><th>向いている形</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">切り替える</td><td class="nw">1日3〜5回</td><td class="nw">2秒</td><td>ポップオーバー</td></tr>
+            <tr><td class="nw">ログを見る</td><td class="nw">1日数十回</td><td class="nw">数分</td><td>ウィンドウ</td></tr>
+            <tr><td class="nw">QRを出す</td><td class="nw">Expo作業日は頻繁</td><td class="nw">数分</td><td>ウィンドウ</td></tr>
+            <tr><td class="nw">プロジェクト追加</td><td class="nw">月に数回</td><td class="nw">数分</td><td>ウィンドウ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>レアで速い操作にだけ最適化して、頻繁で遅い操作にコストを払わせていたのが前案でした。
+        <strong>ウィンドウを主、メニューバーを従</strong>にすると、この配分が逆転します。</p>
+      </div>
+    </div>
+
+    <p class="callout info">
+      <span class="k">形態を変えると、インタラクションの原則が1つ変わります。</span>
+      ポップオーバーでは「行クリック＝実行」でしたが、ウィンドウでは<strong>「行クリック＝選択、実行は明示的なボタン」</strong>がmacOSの作法です。
+      これは安全側にも効いて、サイドバーの誤クリックで切替が始まることがなくなります。
+      速さはメニューバー（v2）が別途1クリックで担保します。
+    </p>
+  </div>
+</section>
+
+<!-- ================= 01 ================= -->
+<section class="band sec">
+  <div class="inner flow-lg">
+    <div class="shead">
+      <div class="snum">01</div>
+      <h2>情報設計</h2>
+      <p class="ssub">3階層のツリーと、8つの状態。</p>
+    </div>
+
+    <div class="sub">
+      <h3>ツリー構造がモデルそのもの</h3>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>階層</th><th>要素</th><th>選ぶと右に出るもの</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">1</td><td class="nw">稼働中（0〜1件）</td><td>プロジェクト概要。展開してサービスを見る</td></tr>
+            <tr><td class="nw">2</td><td class="nw">サービス</td><td>そのサービスのログ。Expoならインスペクタも開ける</td></tr>
+            <tr><td class="nw">1</td><td class="nw">プロジェクト（停止中）</td><td>構成の要約と「切り替える」ボタン。前回のログも読める</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>停止中のプロジェクトも展開できます。<strong>前回落ちた理由を調べたい</strong>のは実際よくあるので、
+        止まっていてもログには到達できるべきです。ただし既定は折りたたみ、状態ドットは灰色。</p>
+        <p>必須／任意はサイドバーに出しません。行が窮屈になるうえ、日常的に見る情報ではないからです。
+        サービスを選んだときの見出し行（<span class="mono">Web · :3000 · 必須</span>）と、失敗時の文章で示します。</p>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>状態モデル</h3>
+      <div class="lanes">
+        <div class="lane">
+          <span class="node"><i style="background:var(--ink-3)"></i>停止中</span>
+          <span class="arw">→</span>
+          <span class="node"><i style="background:var(--info)"></i>起動中</span>
+          <span class="arw">→</span>
+          <span class="node"><i style="background:var(--ok)"></i>稼働中</span>
+          <span class="arw">→</span>
+          <span class="node"><i style="background:var(--warn)"></i>一部停止</span>
+        </div>
+        <p class="lane-note">「起動中」は listen 開始とヘルスチェック通過の2段階を持ちます。listenしただけでは緑にしません。</p>
+        <div class="lane" style="margin-top:6px">
+          <span class="node"><i style="background:var(--ok)"></i>稼働中 A</span>
+          <span class="arw">→</span>
+          <span class="node"><i style="background:var(--info)"></i>終了中 A</span>
+          <span class="arw">→</span>
+          <span class="gate-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11V7a5 5 0 0 1 10 0v4"/><rect x="4.5" y="11" width="15" height="10" rx="2.2"/></svg>
+            ゲート：必須ポートの解放を検証
+          </span>
+          <span class="arw">→</span>
+          <span class="node"><i style="background:var(--info)"></i>起動中 B</span>
+        </div>
+        <p class="lane-note">ゲートで不合格なら <b>切替失敗</b> へ。B は起動せず、A の残存状態を明示して停止します。</p>
+      </div>
+      <div class="prose">
+        <p>状態は8つ。</p>
+        <div class="chips">
+          <span class="chip c-idle">停止中</span>
+          <span class="chip c-info">起動中</span>
+          <span class="chip c-ok">稼働中</span>
+          <span class="chip c-warn">一部停止</span>
+          <span class="chip c-info">終了中</span>
+          <span class="chip c-info">切替中</span>
+          <span class="chip c-bad">失敗</span>
+          <span class="chip c-warn">残存あり</span>
+        </div>
+        <p>うち<strong>一部停止</strong>と<strong>残存あり</strong>は、握りつぶしがちだが必ず可視化すべき状態です。
+        任意サービスが落ちても「稼働中」とだけ表示するのは silent fallback にあたります。</p>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>形の使い分け</h3>
+      <dl class="kv">
+        <div class="kv-row"><dt>丸 ●</dt><dd>状態。緑＝稼働、灰＝停止、橙＝注意、赤＝失敗、青（点滅）＝遷移中。</dd></div>
+        <div class="kv-row"><dt>角丸四角 ▢</dt><dd>プロジェクトの識別。頭文字＋色。状態の色と絶対に混ざらないよう、形で分離する。</dd></div>
+        <div class="kv-row"><dt>赤い数字バッジ</dt><dd>未読の stderr 行数。状態ではないので<strong>ドットの色は変えない</strong>。Next.jsのコンパイルエラーのようにプロセスが生きたままエラーを吐くケースを「失敗」にすると、状態が信用できなくなる。</dd></div>
+        <div class="kv-row"><dt>色だけに頼らない</dt><dd>状態には必ずテキストラベルを併記（「稼働中 12分」）。色覚特性への配慮であり、スクリーンショット共有時にも効く。</dd></div>
+      </dl>
+    </div>
+
+    <div class="sub">
+      <h3>クリック数</h3>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>やりたいこと</th><th>ウィンドウのみ（v1）</th><th>メニューバー併用（v2）</th></tr></thead>
+          <tbody>
+            <tr><td>いま何が動いてる？</td><td class="mono">2（⌘Tab → 見る）</td><td class="mono">0</td></tr>
+            <tr><td>別プロジェクトへ切替</td><td class="mono">3（⌘Tab → 選択 → 実行）</td><td class="mono">2</td></tr>
+            <tr><td>ログを見る</td><td class="mono">2（⌘Tab → サービス選択）</td><td class="mono">2</td></tr>
+            <tr><td>QRを出す</td><td class="mono">3 / 開きっぱなしなら 1</td><td class="mono">3</td></tr>
+            <tr><td>ブラウザを開く</td><td class="mono">2</td><td class="mono">2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>正直に言うと、<strong>切替は前案より1クリック増えます</strong>。それを買い戻すのがメニューバー（v2）です。
+        代わりにログとQRが速くなり、こちらは回数が桁違いに多い。トレードとしては勝ちだと考えています。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 02 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">02</div>
+      <h2>メインウィンドウ</h2>
+      <p class="ssub">サイドバーの行、サービス名、QRボタン、「起動順」ラベルがクリックできます。</p>
+    </div>
+  </div>
+</section>
+
+<div class="band" style="padding-top:22px">
+  <div class="wide flow-sm">
+    <div class="plate">
+      <div class="menubar">
+        <span class="mb-left">Dev Switcher <b class="mb-hide">ファイル　表示　プロジェクト　ウィンドウ</b></span>
+        <span class="mb-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/>
+          </svg>
+          <i class="mb-dot" id="mbDot"></i>
+        </span>
+        <span>100%</span>
+        <span>木 7月31日 14:32</span>
+      </div>
+      <div class="stage">
+        <div class="mac" id="winMount"></div>
+      </div>
+    </div>
+
+    <div class="ctrls" role="group" aria-label="モックの状態切り替え">
+      <span class="ctrls-lb">Scene</span>
+      <button class="ctrl" data-scene="running">稼働中</button>
+      <button class="ctrl" data-scene="degraded">一部停止</button>
+      <button class="ctrl" data-scene="stalled">応答待ち</button>
+      <button class="ctrl" data-scene="switching">切替中</button>
+      <button class="ctrl" data-scene="gateblock">ゲート不合格</button>
+      <button class="ctrl" data-scene="failPort">失敗・ポート競合</button>
+      <button class="ctrl" data-scene="failStop">失敗・終了できない</button>
+      <button class="ctrl" data-scene="failBoot">失敗・起動直後に落ちた</button>
+      <button class="ctrl" data-scene="adopt">引き継ぎ</button>
+      <button class="ctrl" data-scene="wizard">プロジェクト追加</button>
+      <button class="ctrl" data-scene="edit">プロジェクト編集</button>
+      <button class="ctrl" data-scene="unregister">登録を解除</button>
+    </div>
+
+    <p class="figcap"><b>Fig. 1</b><span id="figcap"></span></p>
+  </div>
+</div>
+
+<section class="band sec" style="padding-top:38px">
+  <div class="inner flow-lg">
+
+    <div class="sub">
+      <h3>この画面で意図的にやっていないこと</h3>
+      <dl class="kv">
+        <div class="kv-row"><dt>行クリックで実行しない</dt><dd>サイドバーの選択と実行を分ける。停止中のプロジェクトを選ぶと右に「切り替える」ボタンが出る。誤クリックで環境が落ちない。</dd></div>
+        <div class="kv-row"><dt>停止中に状態ドットを主張させない</dt><dd>灰色・半透明。動いていないことが自明なので、ラベルは付けない。代わりに最終起動時刻を右端に出す。</dd></div>
+        <div class="kv-row"><dt>起動順に番号を振らない</dt><dd>サイドバーの並び順が起動順。「起動順」ラベルをクリックすると終了順（逆順）に切り替わるので、順序は確認できるが常時は主張しない。</dd></div>
+        <div class="kv-row"><dt>必須／任意を一覧に出さない</dt><dd>サービスを選んだときの見出し行にだけ出す。日常的に見る情報ではなく、行を窮屈にするコストのほうが大きい。</dd></div>
+        <div class="kv-row"><dt>QRを常時開かない</dt><dd>インスペクタはトグル。開けば固定表示され、ログを読みながらスマホを向けられる。ポップオーバーと違い勝手に閉じない。</dd></div>
+      </dl>
+    </div>
+
+    <div class="sub">
+      <h3>ウィンドウにして良くなったところ</h3>
+      <dl class="kv">
+        <div class="kv-row"><dt>ログが一級市民</dt><dd>サービスを選んだ瞬間にログが出る。別ウィンドウを開く動作が消えた。</dd></div>
+        <div class="kv-row"><dt>応答待ちが読める</dt><dd>ヘルスチェックがタイムアウトしたとき、警告バナーとログが同じ画面に並ぶ。前案では別ウィンドウを開かないと原因が見えなかった。</dd></div>
+        <div class="kv-row"><dt>QRが閉じない</dt><dd>ポップオーバーはフォーカスを失うと閉じる。インスペクタなら他を触っても残る。</dd></div>
+        <div class="kv-row"><dt>ウィンドウが1枚に減った</dt><dd>前案は本体＋ログ＋Expo＋ウィザードで最大4枚。いまは1枚とシートだけ。</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">03</div>
+      <h2>切替と失敗</h2>
+      <p class="ssub">安全性のロジックが、そのままシートの構造になっています。</p>
+    </div>
+    <div class="prose">
+      <p>切替は<strong>「Aを停止 → ゲート → Bを起動」の2フェーズ</strong>です。フェーズの境目に破線のゲート行を置き、
+      ポート解放の検証がここで走ることを視覚化します。ゲートが通らなければ下半分は永遠に点灯しません。</p>
+      <p>ゲートが見るのは<strong>必須サービスのポートだけ</strong>です。任意サービスのポートが埋まっていても切替は止めません
+      （起動時に失敗すれば「一部停止」として現れ、原因はログに出る）。止める条件を絞ることで、
+      ゲートが「本当に危険なときだけ止まる」ものになります。</p>
+      <p>シートにしている理由は見た目ではありません。<strong>シートが出ている間はサイドバーに手が届かない</strong>のが目的です。
+      前案でポップオーバーからプロジェクト一覧を「描画しない」ことで守っていた性質を、ウィンドウではモーダルで守ります。</p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>失敗の種類</th><th>いつ</th><th>既定ボタン</th><th>破壊的な選択肢</th></tr></thead>
+        <tbody>
+          <tr><td class="nw">ポート競合</td><td class="nw">ゲート</td><td class="nw">閉じる</td><td>占有プロセスを終了して再試行</td></tr>
+          <tr><td class="nw">終了できない</td><td class="nw">停止フェーズ</td><td class="nw">切替を中止</td><td>強制終了して続行（SIGKILL）</td></tr>
+          <tr><td class="nw">起動直後に落ちた</td><td class="nw">起動フェーズ</td><td class="nw">ログを開く</td><td>なし（再試行は非破壊）</td></tr>
+          <tr><td class="nw">任意サービスの失敗</td><td class="nw">起動フェーズ</td><td class="nw">シートを出さない</td><td>なし</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout bad">
+      <span class="k">破壊的な操作を既定ボタンにしない。</span>
+      「強制終了して続行」は赤文字の非塗りボタンで、⏎ が当たらない位置に置きます。
+      既定は常に安全側に倒れる方 — つまり切替を中止して、いまの状態のまま止まる方です。
+    </p>
+    <p class="callout warn">
+      <span class="k">失敗シートには必ず「現在の状態」を書く。</span>
+      「Bell は停止しました。Penta は起動していません。」のように、
+      <strong>両方のプロジェクトが今どうなっているか</strong>を1行で断言します。
+      中途半端な状態を黙って放置しないための、この設計で最も重要な要素です。
+    </p>
+    <p class="callout info">
+      <span class="k">失敗シートの「ログを開く」はシートを閉じて移動する。</span>
+      落ちたサービスをサイドバーで選択した状態にしてからシートを閉じるので、
+      閉じた瞬間に原因のログが目の前にあります。ここもウィンドウにして初めて成立する導線です。
+    </p>
+  </div>
+</section>
+
+<!-- ================= 04 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">04</div>
+      <h2>プロジェクト追加</h2>
+      <p class="ssub">独立ウィンドウをやめ、メインウィンドウのシートにしました。上の「プロジェクト追加」から開けます。</p>
+    </div>
+    <dl class="kv">
+      <div class="kv-row"><dt>手入力を最小化</dt><dd><span class="mono">package.json</span> / <span class="mono">supabase/config.toml</span> / <span class="mono">docker-compose.yml</span> / <span class="mono">app.json</span> を走査して候補を提示。ユーザーはチェックを外す作業だけをする。</dd></div>
+      <div class="kv-row"><dt>必須／任意はここで決める</dt><dd>既定は「DBとWebが必須、それ以外は任意」。この設定が後の「一部停止」判定と失敗時の挙動を全部決めるので、ウィザードで必ず通す。</dd></div>
+      <div class="kv-row"><dt>ヘルスチェックは訊かない</dt><dd>サービス種別ごとの既定を内蔵する（決定 d）。ユーザーは設定しない。上書きは詳細設定に隠す。</dd></div>
+      <div class="kv-row"><dt>終了順は既定で起動順の逆</dt><dd>逆順を自動生成して読み取り専用で見せ、必要なときだけ上書きできる。DBを最後に落とすという当たり前の順序を、二度入力させない。</dd></div>
+      <div class="kv-row"><dt>最後にドライラン</dt><dd>実際には起動せず、ポート空き・コマンドの存在・ディレクトリの妥当性だけ検証する。初回の失敗を登録時点で潰す。</dd></div>
+      <div class="kv-row"><dt>ポート重複は警告ではなく情報</dt><dd>他プロジェクトと同じ 3000 を使っていても、同時起動しないので競合しない。「First Coach と共通です」と事実だけ伝え、警告色は使わない。</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ================= 05 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">05</div>
+      <h2>メニューバー（v2）</h2>
+      <p class="ssub">後から足す前提。ただし何を載せるかは今決めておきます。</p>
+    </div>
+    <div class="prose">
+      <p>メニューバーの唯一にして最大の価値は、<strong>「いま何が動いてるか」が0クリックで見える</strong>ことです。
+      ウィンドウ型では⌘Tabが要るので、これだけは代替できません。だから捨てずに残します。</p>
+      <p>ただし載せるのは<strong>状態表示と切替だけ</strong>。作業（読む・コピーする・見続ける）は全部ウィンドウ側です。
+      この線引きがあるので、ポップオーバーは300ptまで小さくできます。前案の360ptより狭い。</p>
+    </div>
+  </div>
+</section>
+
+<div class="band" style="padding-top:22px">
+  <div class="wide flow-sm">
+    <div class="plate">
+      <div class="menubar">
+        <span class="mb-left">Cursor <b class="mb-hide">ファイル　編集　選択　表示</b></span>
+        <span class="mb-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/>
+          </svg>
+          <i class="mb-dot" style="background:#28CD41"></i>
+        </span>
+        <span>100%</span>
+        <span>木 7月31日 14:32</span>
+      </div>
+      <div class="stage stage-pop">
+        <div class="mac" id="popMount"></div>
+      </div>
+    </div>
+    <p class="figcap"><b>Fig. 2</b><span>メニューバーのポップオーバー（v2・300pt）。状態とサービスの丸、切替、ウィンドウを開く導線だけ。ログもQRもここには置かない。</span></p>
+  </div>
+</div>
+
+<section class="band sec" style="padding-top:38px">
+  <div class="inner flow">
+    <dl class="kv">
+      <div class="kv-row"><dt>ここでは1クリック実行</dt><dd>ウィンドウと逆に、行クリックで即切替。ポップオーバーは速さのための面なので、作法を変える。確認は遷移シート側で担保する。</dd></div>
+      <div class="kv-row"><dt>ノッチ対策が必須</dt><dd>MacBookでメニューバーアプリが増えるとアイコンがノッチの裏に隠れて押せなくなる。グローバルホットキー（⌥⌘D など）を必ず用意する。これが無いとv2の価値が消える。</dd></div>
+      <div class="kv-row"><dt>Dockアイコンは選べるように</dt><dd><span class="mono">NSApp.setActivationPolicy</span> で実行時に切り替えられる。既定はDockに出す（通常アプリなので）。「メニューバーだけにする」を設定に置く。</dd></div>
+      <div class="kv-row"><dt>切替中はポップオーバーを開かせない</dt><dd>アイコンをクリックしたらポップオーバーではなくウィンドウを前面に出す。遷移中の操作面を2つに増やさない。</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ================= 06 ================= -->
+<section class="band sec">
+  <div class="inner flow-lg">
+    <div class="shead">
+      <div class="snum">06</div>
+      <h2>色・余白・タイポグラフィ</h2>
+      <p class="ssub">macOSに馴染ませる ＝ 自前のブランド色を作らないこと。</p>
+    </div>
+
+    <div class="sub">
+      <h3>色</h3>
+      <div class="prose">
+        <p><strong>アクセントカラーを自分で決めません。</strong>システムのアクセントカラー（ユーザーがシステム設定で選んだ色）をそのまま使います。
+        これがネイティブに馴染ませる最も効く一手で、同時に「アプリの色」と「状態の色」の衝突も避けられます。
+        彩度を持つのは下の5色だけで、それはすべてシステム定義色です。</p>
+      </div>
+      <div class="swatches">
+        <div class="sw"><span class="cap" style="background:#28CD41"></span><span class="lb"><b>稼働中</b><span>systemGreen</span></span></div>
+        <div class="sw"><span class="cap" style="background:#FF9F0A"></span><span class="lb"><b>注意・一部停止</b><span>systemOrange</span></span></div>
+        <div class="sw"><span class="cap" style="background:#FF3B30"></span><span class="lb"><b>失敗</b><span>systemRed</span></span></div>
+        <div class="sw"><span class="cap" style="background:#8E8E93"></span><span class="lb"><b>停止中</b><span>systemGray</span></span></div>
+        <div class="sw"><span class="cap" style="background:linear-gradient(90deg,#007AFF,#0A84FF)"></span><span class="lb"><b>選択・遷移中</b><span>accentColor</span></span></div>
+      </div>
+      <div class="prose">
+        <p>ウィンドウ本体は不透明（<span class="mono">windowBackgroundColor</span>）、サイドバーだけ <span class="mono">.sidebar</span> マテリアルで
+        わずかに透ける。ログ領域は <span class="mono">textBackgroundColor</span>（白／#1C1C1E）にして、読む面であることを地の色で示します。
+        メニューバーのポップオーバーだけは <span class="mono">.popover</span> マテリアル（vibrancy）。</p>
+        <p>文字色は固定値ではなく <span class="mono">labelColor</span> / <span class="mono">secondaryLabelColor</span> / <span class="mono">tertiaryLabelColor</span> の3段階。
+        <strong>唯一の例外がQRコード</strong>で、ここだけテーマに追従させず白地・黒モジュール固定にします。反転すると読み取り精度が落ちるリーダーがあるためです。</p>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>タイポグラフィ</h3>
+      <div class="prose">
+        <p>SF Pro Text（日本語は Hiragino Sans）。macOSのサイドバー標準は13ptで、これを基準にします。数字が並ぶ箇所は必ず <span class="mono">tabular-nums</span>。</p>
+      </div>
+      <div class="scale">
+        <div class="scale-row"><div class="samp" style="font-size:13.5px;font-weight:600;letter-spacing:-.008em">Bell</div><div class="spec">13.5 / 600<br>ツールバーの名前</div></div>
+        <div class="scale-row"><div class="samp" style="font-size:12.5px">First Coach</div><div class="spec">12.5 / 400<br>サイドバーの行</div></div>
+        <div class="scale-row"><div class="samp" style="font-size:12.5px;font-weight:600">Web</div><div class="spec">12.5 / 600<br>詳細の見出し</div></div>
+        <div class="scale-row"><div class="samp" style="font-size:11.5px;color:var(--ink-2)">稼働中 12分</div><div class="spec">11.5 / 400 / secondary<br>状態・補助</div></div>
+        <div class="scale-row"><div class="samp mono" style="font-size:10.5px;color:var(--ink-2)">14:33:41 ✕ TypeError</div><div class="spec">10.5 / SF Mono<br>ログ本文</div></div>
+        <div class="scale-row"><div class="samp" style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:var(--ink-3)">稼働中</div><div class="spec">9.5 / 700 / +0.07em<br>サイドバーの見出し</div></div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>余白</h3>
+      <div class="prose">
+        <p>4ptグリッド。サイドバー幅は<strong>214pt</strong> — 「Pair Pro Selector」が省略されずに収まる幅から決めました。</p>
+      </div>
+      <div class="spacing">
+        <div class="sp"><span class="bar" style="width:4px"></span><span class="lb">4</span></div>
+        <div class="sp"><span class="bar" style="width:6px"></span><span class="lb">6</span></div>
+        <div class="sp"><span class="bar" style="width:8px"></span><span class="lb">8</span></div>
+        <div class="sp"><span class="bar" style="width:11px"></span><span class="lb">11</span></div>
+        <div class="sp"><span class="bar" style="width:16px"></span><span class="lb">16</span></div>
+        <div class="sp"><span class="bar" style="width:22px"></span><span class="lb">22</span></div>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>要素</th><th>値</th><th>根拠</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">ウィンドウ既定</td><td class="mono nw">880 × 544</td><td>サイドバー＋ログ＋インスペクタが同時に成立する最小</td></tr>
+            <tr><td class="nw">サイドバー</td><td class="mono nw">214</td><td>最長のプロジェクト名が省略されない幅</td></tr>
+            <tr><td class="nw">インスペクタ</td><td class="mono nw">236</td><td>QR 148pt ＋ 左右パディング</td></tr>
+            <tr><td class="nw">ツールバー高</td><td class="mono nw">46</td><td>macOS の unified toolbar 標準</td></tr>
+            <tr><td class="nw">サイドバー行</td><td class="mono nw">27 / 25</td><td>プロジェクト / サービス（インデント24）</td></tr>
+            <tr><td class="nw">角丸</td><td class="mono nw">10 / 7 / 6</td><td>ウィンドウ / カード・ゲート / 行・ボタン</td></tr>
+            <tr><td class="nw">シート幅</td><td class="mono nw">452 / 600</td><td>通常 / ウィザード</td></tr>
+            <tr><td class="nw">遷移</td><td class="mono nw">150–200ms</td><td>ease-out。シートは200ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>モーション</h3>
+      <div class="prose">
+        <p>アニメーションは<strong>状態が遷移中であることを示す用途にのみ</strong>使います。青いドットの点滅、切替中のスピナー、シートのスライド。
+        装飾的な動きはゼロ。<span class="mono">prefers-reduced-motion</span> では点滅とスライドを止め、スピナーだけ低速で残します（進行中であることの唯一の手がかりなので消さない）。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 07 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">07</div>
+      <h2>SwiftUI 実装への対応</h2>
+      <p class="ssub">React参照実装の責務をSwiftUIへ対応付けます。プロダクションコードはSwiftで実装します。</p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>コンポーネント</th><th>責務</th></tr></thead>
+        <tbody>
+          <tr><td class="mono nw">&lt;MainWindow&gt;</td><td>ツールバー・サイドバー・詳細・インスペクタ・シートの配置</td></tr>
+          <tr><td class="mono nw">&lt;Sidebar&gt;</td><td>稼働中／プロジェクトの2ブロック。選択のみを発火し、実行はしない</td></tr>
+          <tr><td class="mono nw">&lt;ServiceRows&gt;</td><td>起動順（またはトグルで終了順）に並ぶ。未読エラーのバッジを持つ</td></tr>
+          <tr><td class="mono nw">&lt;LogPane&gt;</td><td>選択中サービスのログ。検索・追従・消去</td></tr>
+          <tr><td class="mono nw">&lt;ExpoInspector&gt;</td><td>QR・URL・接続モード・到達性の警告</td></tr>
+          <tr><td class="mono nw">&lt;Sheet&gt;</td><td>phase を見て TransitionView / ErrorView / AdoptView / Wizard を出し分ける</td></tr>
+          <tr><td class="mono nw">&lt;GateRow&gt;</td><td>停止側の実測ポート解放と、起動側の対象ポート確認を pending / passed / blocked で表示</td></tr>
+          <tr><td class="mono nw">&lt;MenuBarPopover&gt;</td><td>v2。同じ state を読むが、行クリックで即実行する別の面</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>状態は <span class="mono">{ phase, activeId, selection, services, gate, error, logs }</span> の単一オブジェクト。
+      <span class="mono">phase</span> が <span class="mono">'switching' | 'failed' | 'adopt'</span> のときシートを出し、
+      その間<strong>サイドバーの onSelect を配線しない</strong>のではなく、シート自体がイベントを遮ります。
+      disabled 属性に頼らないのは、スタイルの都合で外れうるからです。モーダルは構造で遮ります。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 08 ================= -->
+<section class="band sec">
+  <div class="inner flow">
+    <div class="shead">
+      <div class="snum">08</div>
+      <h2>決定事項</h2>
+      <p class="ssub">レビューで確定した6点。形態を変えても中身は変わりません。</p>
+    </div>
+    <div class="rev">
+
+      <div class="rev-item"><div class="n">a</div><div class="rev-body">
+        <h3>「切替を中止」＝ A は止め切る、B は起動しない</h3>
+        <p><strong>確定。</strong>SIGTERM送出済みのプロセスへの取り消しは実装できないため、中止は「起動しない判断」だけを指します。
+        ボタン名は「切替を中止」のまま、下の補足文で「{A} の停止は最後まで実行し、{B} は起動しません」と毎回明示します。</p>
+        <p class="q">画面: 切替シートの左下。起動フェーズに入ると自動で無効化され、理由が文章で出ます。</p>
+      </div></div>
+
+      <div class="rev-item"><div class="n">b</div><div class="rev-body">
+        <h3>ゲートは必須サービスのポートだけ見る</h3>
+        <p><strong>確定。</strong>任意サービスのポートは検証しません。埋まっていれば起動時に失敗し「一部停止」として現れ、
+        原因はログに出ます。止める条件を必須だけに絞ることで、ゲートが「本当に危険なときだけ止まる」ものになります。</p>
+        <p class="q">副次的な効果: 検証項目が減るのでゲートが速くなり、「検証中…」を独立ステップにする必要がなくなりました。</p>
+      </div></div>
+
+      <div class="rev-item"><div class="n">c</div><div class="rev-body">
+        <h3>外部プロセスも終了してよい。ただし3つだけ例外を作る</h3>
+        <p>殺してよい、で問題ありません。実務上ほとんどは自分が手で立てた <span class="mono">npm run dev</span> です。
+        ただし事故る経路が3つあるので、そこだけ塞ぎます。</p>
+        <p><strong>①PIDの取り違え。</strong><span class="mono">lsof</span> で調べてから kill するまでの間にプロセスが死ぬと、
+        OSが同じPIDを別プロセスに再利用します。kill 直前にもう一度「そのPIDがまだそのポートを持っているか」を確認してから送る。</p>
+        <p><strong>②Docker管理下のプロセス。</strong>コンテナの中身をPIDで殺すとコンテナが中途半端に残ります。
+        親プロセスを辿ってDockerデーモン配下と判定できたら、kill ではなく <span class="mono">docker stop</span> を実行する。</p>
+        <p><strong>③システムのDB。</strong>Postgres.app や Homebrew の postgres が 5432 を持っているケース。
+        オーナーが自分でない、または launchd 管理下と判定できたら<strong>終了ボタンを出さず</strong>、PIDのコピーだけにする。
+        これを殺すと他の作業まで壊れ、復旧が手作業になります。</p>
+        <p class="q">画面: 失敗・ポート競合シート。SIGTERM → 猶予5秒 → 残っていればSIGKILLの再確認、という二段構えにします。</p>
+      </div></div>
+
+      <div class="rev-item"><div class="n">d</div><div class="rev-body">
+        <h3>種別ごとの既定ヘルスチェック。設定は不要にする</h3>
+        <p><strong>MVPの線引き：TCP接続だけでは緑にしません。</strong>Next.jsは listen した直後は 200 を返さないので、
+        TCP到達＝緑にすると「緑なのに開けない」が起きます。かといって全サービスにURL設定を強いるとウィザードが重くなる。</p>
+        <p>そこで<strong>サービス種別ごとに既定のヘルスチェックを内蔵</strong>します。Webは <span class="mono">GET /</span> がタイムアウトと5xx以外を返すこと、
+        Supabaseは <span class="mono">/rest/v1/</span>、Expoは Metro の <span class="mono">/status</span>、Dockerは <span class="mono">compose ps</span> が healthy。
+        ユーザーは何も設定しません。上書きは詳細設定に隠します。</p>
+        <p class="q">画面: 「応答待ち」シーン。ウィンドウ化したことで、警告バナーとログが同じ画面に並ぶようになりました。</p>
+      </div></div>
+
+      <div class="rev-item"><div class="n">e</div><div class="rev-body">
+        <h3>プロセスは残す。次回起動時に実態から検証して引き継ぐ</h3>
+        <p>「検証できたほうが良い」を、<strong>状態をディスクに保存せず、毎回実プロセスから再構築する</strong>と解釈しました。
+        保存した状態を信用すると、クラッシュや強制終了のあとに嘘の状態が残ります。</p>
+        <p>Dev Switcher を終了してもプロセスは残します。次回起動時は保存済みのPIDが生きているかと、
+        期待するポートを実際にlistenしているかを両方確認し、一致したものだけを引き継ぎます。</p>
+        <p class="q">画面: 「引き継ぎ」シート。「無視」を選んでもポートは埋まったままなので、次の切替はゲートが止めます。</p>
+      </div></div>
+
+      <div class="rev-item"><div class="n">f</div><div class="rev-body">
+        <h3>ログはサービスごとに分ける</h3>
+        <p><strong>確定。</strong>混ぜると読めません。サイドバーのサービスを選ぶ構成にしました。
+        分離の弱点である「他で何か起きても気づかない」は、サービス名の右に出る未読エラー数バッジで補います。</p>
+        <p>失敗シートに出す末尾6行は、落ちたサービスのstdout+stderrを時系列のまま出します。
+        stderrだけに絞ると「直前に何をしていたか」が消えるためです。</p>
+        <p class="q">「すべて」を混ぜたビューは今回スコープ外ですが、サイドバーの「稼働中」直下に足せる構造にしてあります。</p>
+      </div></div>
+
+    </div>
+  </div>
+</section>
+
+<footer class="band ft">
+  <div class="inner ft-in">
+    <span>Dev Switcher — UI/UX 設計案</span>
+    <span class="mono">2026-07-31</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+"use strict";
+
+/* ==========================================================================
+   DATA
+   ========================================================================== */
+/* サービスは複数ポートを持つ（決定 g）。ports[0] が代表。
+   起動するか（enabled）と失敗を許容するか（failurePolicy）は別（決定 h）。 */
+var SUPABASE_PORTS = [
+  {label:"API",       port:54321, open:true},
+  {label:"DB",        port:54322},
+  {label:"Studio",    port:54323, open:true},
+  {label:"Inbucket",  port:54324, open:true},
+  {label:"Analytics", port:54327}
+];
+var PROJECTS = [
+  { id:"bell", name:"Bell", initial:"B", color:"#0A84FF", last:"たった今",
+    dir:"~/Documents/GitHub/bellcierge-phase2-web",
+    enabledNow:{ exp:false },   /* 今日は Expo を使わない */
+    services:[
+      {id:"sb",  name:"Supabase", ports:SUPABASE_PORTS,                 enabled:true, policy:"block"},
+      {id:"web", name:"Web",      ports:[{port:3000, open:true}],        enabled:true, policy:"block"},
+      {id:"exp", name:"Expo",     ports:[{port:8081}],                   enabled:true, policy:"continue"},
+      {id:"inn", name:"Inngest",  ports:[{port:8288, open:true}],        enabled:true, policy:"continue"}
+    ]},
+  { id:"penta", name:"Penta", initial:"P", color:"#BF5AF2", last:"3時間前",
+    dir:"~/Documents/GitHub/web-penta",
+    services:[
+      {id:"dk",  name:"Docker", ports:[{label:"Postgres", port:5432}],  enabled:true, policy:"block"},
+      {id:"web", name:"Web",    ports:[{port:3000, open:true}],          enabled:true, policy:"block"},
+      {id:"nat", name:"Native", ports:[{port:8081}],                     enabled:true, policy:"continue"}
+    ]},
+  { id:"firstcoach", name:"First Coach", initial:"F", color:"#FF9F0A", last:"昨日",
+    dir:"~/Documents/GitHub/firstcoach-next-app",
+    services:[
+      {id:"sb",  name:"Supabase", ports:SUPABASE_PORTS,                 enabled:true, policy:"block"},
+      {id:"web", name:"Web",      ports:[{port:3000, open:true}],        enabled:true, policy:"block"}
+    ]},
+  { id:"soiree", name:"Soirée", initial:"S", color:"#30D158", last:"7月28日",
+    dir:"~/Documents/GitHub/soiree_tokyo",
+    services:[
+      {id:"dk",  name:"Docker", ports:[{label:"Postgres", port:5432}],  enabled:true, policy:"block"},
+      {id:"web", name:"Web",    ports:[{port:3001, open:true}],          enabled:true, policy:"block"}
+    ]},
+  { id:"slackbot", name:"Pair Pro Selector", initial:"PP", color:"#64D2FF", last:"7月22日",
+    dir:"~/Documents/GitHub/pair-pro-selector",
+    services:[{id:"bot", name:"Bot", ports:[{port:3333}], enabled:true, policy:"block"}]}
+];
+function P(id){ for(var i=0;i<PROJECTS.length;i++){ if(PROJECTS[i].id===id) return PROJECTS[i]; } return PROJECTS[0]; }
+
+/* enabledNow > enabled の順で解決 */
+function isEnabled(p, s){
+  if(p.enabledNow && p.enabledNow.hasOwnProperty(s.id)) return !!p.enabledNow[s.id];
+  return !!s.enabled;
+}
+function enabledOf(p){
+  var out = [];
+  for(var i=0;i<p.services.length;i++){ if(isEnabled(p, p.services[i])) out.push(p.services[i]); }
+  return out;
+}
+function portCount(p){
+  var n = 0, list = enabledOf(p);
+  for(var i=0;i<list.length;i++) n += list[i].ports.length;
+  return n;
+}
+/* ゲート検証1のソースは設定値ではなく実測（I-3 / I-8） */
+var OBSERVED = { sb:[54321,54322,54323,54324,54327], web:[3000], inn:[8288] };
+function observedCount(){
+  var n = 0;
+  for(var k in OBSERVED){ if(OBSERVED.hasOwnProperty(k)) n += OBSERVED[k].length; }
+  return n;
+}
+
+var LOGS = {
+  sb:[
+    ["14:31:02","","Starting supabase local development setup..."],
+    ["14:31:14","","Seeding data supabase/seed.sql..."],
+    ["14:31:18","","Started supabase local development setup."],
+    ["14:31:18","","         API URL: http://127.0.0.1:54321"],
+    ["14:31:18","","      Studio URL: http://127.0.0.1:54323"]
+  ],
+  web:[
+    ["14:31:20","","▲ Next.js 15.4.2"],
+    ["14:31:21","","  - Local:  http://localhost:3000"],
+    ["14:31:22","","✓ Ready in 1.4s"],
+    ["14:32:05","","✓ Compiled /(app)/dashboard in 2.1s"],
+    ["14:32:06","","GET /dashboard 200 in 2210ms"],
+    ["14:33:12","warn","⚠ Fast Refresh had to perform a full reload"],
+    ["14:33:41","err","✕ TypeError: Cannot read properties of undefined (reading 'id')"],
+    ["14:33:41","err","      at ResidentCard (app/(app)/residents/card.tsx:24:19)"],
+    ["14:33:41","","GET /residents 500 in 88ms"]
+  ],
+  exp:[
+    ["14:31:25","","Starting Metro Bundler"],
+    ["14:31:31","","Metro waiting on exp://192.168.11.5:8081"],
+    ["14:31:31","","› Press s │ switch to Expo Go"],
+    ["14:32:44","","iOS Bundled 4211ms (1204 modules)"]
+  ],
+  inn:[
+    ["14:31:28","","Inngest Dev Server"],
+    ["14:31:29","","Event stream ready on :8288"],
+    ["14:45:02","warn","Received SIGTERM, shutting down"],
+    ["14:45:02","","Server stopped"]
+  ]
+};
+
+var CAPTIONS = {
+  running:   "稼働中。Web を選択してログを表示。Web には未読エラー1件のバッジが付くが、ドットは緑のまま — ログのエラーは状態に昇格させない。",
+  degraded:  "一部停止。任意サービスの Inngest が落ちている。全体は稼働中のまま、サイドバーの丸だけが橙になる。",
+  stalled:   "応答待ち。ポートは開いたがヘルスチェックが通らない。バナーとログが同じ画面に並ぶのがウィンドウ化の効果。",
+  expo:      "Expo を選択し、インスペクタを開いた状態。QRは白地固定で、ログを読みながら実機を向けられる。",
+  target:    "停止中の Penta を選択した状態。選択しただけでは何も起きず、実行は右の明示的なボタン。",
+  switching: "切替中。シートが出ている間はサイドバーに手が届かない。これが「次を起動しない」の構造的な保証。",
+  gateblock: "ゲート不合格。停止は完了したが 3000 が解放されず、下半分は点灯しない。",
+  failPort:  "失敗・ポート競合。占有プロセスを名指しし、末尾で両プロジェクトの現在地を断言する。",
+  failStop:  "失敗・終了できない。強制終了は赤文字の非既定ボタン。既定は安全側の「切替を中止」。",
+  failBoot:  "失敗・起動直後に落ちた。「ログを開く」はシートを閉じて、落ちたサービスを選択した状態にする。",
+  adopt:     "引き継ぎ。起動時に実プロセスをスキャンして前回の残りを検出した状態。",
+  wizard:    "プロジェクト追加。独立ウィンドウをやめてシートにした。左のステップをクリックできる。",
+  edit:      "プロジェクト編集。⋯ メニューから開く。稼働中のサービスはポートとコマンドだけ編集できない（I-9）。",
+  unregister:"登録の解除。ローカルファイルを削除しないことを、削除されないものの一覧で明示する。",
+  menu:      "⋯ メニュー。編集・Finder で表示・複製・登録を解除。追加後に構成を直す導線（決定 i）。"
+};
+
+/* ==========================================================================
+   ICONS
+   ========================================================================== */
+var IC = {
+  check:'<svg class="tick ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  circle:'<svg class="tick wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="8"/></svg>',
+  spin:'<span class="spin"></span>',
+  lock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V7a5 5 0 0 1 10 0v4"/><rect x="4.5" y="11" width="15" height="10" rx="2.2"/></svg>',
+  warn:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/></svg>',
+  plus:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  gear:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6v2.2M12 18.2v2.2M3.6 12h2.2M18.2 12h2.2M6.1 6.1l1.5 1.5M16.4 16.4l1.5 1.5M17.9 6.1l-1.5 1.5M7.6 16.4l-1.5 1.5"/></svg>',
+  stop:'<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="5.5" width="13" height="13" rx="2.2"/></svg>',
+  play:'<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.6l12 7.4-12 7.4z"/></svg>',
+  swap:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/></svg>',
+  ext:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M20 4l-9.5 9.5"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>',
+  code:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>',
+  doc:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>',
+  qr:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14h1M14 20h3M20 17v4"/></svg>',
+  search:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.7-4.7"/></svg>',
+  trash:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>',
+  copy:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
+  restore:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v5h5"/></svg>',
+  down:'<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  tri:'<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M8 4l10 8-10 8z"/></svg>',
+  dots:'<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+  updown:'<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l-3 3-3-3M4 18V6M17 9l3-3 3 3M20 6v12"/></svg>',
+  tickSm:'<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
+};
+
+/* ==========================================================================
+   STATE
+   ========================================================================== */
+var S = {
+  scene:"running",
+  activeId:"bell",
+  targetId:"penta",
+  selKind:"service",   // "service" | "project"
+  selProject:"bell",
+  selService:"web",
+  inspector:false,
+  reverseOrder:false,
+  openProjects:{ bell:true },
+  menuFor:null,
+  step:0,
+  wizStep:1
+};
+var timer = null;
+var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+function chip(p, sm){ return '<span class="pchip'+(sm?" sm":"")+'" style="background:'+p.color+'">'+esc(p.initial)+'</span>'; }
+function isSheet(){ return /^(switching|gateblock|failPort|failStop|failBoot|adopt|wizard|edit|unregister)$/.test(S.scene); }
+
+/** サービスの状態。対象外は状態ではなく「起動しない」なので最優先で返す（決定 h）。 */
+function svcState(pid, sid){
+  var p = P(pid), s = null;
+  for(var i=0;i<p.services.length;i++){ if(p.services[i].id===sid) s = p.services[i]; }
+  if(s && !isEnabled(p, s)) return "excluded";
+  if(pid !== S.activeId) return "stopped";
+  var sc = S.scene;
+  if(sc==="degraded") return sid==="inn" ? "warn" : "running";
+  if(sc==="stalled")  return sid==="sb" ? "running" : sid==="web" ? "busy" : "stopped";
+  return "running";
+}
+function svcErrors(pid, sid){
+  return (pid===S.activeId && sid==="web" && S.scene!=="stalled") ? 1 : 0;
+}
+
+/* ==========================================================================
+   SIDEBAR
+   ========================================================================== */
+function serviceRows(p){
+  var list = p.services.slice();
+  if(S.reverseOrder) list.reverse();
+  var out = '<div class="side-cap" data-order="1" role="button" tabindex="0">'
+    + IC.updown + (S.reverseOrder ? "終了順" : "起動順") + '</div>';
+  for(var i=0;i<list.length;i++){
+    var s = list[i];
+    var sel = (S.selKind==="service" && S.selProject===p.id && S.selService===s.id);
+    var st = svcState(p.id, s.id);
+    var er = svcErrors(p.id, s.id);
+    /* 代表ポート + 残数。全部出すと 214pt の行が破綻する（決定 g） */
+    var portCell = (st==="excluded")
+      ? '<span class="pt excl">対象外</span>'
+      : '<span class="pt">:'+s.ports[0].port
+        + (s.ports.length>1 ? '<span class="more"> +'+(s.ports.length-1)+'</span>' : '')
+        + '</span>';
+    out += '<div class="srow svc" role="option" tabindex="0"'+(sel?' aria-selected="true"':'')
+      + ' data-sel="service" data-p="'+p.id+'" data-s="'+s.id+'">'
+      + '<span class="dot '+st+'"></span>'
+      + '<span class="nm">'+esc(s.name)+'</span>'
+      + (er ? '<span class="errb" title="未読のエラー行">'+er+'</span>' : '')
+      + portCell + '</div>';
+  }
+  return out;
+}
+
+function projectRow(p, isActive){
+  var sel = (S.selKind==="project" && S.selProject===p.id);
+  var open = !!S.openProjects[p.id];
+  var tone = isActive
+    ? (S.scene==="degraded" ? "warn" : S.scene==="stalled" ? "busy" : "running")
+    : "stopped";
+  return '<div class="srow'+(open?" open":"")+'" role="option" tabindex="0"'+(sel?' aria-selected="true"':'')
+    + ' data-sel="project" data-p="'+p.id+'">'
+    + '<span class="tri" data-toggle="'+p.id+'">'+IC.tri+'</span>'
+    + chip(p, true)
+    + '<span class="nm">'+esc(p.name)+'</span>'
+    + (isActive ? '<span class="dot '+tone+'"></span>' : '<span class="tw">'+esc(p.last)+'</span>')
+    + '</div>';
+}
+
+function sidebar(){
+  var active = P(S.activeId), out = "";
+
+  out += '<div class="side-sec">稼働中</div>';
+  out += projectRow(active, true);
+  if(S.openProjects[active.id]) out += serviceRows(active);
+
+  out += '<div class="side-sec">プロジェクト</div>';
+  for(var i=0;i<PROJECTS.length;i++){
+    var p = PROJECTS[i];
+    if(p.id===S.activeId) continue;
+    out += projectRow(p, false);
+    if(S.openProjects[p.id]) out += serviceRows(p);
+  }
+
+  return '<div class="side">'
+    + '<div class="side-scroll">'+out+'</div>'
+    + '<div class="side-foot">'
+    +   '<button class="fbtn" data-scene="wizard">'+IC.plus+'プロジェクトを追加…</button>'
+    +   '<span class="spacer"></span>'
+    +   '<button class="fbtn" title="設定" aria-label="設定">'+IC.gear+'</button>'
+    + '</div></div>';
+}
+
+/* ==========================================================================
+   DETAIL
+   ========================================================================== */
+/* ⋯ メニュー（決定 i）。登録解除がローカルファイルを消さないことは確認シートで明記する。 */
+function projMenu(p){
+  return '<div class="pmenu">'
+    + '<button data-scene="edit">編集…</button>'
+    + '<button>Finder で表示</button>'
+    + '<button>複製</button>'
+    + '<div class="msep"></div>'
+    + '<button data-scene="unregister">登録を解除…</button>'
+    + '</div>';
+}
+
+function logLines(sid){
+  var lines = LOGS[sid] || [["--:--:--","","（ログはありません）"]];
+  var out = "", prev = "";
+  for(var i=0;i<lines.length;i++){
+    var l = lines[i], cont = (l[0]===prev);
+    prev = l[0];
+    out += '<div class="ll '+(l[1]?"lvl-"+l[1]:"")+(cont?" cont":"")+'">'
+      + '<span class="ts">'+l[0]+'</span><span class="tx">'+esc(l[2])+'</span></div>';
+  }
+  return out;
+}
+
+function detail(){
+  function portLabel(s){
+    return ':'+s.ports[0].port + (s.ports.length>1 ? ' +'+(s.ports.length-1) : '');
+  }
+  function projHead(p){
+    return '<div class="dhead"><span class="nm">'+esc(p.name)+'</span>'
+      + '<span class="spacer"></span>'
+      + '<button class="sbtn" data-menu="'+p.id+'" aria-label="このプロジェクトの操作">'+IC.dots+'</button>'
+      + '</div>' + (S.menuFor===p.id ? projMenu(p) : "");
+  }
+
+  /* --- 停止中プロジェクトを選択：選択しただけでは何も起きない --- */
+  if(S.selKind==="project" && S.selProject!==S.activeId){
+    var t = P(S.selProject), a = P(S.activeId), sv = "", i;
+    /* 停止中は「今回何を起動するか」を選べる（決定 h） */
+    for(i=0;i<t.services.length;i++){
+      var ts = t.services[i], on = isEnabled(t, ts);
+      sv += '<button class="sv'+(on?"":" off")+'" aria-pressed="'+on+'" data-toggle-svc="'+ts.id+'">'
+        + '<span class="dot '+(on?"stopped":"excluded")+'"></span>'+esc(ts.name)
+        + '<span class="p">'+portLabel(ts)+'</span></button>';
+    }
+    var nOn = enabledOf(t).length;
+    return '<div class="detail">' + projHead(t) + '<div class="dempty">'
+      + chip(t)
+      + '<div><div class="big">'+esc(t.name)+' は停止しています</div>'
+      +   '<div class="sm">最終起動 '+esc(t.last)+' ／ 起動対象 '+nOn+' / '+t.services.length+'</div></div>'
+      + '<div class="svclist">'+sv+'</div>'
+      + '<button class="btn prim lg" data-scene="switching"'+(nOn?"":" disabled")+'>'+IC.swap
+      +   esc(a.name)+' を停止して '+esc(t.name)+' を起動</button>'
+      + '<div class="sm" style="max-width:300px">'
+      +   (nOn ? '選択しただけでは何も起こりません。実行はこのボタンだけです。'
+             : '起動するサービスがありません。上から選んでください。')
+      + '</div></div></div>';
+  }
+
+  /* --- 稼働中プロジェクト本体を選択 --- */
+  if(S.selKind==="project"){
+    var ap = P(S.activeId), sv2 = "", j;
+    for(j=0;j<ap.services.length;j++){
+      var as = ap.services[j], st0 = svcState(ap.id, as.id);
+      sv2 += '<span class="sv"><span class="dot '+st0+'"></span>'+esc(as.name)
+        + '<span class="p">'+(st0==="excluded" ? "対象外" : portLabel(as))+'</span></span>';
+    }
+    return '<div class="detail">' + projHead(ap) + '<div class="dempty">'
+      + chip(ap)
+      + '<div><div class="big">'+esc(ap.name)+'</div>'
+      +   '<div class="sm">サービスを選ぶとログが表示されます</div></div>'
+      + '<div class="svclist">'+sv2+'</div>'
+      + '</div></div>';
+  }
+
+  /* --- サービスを選択：ログ --- */
+  var p = P(S.selProject), s = null;
+  for(var k=0;k<p.services.length;k++){ if(p.services[k].id===S.selService) s = p.services[k]; }
+  if(!s) s = p.services[0];
+
+  var st2 = svcState(p.id, s.id);
+  var stateLabel = st2==="excluded" ? "対象外" : st2==="running" ? "稼働中"
+    : st2==="warn" ? "停止（任意）" : st2==="busy" ? "応答待ち" : "停止中";
+  var isExpo = /expo|native/i.test(s.name);
+  /* サイドバーは代表ポート + N。ここで全部出す（決定 g） */
+  var portsText = s.ports.map(function(x){
+    return x.label ? x.label+" :"+x.port : ":"+x.port;
+  }).join(" · ");
+
+  var banner = "";
+  if(S.scene==="stalled" && s.id==="web"){
+    banner = '<div class="banner"><span class="dot busy"></span>'
+      + '<span class="tx"><b>92 秒応答していません。</b>ポート 3000 は開いていますが、ヘルスチェックがまだ通りません。</span>'
+      + '<button class="btn tiny">待ち続ける</button>'
+      + '<button class="btn tiny danger">起動を中止</button></div>';
+  }
+  if(S.scene==="degraded" && s.id==="inn"){
+    banner = '<div class="banner" style="background:rgba(255,159,10,.12)"><span class="dot warn"></span>'
+      + '<span class="tx"><b>停止しています。</b>任意サービスのため、プロジェクトは稼働中のままです。</span>'
+      + '<button class="btn tiny">再起動</button></div>';
+  }
+
+  return '<div class="detail">'
+    + '<div class="dhead">'
+    +   '<span class="nm">'+esc(s.name)+'</span>'
+    +   '<span class="dm">'+esc(portsText)+'</span>'
+    +   '<span class="rq">'+(s.policy==="block"?"必須":"任意")+'</span>'
+    +   '<span class="spacer"></span>'
+    +   (isExpo ? '<button class="sbtn" data-insp="1"'+(S.inspector?' aria-pressed="true"':'')+'>'
+        + IC.qr+'QR</button>' : '')
+    +   '<span class="st">'+stateLabel+'<span class="dot '+st2+'"></span></span>'
+    + '</div>'
+    + banner
+    + '<div class="logbar">'
+    +   '<span class="lsearch">'+IC.search+'絞り込み</span>'
+    +   '<button class="btn tiny" aria-pressed="true">追従</button>'
+    +   '<button class="btn tiny" title="消去" aria-label="消去">'+IC.trash+'</button>'
+    + '</div>'
+    + '<div class="logout">'+logLines(s.id)+'</div>'
+    + '</div>';
+}
+
+/* ==========================================================================
+   INSPECTOR (Expo)
+   ========================================================================== */
+/* モック用の擬似QR。実装では Expo の出力URLから毎回生成し、キャッシュしない。 */
+function qrSVG(n){
+  n = n || 25;
+  var g = [], y, x, dx, dy;
+  for(y=0;y<n;y++){ g[y]=[]; for(x=0;x<n;x++) g[y][x]=0; }
+  function finder(ox,oy){
+    for(dy=0;dy<7;dy++) for(dx=0;dx<7;dx++){
+      g[oy+dy][ox+dx] = (dx===0||dx===6||dy===0||dy===6||(dx>=2&&dx<=4&&dy>=2&&dy<=4)) ? 1 : 0;
+    }
+  }
+  finder(0,0); finder(n-7,0); finder(0,n-7);
+  for(x=8;x<n-8;x++){ g[6][x] = (x%2===0)?1:0; g[x][6] = (x%2===0)?1:0; }
+  for(dy=0;dy<5;dy++) for(dx=0;dx<5;dx++){
+    g[n-9+dy][n-9+dx] = (dx===0||dx===4||dy===0||dy===4||(dx===2&&dy===2))?1:0;
+  }
+  function reserved(cx,cy){
+    if(cx<9&&cy<9) return true;
+    if(cx>=n-8&&cy<9) return true;
+    if(cx<9&&cy>=n-8) return true;
+    if(cx===6||cy===6) return true;
+    if(cx>=n-9&&cx<=n-5&&cy>=n-9&&cy<=n-5) return true;
+    return false;
+  }
+  var seed = 20260731;
+  for(y=0;y<n;y++) for(x=0;x<n;x++){
+    if(reserved(x,y)) continue;
+    seed = (seed*1103515245 + 12345) & 0x7fffffff;
+    g[y][x] = (seed / 0x7fffffff) > 0.5 ? 1 : 0;
+  }
+  var rects = [];
+  for(y=0;y<n;y++) for(x=0;x<n;x++){
+    if(g[y][x]) rects.push('<rect x="'+x+'" y="'+y+'" width="1" height="1"/>');
+  }
+  return '<svg viewBox="0 0 '+n+' '+n+'" width="148" height="148" fill="#000" '
+    + 'shape-rendering="crispEdges" role="img" aria-label="Expo の QR コード（モック）">'
+    + rects.join("") + '</svg>';
+}
+
+function inspector(){
+  if(!S.inspector) return "";
+  return '<div class="insp">'
+    + '<div class="insp-h">Expo<span class="spacer"></span>'
+    +   '<button class="sbtn" data-insp="0" aria-label="閉じる">✕</button></div>'
+    + '<div class="insp-b">'
+    +   '<div class="qrcard">'+qrSVG(25)+'</div>'
+    +   '<div class="urlrow"><span class="u">exp://192.168.11.5:8081</span>'
+    +     '<button class="sbtn" aria-label="URLをコピー">'+IC.copy+'</button></div>'
+    +   '<div class="insp-line"><span class="lb">接続</span>'
+    +     '<span class="seg"><span aria-pressed="true">LAN</span><span>トンネル</span><span>ローカル</span></span></div>'
+    +   '<div class="insp-acts"><button class="btn">iOS</button><button class="btn">Android</button></div>'
+    + '</div>'
+    + '<div class="insp-warn"><span class="ic">'+IC.warn+'</span>'
+    +   '<span class="tx">VPN に接続しています。<br>'
+    +   '<em>実機から届かない場合はトンネルに切り替えてください。</em></span></div>'
+    + '</div>';
+}
+
+/* ==========================================================================
+   SHEETS
+   ========================================================================== */
+function transitionSheet(blocked){
+  var a = P(S.activeId), b = P(S.targetId);
+  /* 停止するのは実際に起動していたものだけ。起動するのは今回の対象だけ。 */
+  var stopSeq = enabledOf(a).slice().reverse();
+  var startSeq = enabledOf(b);
+  var nStop = stopSeq.length;
+  var step = blocked ? nStop : S.step;
+
+  var stopRows = "";
+  for(var i=0;i<nStop;i++){
+    var cls, ic, st;
+    if(i < step){ cls="done"; ic=IC.check; st="停止"; }
+    else if(i === step){ cls="now"; ic=IC.spin; st="停止中…"; }
+    else { cls="wait"; ic=IC.circle; st=""; }
+    stopRows += '<div class="tr-step '+cls+'"><span class="ic">'+ic+'</span>'
+      + '<span class="nm">'+esc(stopSeq[i].name)+'</span><span class="st">'+st+'</span></div>';
+  }
+
+  /* ゲートは2つの独立した検証（I-3）。failurePolicy は一切見ない。
+     停止側は実測ポート、起動側は設定値。停止側を先に検証する。 */
+  var nRel = observedCount(), nAcq = portCount(b);
+  function gateLine(label, state, done, total){
+    var col = state==="blocked" ? "var(--m-red)"
+            : state==="passed"  ? "var(--m-accent)" : "var(--m-text-3)";
+    var ic  = state==="passed" ? IC.check : state==="blocked" ? IC.lock : IC.spin;
+    return '<div class="gate-line"><span class="ic" style="color:'+col+'">'+ic+'</span>'
+      + '<span class="gt">'+label+'</span>'
+      + '<span class="gs"'+(state==="blocked"?' style="color:var(--m-red)"':'')+'>'
+      + done+' / '+total+'</span></div>';
+  }
+  var gate;
+  if(blocked){
+    gate = '<div class="gate blocked">'
+      + gateLine(esc(a.name)+' のポートが解放された', "passed", nRel, nRel)
+      + gateLine(esc(b.name)+' のポートを確認', "blocked", Math.max(0, nAcq-1), nAcq)
+      + '</div>';
+  } else if(step >= nStop){
+    gate = '<div class="gate armed">'
+      + gateLine(esc(a.name)+' のポートが解放された', "passed", nRel, nRel)
+      + gateLine(esc(b.name)+' のポートを確認', "passed", nAcq, nAcq)
+      + '</div>';
+  } else {
+    gate = '<div class="gate">'
+      + gateLine(esc(a.name)+' のポートが解放された', "pending", Math.min(step*3, nRel), nRel)
+      + gateLine(esc(b.name)+' のポートを確認', "pending", 0, nAcq)
+      + '</div>';
+  }
+
+  var startRows = "", startStep = (!blocked && step >= nStop) ? (step - nStop) : -1;
+  for(var j=0;j<startSeq.length;j++){
+    var c2, i2, s2;
+    if(startStep < 0){ c2="wait"; i2=IC.circle; s2=""; }
+    else if(j < startStep){ c2="done"; i2=IC.check; s2="稼働"; }
+    else if(j === startStep){ c2="now"; i2=IC.spin; s2="起動中…"; }
+    else { c2="wait"; i2=IC.circle; s2=""; }
+    startRows += '<div class="tr-step '+c2+'"><span class="ic">'+i2+'</span>'
+      + '<span class="nm">'+esc(startSeq[j].name)+'</span><span class="st">'+s2+'</span></div>';
+  }
+
+  var foot;
+  if(blocked){
+    foot = '<div class="tr-foot"><button class="btn prim" data-scene="failPort">占有プロセスを見る</button>'
+      + '<span class="hint">'+esc(b.name)+' は起動していません。<br>'+esc(a.name)+' は完全に停止しました。</span></div>';
+  } else if(step >= nStop){
+    foot = '<div class="tr-foot"><button class="btn" disabled>切替を中止</button>'
+      + '<span class="hint">起動が始まったため中止できません。<br>停止するには起動完了を待ってください。</span></div>';
+  } else {
+    foot = '<div class="tr-foot"><button class="btn" data-scene="running">切替を中止</button>'
+      + '<span class="hint">'+esc(a.name)+' の停止は最後まで実行し、<br>'+esc(b.name)+' は起動しません。</span></div>';
+  }
+
+  return '<div class="tr">'
+    + '<div class="tr-head">'+chip(a,true)+'<span class="nm">'+esc(a.name)+'</span>'
+    +   '<span class="ar">→</span>'+chip(b,true)+'<span class="nm">'+esc(b.name)+'</span></div>'
+    + '<div class="tr-sub">'+(blocked?"切り替えを中断しました":"切り替えています…")+'</div>'
+    + '<div class="tr-phase">終了順　'+esc(a.name)+'</div>' + stopRows
+    + gate
+    + '<div class="tr-phase">起動順　'+esc(b.name)+'</div>' + startRows
+    + foot + '</div>';
+}
+
+function errPort(){
+  return '<div class="err">'
+    + '<div class="err-top"><span class="ic">'+IC.warn+'</span><div>'
+    +   '<div class="err-h">Penta を起動できませんでした</div>'
+    +   '<div class="err-p">Web の <b>:3000</b> が別のプロセスに使われています。</div></div></div>'
+    + '<div class="err-block"><div class="err-block-t">占有しているプロセス</div>'
+    +   '<div class="err-row"><span class="p1">:3000</span><span class="p2">node · PID 48213</span></div>'
+    +   '<div class="err-row"><span class="p1" style="visibility:hidden">:3000</span>'
+    +     '<span class="p2">~/GitHub/bellcierge-phase2/web</span></div></div>'
+    + '<div class="err-acts"><button class="btn">このプロセスを終了して再試行</button>'
+    +   '<button class="btn" data-scene="running">'+IC.doc+'ログ</button>'
+    +   '<span class="spacer"></span><button class="btn prim" data-scene="running">閉じる</button></div>'
+    + '<div class="truth"><span class="lb">現在</span>'
+    +   '<span class="tx">すべて停止しています。<br>'
+    +   '<em>Bell は停止しました。Penta は起動していません。</em></span></div></div>';
+}
+
+function errStop(){
+  return '<div class="err">'
+    + '<div class="err-top"><span class="ic">'+IC.warn+'</span><div>'
+    +   '<div class="err-h">Bell を完全に停止できませんでした</div>'
+    +   '<div class="err-p">Supabase のコンテナが 30 秒以内に終了しませんでした。</div></div></div>'
+    + '<div class="err-block"><div class="err-block-t">残っているプロセス</div>'
+    +   '<div class="err-row"><span class="p1">:54321</span><span class="p2">supabase_db_bell · PID 4021</span></div>'
+    +   '<div class="err-row"><span class="p1">:54322</span><span class="p2">supabase_kong_bell · PID 4033</span></div></div>'
+    + '<div class="err-acts"><button class="btn prim" data-scene="running">切替を中止</button>'
+    +   '<button class="btn danger">強制終了して続行</button>'
+    +   '<span class="spacer"></span><button class="btn" data-scene="running">'+IC.doc+'ログ</button></div>'
+    + '<div class="truth"><span class="lb">現在</span>'
+    +   '<span class="tx">Bell は一部起動したままです。<br>'
+    +   '<em>Penta は起動していません。強制終了はデータ損失の可能性があります。</em></span></div></div>';
+}
+
+function errBoot(){
+  return '<div class="err">'
+    + '<div class="err-top"><span class="ic">'+IC.warn+'</span><div>'
+    +   '<div class="err-h">Penta の Web が起動直後に終了しました</div>'
+    +   '<div class="err-p">必須サービスのため、残りのサービスは起動していません。</div></div></div>'
+    + '<div class="log">'
+    +   '&gt; next dev --port 3000\n'
+    +   '  ▲ Next.js 15.4.2\n'
+    +   '<span class="e">Error: Environment variable DATABASE_URL is not set</span>\n'
+    +   '<span class="e">    at loadEnv (src/env.ts:14:11)</span>\n'
+    +   '    at Object.&lt;anonymous&gt; (next.config.ts:3:1)\n'
+    +   'exit code 1</div>'
+    + '<div class="err-acts"><button class="btn prim" data-scene="running">'+IC.doc+'ログを開く</button>'
+    +   '<button class="btn">再試行</button>'
+    +   '<span class="spacer"></span><button class="btn" data-scene="running">閉じる</button></div>'
+    + '<div class="truth"><span class="lb">現在</span>'
+    +   '<span class="tx">Penta の Docker だけが起動しています。<br>'
+    +   '<em>Bell は停止しました。Web と Native は起動していません。</em></span></div></div>';
+}
+
+function adoptSheet(){
+  return '<div class="err">'
+    + '<div class="err-top"><span class="ic" style="color:var(--m-accent)">'+IC.restore+'</span><div>'
+    +   '<div class="err-h">起動中のプロセスが見つかりました</div>'
+    +   '<div class="err-p">前回 Dev Switcher を終了したときの Bell がまだ動いています。</div></div></div>'
+    + '<div class="err-block"><div class="err-block-t">検出したプロセス</div>'
+    +   '<div class="err-row"><span class="p1">:54321</span><span class="p2">supabase_db_bell · PID 4021</span></div>'
+    +   '<div class="err-row"><span class="p1">:3000</span><span class="p2">node · PID 48213</span></div>'
+    +   '<div class="err-row"><span class="p1">:8081</span><span class="p2">node (expo) · PID 48260</span></div></div>'
+    + '<div class="err-acts"><button class="btn prim" data-scene="running">Bell として引き継ぐ</button>'
+    +   '<button class="btn">すべて停止</button>'
+    +   '<span class="spacer"></span><button class="btn" data-scene="running">無視</button></div>'
+    + '<div class="truth"><span class="lb">現在</span>'
+    +   '<span class="tx">Dev Switcher はまだ何も管理していません。<br>'
+    +   '<em>「無視」を選んでもポートは埋まったままです。次の切替はゲートで止まります。</em></span></div></div>';
+}
+
+/* ---- wizard ---- */
+var WIZ = [
+  { t:"プロジェクト",   h:"プロジェクトを登録する",
+    s:"名前とディレクトリを決めます。色はサイドバーでの識別に使われます。" },
+  { t:"サービスの検出", h:"見つかったサービス",
+    s:"ディレクトリを走査して候補を出しました。不要なものはチェックを外してください。" },
+  { t:"必須と任意",     h:"落ちたときどう扱うか",
+    s:"必須が起動しなければプロジェクトは失敗。任意が落ちても稼働中のまま「一部停止」として表示します。" },
+  { t:"起動順",         h:"起動順と終了順",
+    s:"上から順に起動します。終了順は自動で逆順になります。" },
+  { t:"確認",           h:"ドライラン",
+    s:"実際には起動せず、起動できる状態かどうかだけを検証します。" }
+];
+
+function wizBody(){
+  var n = S.wizStep, i;
+
+  if(n===1){
+    var cols = ["#0A84FF","#BF5AF2","#FF9F0A","#30D158","#64D2FF","#FF375F","#FFD60A","#8E8E93"], ch = "";
+    for(i=0;i<cols.length;i++){
+      ch += '<span class="cw" style="background:'+cols[i]+'"'+(i===1?' aria-pressed="true"':'')+'></span>';
+    }
+    return '<div class="field"><span class="lb">名前</span><div class="inp">Penta</div></div>'
+      + '<div class="field"><span class="lb">場所</span>'
+      +   '<div class="inp mono">~/Documents/GitHub/web-penta</div>'
+      +   '<button class="btn" style="flex:none">選択…</button></div>'
+      + '<div class="field"><span class="lb">色</span><div class="colors">'+ch+'</div></div>'
+      + '<div class="note"><span class="dot running"></span>'
+      +   '<span>Git リポジトリを検出しました。ブランチ名をサイドバーに表示できます。</span></div>';
+  }
+
+  if(n===2){
+    var det = [
+      ["Docker","docker-compose.yml",":5432",true],
+      ["Web","package.json → dev",":3000",true],
+      ["Native","app.json（Expo）",":8081",true],
+      ["Storybook","package.json → storybook",":6006",false]
+    ], r = "";
+    for(i=0;i<det.length;i++){
+      r += '<div class="row"><span class="cbx'+(det[i][3]?"":" off")+'">'+(det[i][3]?IC.tickSm:"")+'</span>'
+        + '<span class="nm">'+det[i][0]+'</span><span class="src">'+det[i][1]+'</span>'
+        + '<span class="pt">'+det[i][2]+'</span></div>';
+    }
+    return '<div class="rows">'+r+'</div>'
+      + '<div class="note"><span class="dot stopped"></span>'
+      + '<span>Web の <b>:3000</b> は First Coach と共通です。同時に起動しないため競合しません。</span></div>';
+  }
+
+  if(n===3){
+    var req = [
+      ["Docker",":5432",true,"起動しなければプロジェクトを失敗にする"],
+      ["Web",":3000",true,"起動しなければプロジェクトを失敗にする"],
+      ["Native",":8081",false,"落ちても稼働中のまま「一部停止」と表示"]
+    ], rr = "";
+    for(i=0;i<req.length;i++){
+      rr += '<div class="row"><span class="nm" style="width:50px">'+req[i][0]+'</span>'
+        + '<span class="pt" style="width:42px">'+req[i][1]+'</span>'
+        + '<span class="src">'+req[i][3]+'</span>'
+        + '<span class="seg"><span'+(req[i][2]?' aria-pressed="true"':'')+'>必須</span>'
+        + '<span'+(req[i][2]?'':' aria-pressed="true"')+'>任意</span></span></div>';
+    }
+    return '<div class="rows">'+rr+'</div>';
+  }
+
+  if(n===4){
+    var up = ["Docker","Web","Native"], dn = ["Native","Web","Docker"], ua = "", da = "";
+    for(i=0;i<up.length;i++){
+      ua += '<div class="ord-row"><span class="n">'+(i+1)+'</span><span class="nm">'+up[i]+'</span><span class="gr">⠿</span></div>';
+      da += '<div class="ord-row locked"><span class="n">'+(i+1)+'</span><span class="nm">'+dn[i]+'</span></div>';
+    }
+    return '<div class="orders">'
+      + '<div class="order"><div class="order-t">起動順（ドラッグで変更）</div><div class="rows">'+ua+'</div></div>'
+      + '<div class="order"><div class="order-t">終了順（自動・逆順）</div><div class="rows">'+da+'</div></div></div>'
+      + '<div class="note"><span class="dot stopped"></span>'
+      + '<span>DB を最後に落とす順序が自動で作られます。</span></div>';
+  }
+
+  return '<div class="rows" style="padding:4px 0">'
+    + '<div class="pf-row"><span class="ic">'+IC.check+'</span><span class="tx">ディレクトリが存在する <em>~/Documents/GitHub/web-penta</em></span></div>'
+    + '<div class="pf-row"><span class="ic">'+IC.check+'</span><span class="tx">必須ポート 5432 / 3000 が空いている</span></div>'
+    + '<div class="pf-row"><span class="ic">'+IC.check+'</span><span class="tx">docker · pnpm · expo が PATH にある</span></div>'
+    + '<div class="pf-row"><span class="ic">'+IC.spin+'</span><span class="tx">.env の必須変数を確認しています…</span></div>'
+    + '</div>'
+    + '<div class="note"><span class="dot stopped"></span>'
+    + '<span>ドライランでは実際にサービスを起動しません。</span></div>';
+}
+
+function wizardSheet(){
+  var w = WIZ[S.wizStep-1], last = (S.wizStep===WIZ.length), rail = '<div class="rail-t">プロジェクトを追加</div>';
+  for(var i=0;i<WIZ.length;i++){
+    var n = i+1, cur = (n===S.wizStep), done = (n < S.wizStep);
+    rail += '<button class="step'+(done?" ok":"")+'" data-wiz="'+n+'"'+(cur?' aria-current="true"':'')+'>'
+      + '<span class="n">'+(done?IC.tickSm:n)+'</span>'+esc(WIZ[i].t)+'</button>';
+  }
+  return '<div class="wz"><div class="rail">'+rail+'</div>'
+    + '<div class="wz-main">'
+    +   '<div class="wz-h">'+esc(w.h)+'</div>'
+    +   '<div class="wz-s">'+esc(w.s)+'</div>'
+    +   '<div class="wz-c">'+wizBody()+'</div>'
+    +   '<div class="wz-f">'
+    +     '<button class="btn lg" data-scene="running">キャンセル</button>'
+    +     '<span class="spacer"></span>'
+    +     (last ? '<span class="hint">検証中…</span>' : '')
+    +     '<button class="btn lg" data-wizmove="-1"'+(S.wizStep===1?' disabled':'')+'>戻る</button>'
+    +     '<button class="btn lg prim" data-wizmove="1">'+(last?"追加":"続ける")+'</button>'
+    +   '</div></div></div>';
+}
+
+/* 編集シート（決定 i）。ウィザードと違い順送りではなくタブ。
+   稼働中のサービスはポートとコマンドだけ編集不可（I-9）。 */
+function editSheet(){
+  var p = P(S.selKind==="project" ? S.selProject : S.activeId), rows = "";
+  for(var i=0;i<p.services.length;i++){
+    var s = p.services[i], live = (p.id===S.activeId && isEnabled(p,s));
+    rows += '<div class="row">'
+      + '<span class="cbx'+(isEnabled(p,s)?"":" off")+'">'+(isEnabled(p,s)?IC.tickSm:"")+'</span>'
+      + '<span class="nm" style="width:64px">'+esc(s.name)+'</span>'
+      + '<span class="inp mono" style="flex:1"'+(live?' aria-disabled="true"':'')+'>'
+      +   s.ports.map(function(x){return ":"+x.port;}).join(" ")+'</span>'
+      + '<span class="seg"><span'+(s.policy==="block"?' aria-pressed="true"':'')+'>必須</span>'
+      + '<span'+(s.policy==="block"?'':' aria-pressed="true"')+'>任意</span></span>'
+      + '</div>';
+  }
+  return '<div class="wz"><div class="rail">'
+    + '<div class="rail-t">'+esc(p.name)+'</div>'
+    + '<button class="step">基本</button>'
+    + '<button class="step" aria-current="true"><span class="n">'+IC.tickSm+'</span>サービス</button>'
+    + '<button class="step">詳細</button>'
+    + '</div><div class="wz-main">'
+    +   '<div class="wz-h">サービス</div>'
+    +   '<div class="wz-s">起動対象・ポート・失敗時の扱いを変更します。並べ替えると起動順が変わります。</div>'
+    +   '<div class="wz-c"><div class="rows">'+rows+'</div>'
+    +     '<div class="note"><span class="dot running"></span>'
+    +     '<span>稼働中のサービスは<b>ポートとコマンドだけ</b>編集できません。'
+    +     '設定値と実際に握っているポートがずれるとゲートが壊れるためです。</span></div></div>'
+    +   '<div class="wz-f"><button class="btn lg" data-scene="running">キャンセル</button>'
+    +     '<span class="spacer"></span>'
+    +     '<button class="btn lg">サービスを追加…</button>'
+    +     '<button class="btn lg prim" data-scene="running">保存</button></div>'
+    + '</div></div>';
+}
+
+/* 登録解除の確認。ローカルファイルを消さないことを必ず書く（決定 i）。 */
+function unregisterSheet(){
+  var p = P(S.selKind==="project" ? S.selProject : S.activeId);
+  return '<div class="err">'
+    + '<div class="err-top"><span class="ic" style="color:var(--m-orange)">'+IC.warn+'</span><div>'
+    +   '<div class="err-h">'+esc(p.name)+' の登録を解除しますか？</div>'
+    +   '<div class="err-p">Dev Switcher の一覧から消えます。起動設定とサービス構成も失われます。</div>'
+    + '</div></div>'
+    + '<div class="err-block"><div class="err-block-t">削除されないもの</div>'
+    +   '<div class="err-row"><span class="p2">'+esc(p.dir)+'</span></div>'
+    +   '<div class="err-row"><span class="p2">ソースコード・node_modules・DBのデータ</span></div></div>'
+    + '<div class="err-acts">'
+    +   '<span class="spacer"></span>'
+    +   '<button class="btn" data-scene="running">キャンセル</button>'
+    +   '<button class="btn danger" data-scene="running">登録を解除</button></div>'
+    + '<div class="truth"><span class="lb">補足</span>'
+    +   '<span class="tx">ローカルのファイルは一切削除しません。<br>'
+    +   '<em>再登録すれば同じディレクトリをまた使えます。</em></span></div></div>';
+}
+
+function sheet(){
+  var sc = S.scene, inner, wide = "";
+  if(sc==="edit"){          inner = editSheet(); wide = " sheet-w"; }
+  else if(sc==="unregister") inner = unregisterSheet();
+  else if(sc==="switching")      inner = transitionSheet(false);
+  else if(sc==="gateblock") inner = transitionSheet(true);
+  else if(sc==="failPort")  inner = errPort();
+  else if(sc==="failStop")  inner = errStop();
+  else if(sc==="failBoot")  inner = errBoot();
+  else if(sc==="adopt")     inner = adoptSheet();
+  else if(sc==="wizard"){   inner = wizardSheet(); wide = " sheet-w"; }
+  else return "";
+  return '<div class="scrim"><div class="sheet'+wide+'">'+inner+'</div></div>';
+}
+
+/* ==========================================================================
+   WINDOW
+   ========================================================================== */
+function toolbar(){
+  var p = P(S.activeId), sc = S.scene;
+  var tone = sc==="degraded" ? "warn" : sc==="stalled" ? "busy" : "running";
+  var label = sc==="degraded" ? "稼働中 · 一部停止" : sc==="stalled" ? "起動中 · 92秒" : "稼働中 · 12分";
+  var busy = (sc==="stalled");
+  return '<div class="tbar"><span class="tl"><i></i><i></i><i></i></span>'
+    + '<span class="tb-proj">'+chip(p)+'<span class="tb-name">'+esc(p.name)+'</span>'
+    +   '<span class="tb-state">'+esc(label)+'<span class="dot '+tone+'"></span></span></span>'
+    + '<span class="spacer"></span>'
+    + '<button class="btn split"'+(busy?" disabled":"")+'>'+IC.ext+'開く<span class="div"></span>'
+    +   '<span class="car">'+IC.down+'</span></button>'
+    + '<button class="btn"'+(busy?" disabled":"")+'>'+IC.code+'Cursor</button>'
+    + '<button class="btn danger">'+IC.stop+(busy?"中止":"停止")+'</button>'
+    + '</div>';
+}
+
+function renderWin(){
+  document.getElementById("winMount").innerHTML =
+    '<div class="win2">' + toolbar()
+    + '<div class="w2body">' + sidebar() + detail() + inspector() + '</div>'
+    + sheet() + '</div>';
+
+  var TONE = {
+    running:["#28CD41",1], degraded:["#FF9F0A",1], stalled:["#0A84FF",1],
+    switching:["#0A84FF",1], gateblock:["#FF3B30",1], failPort:["#FF3B30",1],
+    failStop:["#FF3B30",1], failBoot:["#FF3B30",1], adopt:["#8E8E93",0], wizard:["#28CD41",1],
+    edit:["#28CD41",1], unregister:["#28CD41",1]
+  };
+  var t = TONE[S.scene] || TONE.running;
+  var dot = document.getElementById("mbDot");
+  dot.style.background = t[0];
+  dot.style.opacity = t[1];
+
+  /* 操作でキャプションも追従させる（選択を変えたのに説明が古いままにしない） */
+  var cap;
+  if(isSheet())                                        cap = CAPTIONS[S.scene];
+  else if(S.selKind==="project" && S.selProject!==S.activeId) cap = CAPTIONS.target;
+  else if(S.inspector)                                 cap = CAPTIONS.expo;
+  else                                                 cap = CAPTIONS[S.scene];
+  document.getElementById("figcap").textContent = cap || "";
+}
+
+/* ==========================================================================
+   MENU BAR POPOVER (v2)
+   ========================================================================== */
+function renderPop(){
+  var p = P("bell"), dots = "";
+  for(var i=0;i<p.services.length;i++){
+    dots += '<span class="sv"><span class="dot running"></span>'+esc(p.services[i].name)+'</span>';
+  }
+  var list = "";
+  for(var j=0;j<PROJECTS.length;j++){
+    if(PROJECTS[j].id==="bell") continue;
+    list += '<div class="pop-item">'+chip(PROJECTS[j], true)
+      + '<span class="nm">'+esc(PROJECTS[j].name)+'</span>'
+      + '<span class="tw">'+esc(PROJECTS[j].last)+'</span></div>';
+  }
+  document.getElementById("popMount").innerHTML =
+    '<div class="popwrap"><span class="pop-arrow"></span><div class="pop">'
+    + '<div class="pop-active">'
+    +   '<div class="pop-top">'+chip(p)+'<span class="pop-name">'+esc(p.name)+'</span>'
+    +     '<span class="pop-state">稼働中 12分<span class="dot running"></span></span></div>'
+    +   '<div class="pop-dots">'+dots+'</div>'
+    +   '<div class="pop-acts"><button class="btn">'+IC.ext+'開く</button>'
+    +     '<button class="btn">'+IC.code+'Cursor</button>'
+    +     '<span class="spacer"></span>'
+    +     '<button class="btn danger">'+IC.stop+'停止</button></div>'
+    + '</div>'
+    + '<div class="hair"></div><div class="pop-sec">切り替え</div>'
+    + '<div class="pop-list">'+list+'</div>'
+    + '<div class="hair"></div>'
+    + '<div class="pop-foot"><button class="fbtn">'+IC.swap+'ウィンドウを開く</button>'
+    +   '<span class="spacer"></span><button class="fbtn" aria-label="設定">'+IC.gear+'</button></div>'
+    + '</div></div>';
+}
+
+/* ==========================================================================
+   SCENES
+   ========================================================================== */
+function setScene(name){
+  S.scene = name;
+  S.step = 0;
+  S.menuFor = null;
+  if(timer){ clearInterval(timer); timer = null; }
+
+  /* シーンごとに自然な選択状態にする */
+  if(name==="degraded"){ S.selKind="service"; S.selProject="bell"; S.selService="inn"; S.inspector=false; }
+  else if(name==="stalled"){ S.selKind="service"; S.selProject="bell"; S.selService="web"; S.inspector=false; }
+  else if(name==="running"){ S.selKind="service"; S.selProject="bell"; S.selService="web"; }
+
+  var btns = document.querySelectorAll(".ctrl[data-scene]");
+  for(var i=0;i<btns.length;i++){
+    btns[i].setAttribute("aria-pressed", btns[i].getAttribute("data-scene")===name ? "true" : "false");
+  }
+
+  if(name==="switching"){
+    var total = enabledOf(P(S.activeId)).length + enabledOf(P(S.targetId)).length;
+    if(reduce){ S.step = enabledOf(P(S.activeId)).length; }
+    else {
+      timer = setInterval(function(){
+        S.step = (S.step > total) ? 0 : S.step + 1;
+        renderWin();
+      }, 900);
+    }
+  }
+  renderWin();
+}
+
+/* ==========================================================================
+   EVENTS
+   ========================================================================== */
+document.addEventListener("click", function(e){
+  var t = e.target.closest && e.target.closest(
+    "[data-scene],[data-sel],[data-toggle],[data-order],[data-insp],[data-wiz],[data-wizmove],[data-menu],[data-toggle-svc]");
+  if(!t){ if(S.menuFor){ S.menuFor = null; renderWin(); } return; }
+
+  if(t.hasAttribute("data-menu")){
+    var mid = t.getAttribute("data-menu");
+    S.menuFor = (S.menuFor===mid) ? null : mid;
+    renderWin(); return;
+  }
+  if(t.hasAttribute("data-toggle-svc")){
+    /* 今回の起動対象を切り替える。設定なので永続化してよい（決定 h） */
+    var tp = P(S.selProject), tid = t.getAttribute("data-toggle-svc"), cur = null;
+    for(var q=0;q<tp.services.length;q++){ if(tp.services[q].id===tid) cur = tp.services[q]; }
+    if(cur){
+      if(!tp.enabledNow) tp.enabledNow = {};
+      tp.enabledNow[tid] = !isEnabled(tp, cur);
+    }
+    renderWin(); return;
+  }
+
+  if(t.hasAttribute("data-toggle")){
+    var id = t.getAttribute("data-toggle");
+    S.openProjects[id] = !S.openProjects[id];
+    renderWin(); return;
+  }
+  if(t.hasAttribute("data-scene")){ setScene(t.getAttribute("data-scene")); return; }
+  if(t.hasAttribute("data-order")){ S.reverseOrder = !S.reverseOrder; renderWin(); return; }
+  if(t.hasAttribute("data-insp")){ S.inspector = t.getAttribute("data-insp")==="1"; renderWin(); return; }
+  if(t.hasAttribute("data-wiz")){ S.wizStep = parseInt(t.getAttribute("data-wiz"),10); renderWin(); return; }
+  if(t.hasAttribute("data-wizmove")){
+    S.wizStep = Math.min(WIZ.length, Math.max(1, S.wizStep + parseInt(t.getAttribute("data-wizmove"),10)));
+    renderWin(); return;
+  }
+  if(t.hasAttribute("data-sel")){
+    S.selKind = t.getAttribute("data-sel");
+    S.selProject = t.getAttribute("data-p");
+    if(S.selKind==="service"){
+      S.selService = t.getAttribute("data-s");
+      if(!/expo|native/i.test(S.selService==="exp"?"Expo":S.selService==="nat"?"Native":"")) S.inspector = false;
+    } else {
+      S.inspector = false;
+    }
+    renderWin();
+  }
+});
+
+document.addEventListener("keydown", function(e){
+  if(e.key!=="Enter" && e.key!==" ") return;
+  var t = e.target.closest && e.target.closest("[data-sel],[data-order]");
+  if(!t) return;
+  e.preventDefault();
+  t.click();
+});
+
+setScene("running");
+renderPop();
+})();
+</script>
+</body>
+</html>
