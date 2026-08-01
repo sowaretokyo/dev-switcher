@@ -9,6 +9,13 @@ public enum SpawnOutput: Sendable {
     case files(standardOutput: URL, standardError: URL)
 }
 
+public enum SpawnIsolation: Sendable {
+    /// サービスを親と別のプロセスグループにし、孫を含めて停止できるようにする。
+    case processGroup
+    /// 固定の補助コマンドを制御TTYから切り離し、孫を含めて停止できるようにする。
+    case session
+}
+
 public struct SpawnedProcess: Sendable {
     public let pid: pid_t
     /// 子は独立したプロセスグループのリーダーとして起動するため pgid == pid。
@@ -44,7 +51,8 @@ public enum ProcessRunner {
     public static func spawn(
         _ command: ResolvedCommand,
         environment: [String: String],
-        output: SpawnOutput
+        output: SpawnOutput,
+        isolation: SpawnIsolation = .processGroup
     ) throws -> SpawnedProcess {
         var stdoutPipe: [Int32] = [-1, -1]
         var stderrPipe: [Int32] = [-1, -1]
@@ -115,13 +123,20 @@ public enum ProcessRunner {
         sigfillset(&allSignals)
         posix_spawnattr_setsigdefault(&attributes, &allSignals)
 
-        let flags = POSIX_SPAWN_SETPGROUP
-            | POSIX_SPAWN_SETSIGDEF
+        var flags = POSIX_SPAWN_SETSIGDEF
             | POSIX_SPAWN_SETSIGMASK
             | POSIX_SPAWN_CLOEXEC_DEFAULT
+        switch isolation {
+        case .processGroup:
+            flags |= POSIX_SPAWN_SETPGROUP
+            // 0 を指定すると子自身が新しいプロセスグループのリーダーになる。
+            posix_spawnattr_setpgroup(&attributes, 0)
+        case .session:
+            // 対話シェルが親の制御TTYをバックグラウンドから操作して
+            // SIGTTOU で停止しないよう、新しいセッションとして起動する。
+            flags |= POSIX_SPAWN_SETSID
+        }
         posix_spawnattr_setflags(&attributes, Int16(flags))
-        // 0 を指定すると子自身が新しいプロセスグループのリーダーになる。
-        posix_spawnattr_setpgroup(&attributes, 0)
 
         let executablePath = command.executableURL.path
         let argv = [executablePath] + command.arguments

@@ -39,7 +39,12 @@ enum CommandOutput {
             arguments: arguments,
             workingDirectory: workingDirectory
         )
-        let spawned = try ProcessRunner.spawn(command, environment: environment, output: .pipes)
+        let spawned = try ProcessRunner.spawn(
+            command,
+            environment: environment,
+            output: .pipes,
+            isolation: .session
+        )
         let child = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
         guard let stdoutFD = spawned.stdoutFD, let stderrFD = spawned.stderrFD else {
             kill(-spawned.processGroupID, SIGKILL)

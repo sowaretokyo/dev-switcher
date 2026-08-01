@@ -33,6 +33,7 @@ public final class ChildProcess: @unchecked Sendable {
     private var isReleased = false
     private var waiters: [UUID: CheckedContinuation<ExitStatus?, Never>] = [:]
     private var source: DispatchSourceProcess?
+    private var pollSource: DispatchSourceTimer?
 
     public init(pid: pid_t, processGroupID: pid_t) {
         self.pid = pid
@@ -48,7 +49,23 @@ public final class ChildProcess: @unchecked Sendable {
             self?.observeExit()
         }
         self.source = source
+
+        // 非常に短命な子は、初回確認の直後かつプロセス終了通知の監視が
+        // 確立する前に終了することがある。通知だけに依存せず、同じ直列
+        // キューで終了状態を再確認して取りこぼしを防ぐ。
+        let pollSource = DispatchSource.makeTimerSource(queue: queue)
+        pollSource.schedule(
+            deadline: .now(),
+            repeating: .milliseconds(250),
+            leeway: .milliseconds(50)
+        )
+        pollSource.setEventHandler { [weak self] in
+            self?.observeExit()
+        }
+        self.pollSource = pollSource
+
         source.resume()
+        pollSource.resume()
 
         // ソース登録前に終了していた場合の取りこぼしを防ぐ。
         queue.async { [weak self] in
@@ -58,6 +75,7 @@ public final class ChildProcess: @unchecked Sendable {
 
     deinit {
         source?.cancel()
+        pollSource?.cancel()
         // 誰も停止操作をしなくなるので、ゾンビを残さないようここで回収する。
         if !isReleased, status != nil {
             var rawStatus: Int32 = 0
@@ -156,6 +174,8 @@ public final class ChildProcess: @unchecked Sendable {
         status = newStatus
         source?.cancel()
         source = nil
+        pollSource?.cancel()
+        pollSource = nil
 
         let pending = waiters
         waiters.removeAll()

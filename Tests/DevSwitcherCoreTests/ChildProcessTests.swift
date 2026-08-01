@@ -59,4 +59,55 @@ struct ChildProcessTests {
         // 二度目以降も破綻しない。
         #expect(child.release())
     }
+
+    @Test("短命な子プロセスの終了を繰り返し取りこぼさない")
+    func observesRapidExitReliably() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        for index in 0..<32 {
+            let spawned = try ProcessRunner.spawn(
+                ResolvedCommand(
+                    executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                    arguments: [],
+                    workingDirectory: directory
+                ),
+                environment: ["PATH": "/usr/bin:/bin"],
+                output: .files(
+                    standardOutput: directory.appendingPathComponent("rapid-\(index)-out.log"),
+                    standardError: directory.appendingPathComponent("rapid-\(index)-err.log")
+                )
+            )
+            let child = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
+
+            let status = await child.waitForExit(timeout: .seconds(2))
+            #expect(status == .exited(code: 0), "\(index + 1)回目の終了状態を取得できなかった")
+            #expect(child.release(), "\(index + 1)回目の子プロセスを回収できなかった")
+        }
+    }
+
+    @Test("補助コマンドを制御TTYから切り離した新規セッションで起動する")
+    func startsHelperInNewSession() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let spawned = try ProcessRunner.spawn(
+            ResolvedCommand(
+                executableURL: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                workingDirectory: directory
+            ),
+            environment: ["PATH": "/usr/bin:/bin"],
+            output: .files(
+                standardOutput: directory.appendingPathComponent("session-out.log"),
+                standardError: directory.appendingPathComponent("session-err.log")
+            ),
+            isolation: .session
+        )
+        let child = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
+
+        #expect(getsid(spawned.pid) == spawned.pid)
+        kill(-spawned.processGroupID, SIGTERM)
+        #expect(await child.waitForExit(timeout: .seconds(2)) == .signaled(signal: SIGTERM))
+        #expect(child.release())
+    }
 }
