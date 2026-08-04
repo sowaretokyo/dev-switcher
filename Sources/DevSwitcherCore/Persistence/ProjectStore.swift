@@ -2,7 +2,10 @@ import Foundation
 
 /// 古いPIDやポートを復元しないよう、保存形式にはプロジェクト定義だけを含める。
 public struct ProjectsDocument: Codable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// version 2 で終了順（`stopOrder`）、今回の起動対象（`enabledNow`）、終了コマンド（`stop`）を追加した。
+    public static let currentSchemaVersion = 2
+    /// 明示的な変換を書いてある過去バージョン。ここに無いバージョンは読まない。
+    public static let migratableSchemaVersions = [1]
 
     public var schemaVersion: Int
     public var projects: [ProjectDefinition]
@@ -81,34 +84,59 @@ public struct ProjectStore: Sendable {
             )
         }
 
-        let document: ProjectsDocument
-        do {
-            document = try JSONDecoder().decode(ProjectsDocument.self, from: data)
-        } catch {
-            throw ProjectStoreError.decodingFailed(
-                path: fileURL.path,
-                reason: String(describing: error)
-            )
-        }
-
-        guard document.schemaVersion == ProjectsDocument.currentSchemaVersion else {
-            throw ProjectStoreError.unsupportedSchemaVersion(
-                found: document.schemaVersion,
-                supported: ProjectsDocument.currentSchemaVersion
-            )
-        }
+        let projects = try ProjectStore.decode(data, path: fileURL.path)
 
         // 移動したリポジトリの設定も読めるよう、ここではファイルシステムを検証しない。
         // IDで除くと重複相手まで消えるため、自身だけを位置で除外する。
-        for (index, project) in document.projects.enumerated() {
-            let others = ProjectStore.projects(document.projects, excluding: index)
+        for (index, project) in projects.enumerated() {
+            let others = ProjectStore.projects(projects, excluding: index)
             let errors = ProjectValidator.structuralErrors(project, existingProjects: others)
             guard errors.isEmpty else {
                 throw ProjectStoreError.invalidStoredProject(name: project.name, errors: errors)
             }
         }
 
-        return document.projects
+        return projects
+    }
+
+    /// 先にスキーマバージョンだけを読み、バージョンごとに対応する型でデコードする。
+    /// 現行型で一律にデコードすると、旧バージョンに無かったキーが既定値で埋まり、
+    /// 変換したのか元からその値だったのかが区別できなくなる。
+    static func decode(_ data: Data, path: String) throws -> [ProjectDefinition] {
+        let decoder = JSONDecoder()
+
+        let version: Int
+        do {
+            version = try decoder.decode(SchemaVersionProbe.self, from: data).schemaVersion
+        } catch {
+            throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
+        }
+
+        switch version {
+        case ProjectsDocument.currentSchemaVersion:
+            do {
+                return try decoder.decode(ProjectsDocument.self, from: data).projects
+            } catch {
+                throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
+            }
+        case 1:
+            do {
+                let legacy = try decoder.decode(ProjectSchemaV1.Document.self, from: data)
+                return ProjectSchemaV1.migrate(legacy)
+            } catch {
+                throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
+            }
+        default:
+            throw ProjectStoreError.unsupportedSchemaVersion(
+                found: version,
+                supported: ProjectsDocument.currentSchemaVersion
+            )
+        }
+    }
+
+    /// バージョン判定だけを行う最小の型。判定前に本体を解釈しない。
+    private struct SchemaVersionProbe: Decodable {
+        let schemaVersion: Int
     }
 
     public func save(_ projects: [ProjectDefinition]) throws {

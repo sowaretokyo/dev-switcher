@@ -42,6 +42,16 @@ struct LoginShellEnvironmentTests {
         #expect(LoginShellEnvironment.arguments == ["-lic", "/usr/bin/env -0"])
     }
 
+    @Test("PATHが無い環境は生成できない")
+    func shellEnvironmentRequiresNonEmptyPATH() {
+        #expect(throws: LoginShellEnvironmentError.self) {
+            _ = try ShellEnvironment(variables: ["HOME": "/Users/example"])
+        }
+        #expect(throws: LoginShellEnvironmentError.self) {
+            _ = try ShellEnvironment(variables: ["PATH": ""])
+        }
+    }
+
     @Test("実機のログインシェルから PATH を取得できる")
     func loadsRealEnvironment() async throws {
         let environment = try await LoginShellEnvironment.load()

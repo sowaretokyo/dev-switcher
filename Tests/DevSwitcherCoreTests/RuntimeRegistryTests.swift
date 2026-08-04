@@ -1,9 +1,145 @@
+import Darwin
 import Foundation
 import Testing
 @testable import DevSwitcherCore
 
 @Suite("起動・停止の入り口")
 struct RuntimeRegistryTests {
+    @Test("低水準の引き継ぎ入力もRegistry登録直前に再検証する")
+    func rejectsUntrustedLowLevelAdoptionInput() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let identity = ProcessIdentity(
+            pid: 100,
+            startAbstime: 5_000,
+            startedAt: Date(timeIntervalSince1970: 1),
+            executablePath: "/bin/sleep",
+            workingDirectory: directory
+        )
+        let evidence = ProcessGroupEvidence(
+            bootSessionID: "TEST-BOOT-SESSION",
+            anchors: [identity.anchor]
+        )
+        let service = makeService(
+            name: "Adopted",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(directory: directory, services: [service])
+        let registry = RuntimeRegistry(
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            groupStateProbe: { _ in
+                .members([ProcessInspector.ProcessGroupMember(pid: 100, isZombie: false)])
+            },
+            startAbstimeProbe: { pid in pid == 100 ? .present(5_000) : .notPresent },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+
+        await #expect(throws: RuntimeError.self) {
+            try await registry.adopt(
+                identity: identity,
+                processGroupID: 101,
+                observedPorts: [],
+                evidence: evidence,
+                service: service,
+                in: project
+            )
+        }
+
+        let unrelatedEvidence = ProcessGroupEvidence(
+            bootSessionID: evidence.bootSessionID,
+            anchors: [ProcessAnchor(pid: 101, startAbstime: 1)]
+        )
+        await #expect(throws: RuntimeError.self) {
+            try await registry.adopt(
+                identity: identity,
+                processGroupID: 100,
+                observedPorts: [],
+                evidence: unrelatedEvidence,
+                service: service,
+                in: project
+            )
+        }
+
+        let wrongBootEvidence = ProcessGroupEvidence(
+            bootSessionID: "WRONG-BOOT-SESSION",
+            anchors: [identity.anchor]
+        )
+        await #expect(throws: RuntimeError.self) {
+            try await registry.adopt(
+                identity: identity,
+                processGroupID: 100,
+                observedPorts: [],
+                evidence: wrongBootEvidence,
+                service: service,
+                in: project
+            )
+        }
+        #expect(await registry.occupiedProcessGroup(serviceID: service.id) == nil)
+    }
+
+    @Test("残存groupのhintにもポート観測不能を保存する")
+    func residualHintStoresUnavailablePortObservation() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let anchor = ProcessAnchor(pid: 100, startAbstime: 5_000)
+        let evidence = ProcessGroupEvidence(
+            bootSessionID: "TEST-BOOT-SESSION",
+            anchors: [anchor]
+        )
+        let service = makeService(
+            name: "Residual",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(directory: directory, services: [service])
+        let hint = RuntimeHint(
+            projectID: project.id,
+            serviceID: service.id,
+            serviceName: service.name,
+            processGroupID: 100,
+            leader: anchor,
+            groupEvidence: evidence,
+            executablePath: "/bin/sleep",
+            workingDirectory: directory,
+            observedPorts: .observed([3000])
+        )
+        let registry = RuntimeRegistry(
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            portProbe: { _ in
+                throw PortInspectorError.unparsableOutput(line: "broken")
+            },
+            groupStateProbe: { _ in
+                .members([ProcessInspector.ProcessGroupMember(pid: 100, isZombie: false)])
+            },
+            startAbstimeProbe: { _ in .present(5_000) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+
+        try await registry.registerResidualGroup(hint: hint, service: service, in: project)
+        await #expect(throws: PortInspectorError.self) {
+            try await registry.refreshPorts(serviceID: service.id)
+        }
+
+        let hints = try await registry.runtimeHints()
+        let stored = try #require(hints.first)
+        #expect(stored.observedPorts == .unavailable)
+        #expect(
+            await registry.runtimeSnapshot(serviceID: service.id)?.observedPortRecord
+                == .unavailable
+        )
+    }
+
     @Test("環境の PATH からコマンド名を解決して起動する")
     func startsServiceResolvedFromEnvironmentPath() async throws {
         let directory = try makeTemporaryDirectory()
@@ -149,12 +285,18 @@ struct RuntimeRegistryTests {
             environmentLoader: { fixedShellEnvironment }
         )
         // SIGTERM を無視し続ける固定コマンド（利用者入力ではない）。
+        // trap を仕掛け終えたことをファイルで知らせる。仕掛かる前に停止すると、
+        // 無視するはずのプロセスが素直に終了してしまい、検証したい状況にならない。
+        let readyFile = directory.appendingPathComponent("stubborn.ready")
         let stubborn = makeService(
             name: "Stubborn",
             kind: .worker,
             ports: [],
             executable: "/bin/sh",
-            arguments: ["-c", "trap '' TERM; while true; do sleep 1; done"],
+            arguments: [
+                "-c",
+                "trap '' TERM; echo ready > \"\(readyFile.path)\"; while true; do sleep 1; done",
+            ],
             workingDirectory: directory
         )
         let projectA = makeProject(name: "Bell", directory: directory, services: [stubborn])
@@ -173,6 +315,7 @@ struct RuntimeRegistryTests {
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
         #expect(await waitUntil { await log.startedRuntime != nil })
+        #expect(await waitUntil { FileManager.default.fileExists(atPath: readyFile.path) })
 
         let outcome = try await registry.stop(service: stubborn, grace: .milliseconds(800))
         guard case .residual = outcome else {
@@ -233,7 +376,7 @@ struct RuntimeRegistryTests {
         }
 
         let outcome = try await registry.stop(service: detached, grace: .seconds(5))
-        guard case .exited = outcome else {
+        guard case .stopped = outcome else {
             Issue.record("孫プロセスを停止できなかった: \(outcome)")
             _ = try? await registry.forceStop(service: detached)
             return
@@ -285,7 +428,7 @@ struct RuntimeRegistryTests {
         #expect(await registry.occupiedProcessGroup(serviceID: detached.id) == processGroupID)
 
         let outcome = try await registry.stop(service: detached, grace: .seconds(5))
-        guard case .exited = outcome else {
+        guard case .stopped = outcome else {
             Issue.record("残ったプロセスを停止できなかった: \(outcome)")
             _ = try? await registry.forceStop(service: detached)
             return
@@ -332,6 +475,6 @@ struct RuntimeRegistryTests {
         }
 
         let outcome = try await registry.stop(service: service, grace: .seconds(5))
-        #expect(outcome == .exited(.signaled(signal: SIGTERM)))
+        #expect(outcome == .stopped(.signaled(signal: SIGTERM)))
     }
 }

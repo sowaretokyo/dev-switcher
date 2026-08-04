@@ -42,6 +42,10 @@ public struct ServiceDefinition: Codable, Equatable, Sendable, Identifiable {
     /// workerやwatcherはポートを持たないため、空配列を有効とする。
     public var ports: [PortSpec]
     public var start: CommandSpec
+    /// `supabase stop`のように、起動コマンド自身が終了してもサービスが残るものの終了方法。
+    /// nilはプロセスグループへのシグナルで停止することを意味する。
+    /// 実行はmanaged commandとしてMilestone 3で扱うため、Milestone 2では起動計画時に明示的に拒否する。
+    public var stop: CommandSpec?
     public var enabledByDefault: Bool
     public var failurePolicy: FailurePolicy
 
@@ -51,6 +55,7 @@ public struct ServiceDefinition: Codable, Equatable, Sendable, Identifiable {
         kind: ServiceKind,
         ports: [PortSpec],
         start: CommandSpec,
+        stop: CommandSpec? = nil,
         enabledByDefault: Bool,
         failurePolicy: FailurePolicy
     ) {
@@ -59,11 +64,17 @@ public struct ServiceDefinition: Codable, Equatable, Sendable, Identifiable {
         self.kind = kind
         self.ports = ports
         self.start = start
+        self.stop = stop
         self.enabledByDefault = enabledByDefault
         self.failurePolicy = failurePolicy
     }
 
     public var primaryPort: PortSpec? {
         ports.first(where: \.isPrimary)
+    }
+
+    /// 停止方法がプロセスグループのシグナルで完結するか。
+    public var usesProcessGroupStop: Bool {
+        stop == nil
     }
 }

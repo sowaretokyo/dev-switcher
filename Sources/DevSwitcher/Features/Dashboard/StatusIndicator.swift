@@ -2,22 +2,30 @@ import DevSwitcherCore
 import SwiftUI
 
 /// 状態を表す点。色だけで伝えないよう、必ずテキストラベルと併せて使う。
+/// 対象外だけは色を持たず、中空の丸で描く（DESIGN.md 4章）。
 struct StatusDot: View {
     let phase: ServicePhase
-    var isEnabled: Bool = true
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .accessibilityLabel(phase.label)
+        Group {
+            if phase == .excluded {
+                Circle()
+                    .strokeBorder(Color(nsColor: .tertiaryLabelColor), lineWidth: 1)
+            } else {
+                Circle().fill(color)
+            }
+        }
+        .frame(width: 7, height: 7)
+        .accessibilityLabel(phase.label)
     }
 
     private var color: Color {
         switch phase {
+        case .excluded: .clear
         case .stopped: .secondary
-        case .starting, .stopping: .accentColor
-        case .running: .green
+        // listen しただけの `.running` は遷移中の色。緑は `.healthy` だけ。
+        case .starting, .running, .stopping: .accentColor
+        case .healthy: .green
         case .residual: .orange
         case .failed: .red
         }
@@ -30,6 +38,40 @@ struct StatusLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             StatusDot(phase: phase)
+            Text(phase.label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct ProjectStatusDot: View {
+    let phase: ProjectPhase
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .accessibilityLabel(phase.label)
+    }
+
+    private var color: Color {
+        switch phase {
+        case .stopped: .secondary
+        case .starting, .stopping, .switching: .accentColor
+        case .running: .green
+        case .degraded, .residual: .orange
+        case .failed: .red
+        }
+    }
+}
+
+struct ProjectStatusLabel: View {
+    let phase: ProjectPhase
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ProjectStatusDot(phase: phase)
             Text(phase.label)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)

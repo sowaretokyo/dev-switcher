@@ -9,8 +9,11 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
     case notRunning(service: String)
     case identityMismatch(service: String, pid: pid_t)
     case identityUnavailable(service: String, pid: pid_t, residualProcessGroupID: pid_t?)
+    case invalidHandoff(service: String, reason: String)
+    case ownershipLost(service: String)
     case residualProcessesRemain(service: String, processGroupID: pid_t)
     case projectDirectoryMissing(URL)
+    case stopCommandUnsupported(service: String)
 
     public var description: String {
         switch self {
@@ -30,10 +33,18 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
             } else {
                 "サービス「\(service)」の起動直後にプロセス情報（PID \(pid)）を取得できませんでした。安全に管理できないため中止しました。"
             }
+        case let .invalidHandoff(service, reason):
+            "サービス「\(service)」の引き継ぎ候補を登録直前に再検証できませんでした。"
+                + "別プロセスを管理対象にしないため、引き継ぎを中止しました。\n\(reason)"
+        case let .ownershipLost(service):
+            "サービス「\(service)」のプロセスグループ所有権を失いました。"
+                + "再利用された可能性のあるPGIDへ送らないため、停止結果を判定できません。"
         case let .residualProcessesRemain(service, processGroupID):
             "サービス「\(service)」の前回のプロセスが残っています（プロセスグループ \(processGroupID)）。残りを停止してから起動してください。"
         case let .projectDirectoryMissing(url):
             "プロジェクトのディレクトリが存在しません（\(url.path)）。"
+        case let .stopCommandUnsupported(service):
+            "サービス「\(service)」には終了コマンドが設定されています。終了コマンドで管理するサービス（managed command）の実行は Milestone 3 で対応します。プロセスグループの停止で代用すると停止できたか確認できないため、起動を中止しました。"
         }
     }
 }

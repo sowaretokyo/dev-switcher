@@ -45,7 +45,7 @@ struct ProjectStoreTests {
         try store.save([makeProject(directory: directory)])
 
         let json = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(json.contains("\"schemaVersion\" : 1"))
+        #expect(json.contains("\"schemaVersion\" : \(ProjectsDocument.currentSchemaVersion)"))
         for forbidden in ["\"pid\"", "\"processGroupID\"", "\"observedPorts\"", "\"phase\"", "\"running\"", "\"startedAt\""] {
             #expect(!json.contains(forbidden), "保存ファイルに稼働状態 \(forbidden) が含まれている")
         }
@@ -209,5 +209,39 @@ struct ProjectStoreTests {
             try store.save([project])
         }
         #expect(!FileManager.default.fileExists(atPath: store.fileURL.path))
+    }
+
+    @Test("保存済みの別プロジェクト間でサービスIDが重複していれば読み込まない")
+    func duplicateServiceIDAcrossStoredProjectsFails() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let serviceID = UUID()
+        func service(named name: String) -> ServiceDefinition {
+            ServiceDefinition(
+                id: serviceID,
+                name: name,
+                kind: .worker,
+                ports: [],
+                start: CommandSpec(
+                    executable: "/bin/sleep",
+                    arguments: ["30"],
+                    workingDirectory: directory
+                ),
+                enabledByDefault: true,
+                failurePolicy: .block
+            )
+        }
+        let projects = [
+            makeProject(name: "First", directory: directory, services: [service(named: "A")]),
+            makeProject(name: "Second", directory: directory, services: [service(named: "B")]),
+        ]
+        let store = ProjectStore(directory: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(ProjectsDocument(projects: projects)).write(to: store.fileURL)
+
+        #expect(throws: ProjectStoreError.self) {
+            try store.load()
+        }
     }
 }

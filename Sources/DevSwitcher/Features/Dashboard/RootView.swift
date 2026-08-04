@@ -25,8 +25,17 @@ struct RootView: View {
         .sheet(item: $state.projectFormPresentation) { presentation in
             ProjectFormView(project: presentation.project)
         }
-        .sheet(item: $state.residualPrompt) { prompt in
-            ResidualSheet(prompt: prompt)
+        // 切替中・失敗・引き継ぎはシートで出す。表示中は背後を操作できない（I-1）。
+        .sheet(item: $state.switchPresentation) { presentation in
+            SwitchSheet(initialPresentation: presentation)
+        }
+        .sheet(item: $state.failurePresentation) { presentation in
+            SwitchFailureSheet(presentation: presentation)
+        }
+        // 引き継ぎシートを閉じる・差し替えるのは AppState だけ。ビュー側の dismiss を
+        // 許すと、決着していない手掛かりを抱えたまま画面から消える。
+        .sheet(item: Binding(get: { state.handoffPresentation }, set: { _ in })) { presentation in
+            HandoffSheet(presentation: presentation)
         }
     }
 }
@@ -53,7 +62,21 @@ private struct BannerArea: View {
                     message: storeError,
                     tint: .red
                 ) {
-                    Button("再読み込み") { state.loadProjects() }
+                    Button("再読み込み") {
+                        Task { await state.retryLoadingProjects() }
+                    }
+                }
+            }
+            if let hintError = state.hintError {
+                Banner(
+                    title: "再検証の手掛かりを扱えません",
+                    message: "\(hintError)\nアプリ再起動後の引き継ぎができない可能性があります。稼働中の判定には影響しません。",
+                    tint: .orange,
+                    messageLineLimit: 3
+                ) {
+                    Button("再試行") {
+                        Task { await state.retryLoadingHints() }
+                    }
                 }
             }
             switch state.environmentState {
@@ -130,79 +153,5 @@ private struct Banner<Accessory: View>: View {
         .overlay(alignment: .bottom) {
             Divider()
         }
-    }
-}
-
-/// 通常終了で止まりきらなかったときの確認。既定は安全側（閉じる）。
-private struct ResidualSheet: View {
-    @Environment(AppState.self) private var state
-    @Environment(\.dismiss) private var dismiss
-    let prompt: AppState.ResidualPrompt
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("プロセスが残っています")
-                .font(.system(size: 13.5, weight: .semibold))
-            Text(situation)
-                .font(.system(size: 12))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("強制終了（SIGKILL）はプロセスの後始末を行わずに停止します。実行するか判断してください。")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                Button("強制終了する") {
-                    withService { state.forceStop(service: $0) }
-                }
-                .foregroundStyle(.red)
-                Spacer()
-                // 通常終了の猶予を使い切った場合以外は、まず通常終了をやり直せるようにする。
-                if prompt.cause != .stopTimedOut {
-                    Button("通常終了を試す") {
-                        withService { service in
-                            if let project = state.project(prompt.projectID) {
-                                state.stop(service: service, in: project)
-                            }
-                        }
-                    }
-                }
-                Button("閉じる") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 452)
-    }
-
-    private var situation: String {
-        switch prompt.cause {
-        case .stopTimedOut:
-            """
-            サービス「\(prompt.serviceName)」は通常終了（SIGTERM）の猶予内に終了しませんでした。
-            プロセスグループ \(prompt.processGroupID) にプロセスが残っています。
-            """
-        case .exitedWithSurvivors:
-            """
-            サービス「\(prompt.serviceName)」の起動プロセスは終了しましたが、\
-            プロセスグループ \(prompt.processGroupID) に別のプロセスが残っています。
-            ポートを握ったままの可能性があるため、残っている間はほかのプロジェクトを起動できません。
-            """
-        case .launchCancelled:
-            """
-            サービス「\(prompt.serviceName)」の起動は取り消しましたが、\
-            プロセスグループ \(prompt.processGroupID) にプロセスが残っています。
-            残っている間は、このサービスの再起動とほかのプロジェクトの起動ができません。
-            """
-        }
-    }
-
-    private func withService(_ action: (ServiceDefinition) -> Void) {
-        if let project = state.project(prompt.projectID),
-           let service = project.service(id: prompt.serviceID) {
-            action(service)
-        }
-        dismiss()
     }
 }

@@ -198,6 +198,47 @@ struct ProjectValidationTests {
         )
     }
 
+    @Test("別プロジェクトとのサービスID重複を拒否する")
+    func duplicateServiceIDAcrossProjectsRejected() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let serviceID = UUID()
+        let firstService = ServiceDefinition(
+            id: serviceID,
+            name: "First",
+            kind: .worker,
+            ports: [],
+            start: CommandSpec(
+                executable: "/bin/sleep",
+                arguments: ["30"],
+                workingDirectory: directory
+            ),
+            enabledByDefault: true,
+            failurePolicy: .block
+        )
+        let secondService = ServiceDefinition(
+            id: serviceID,
+            name: "Second",
+            kind: .worker,
+            ports: [],
+            start: CommandSpec(
+                executable: "/bin/sleep",
+                arguments: ["30"],
+                workingDirectory: directory
+            ),
+            enabledByDefault: true,
+            failurePolicy: .block
+        )
+        let existing = makeProject(name: "Existing", directory: directory, services: [firstService])
+        let added = makeProject(name: "Added", directory: directory, services: [secondService])
+
+        #expect(
+            ProjectValidator.structuralErrors(added, existingProjects: [existing])
+                .contains(.duplicateServiceIDAcrossProjects(serviceID))
+        )
+    }
+
     @Test("check はエラーをまとめて投げる")
     func checkThrowsValidationFailure() throws {
         let directory = try makeTemporaryDirectory()

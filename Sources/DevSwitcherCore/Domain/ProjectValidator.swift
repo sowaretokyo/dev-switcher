@@ -51,6 +51,7 @@ public enum ProjectValidator {
         }
 
         var seenServiceIDs: Set<UUID> = []
+        let existingServiceIDs = Set(existingProjects.flatMap { $0.services.map(\.id) })
         var seenServiceNames: Set<String> = []
         var portOwners: [Int: [String]] = [:]
 
@@ -64,6 +65,9 @@ public enum ProjectValidator {
             if !seenServiceIDs.insert(service.id).inserted {
                 errors.append(.duplicateServiceID(service.id))
             }
+            if existingServiceIDs.contains(service.id) {
+                errors.append(.duplicateServiceIDAcrossProjects(service.id))
+            }
 
             let label = serviceName.isEmpty ? "#\(index + 1)" : serviceName
 
@@ -75,9 +79,20 @@ public enum ProjectValidator {
                 errors.append(.emptyArgument(service: label, argumentIndex: argumentIndex))
             }
 
+            if let stop = service.stop {
+                if stop.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    errors.append(.stopExecutableEmpty(service: label))
+                }
+                for (argumentIndex, argument) in stop.arguments.enumerated()
+                where argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    errors.append(.stopEmptyArgument(service: label, argumentIndex: argumentIndex))
+                }
+            }
+
             errors.append(contentsOf: portErrors(for: service, label: label))
 
-            if service.enabledByDefault {
+            // 重複を見るのは今回の起動対象どうし。対象外のサービスは同時に listen しない。
+            if project.isEnabledNow(service.id) {
                 for port in service.ports {
                     portOwners[port.port, default: []].append(label)
                 }
@@ -89,6 +104,38 @@ public enum ProjectValidator {
             if distinctOwners.count > 1 {
                 errors.append(.duplicatePortAcrossServices(port: port, services: distinctOwners))
             }
+        }
+
+        errors.append(contentsOf: orderErrors(project))
+
+        return errors
+    }
+
+    /// 終了順と起動対象の指定が、実在するサービスと過不足なく対応しているかを見る。
+    /// 欠落を「起動順の逆」で黙って補うと、利用者が並べた終了順と実際の停止順がずれる。
+    private static func orderErrors(_ project: ProjectDefinition) -> [ValidationError] {
+        var errors: [ValidationError] = []
+        let serviceIDs = Set(project.services.map(\.id))
+
+        if let stopOrder = project.stopOrder {
+            var seen: Set<UUID> = []
+            for serviceID in stopOrder {
+                guard let service = project.service(id: serviceID) else {
+                    errors.append(.stopOrderUnknownService(id: serviceID))
+                    continue
+                }
+                if !seen.insert(serviceID).inserted {
+                    errors.append(.stopOrderDuplicate(service: service.name))
+                }
+            }
+            for service in project.services where !seen.contains(service.id) {
+                errors.append(.stopOrderMissingService(service: service.name))
+            }
+        }
+
+        for serviceID in project.enabledNow.keys.sorted(by: { $0.uuidString < $1.uuidString })
+        where !serviceIDs.contains(serviceID) {
+            errors.append(.enabledNowUnknownService(id: serviceID))
         }
 
         return errors
@@ -108,16 +155,21 @@ public enum ProjectValidator {
         }
 
         for service in project.services {
-            let workingDirectory = service.start.workingDirectory
-            var serviceIsDirectory: ObjCBool = false
-            let exists = fileManager.fileExists(
-                atPath: workingDirectory.path,
-                isDirectory: &serviceIsDirectory
-            )
-            if !exists || !serviceIsDirectory.boolValue {
-                errors.append(
-                    .workingDirectoryMissing(service: service.name, url: workingDirectory)
+            // 起動と終了で同じディレクトリを指すことが多いため、同じ指摘を二度出さない。
+            var checked: Set<String> = []
+            let directories = [service.start.workingDirectory, service.stop?.workingDirectory]
+                .compactMap { $0 }
+            for workingDirectory in directories where checked.insert(workingDirectory.path).inserted {
+                var serviceIsDirectory: ObjCBool = false
+                let exists = fileManager.fileExists(
+                    atPath: workingDirectory.path,
+                    isDirectory: &serviceIsDirectory
                 )
+                if !exists || !serviceIsDirectory.boolValue {
+                    errors.append(
+                        .workingDirectoryMissing(service: service.name, url: workingDirectory)
+                    )
+                }
             }
         }
 

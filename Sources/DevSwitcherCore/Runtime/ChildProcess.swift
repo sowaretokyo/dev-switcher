@@ -119,13 +119,36 @@ public final class ChildProcess: @unchecked Sendable {
         queue.sync { !isReleased }
     }
 
-    public var currentStatus: ExitStatus? {
-        queue.sync { status }
+    /// 終了状態と PGID 所有権を1回で読む。
+    ///
+    /// この2つを別々に読むと、間で所有権を失った PGID へシグナルを送れてしまう。
+    /// 読むたびにカーネルへ問い合わせて最新化する。通知（`DispatchSourceProcess`）と
+    /// 250ms のポーリングだけに頼ると、負荷時に配送が遅れて
+    /// 「もう終了しているのに動作中」と読め、短命プロセスをヘルスチェックが通す。
+    public struct Snapshot: Equatable, Sendable {
+        public let status: ExitStatus?
+        /// リーダーを未回収で保持しているか。false なら PGID は再利用されうる。
+        public let ownsProcessGroup: Bool
+
+        public var isRunning: Bool { status == nil }
     }
+
+    public var snapshot: Snapshot {
+        queue.sync {
+            observeExit()
+            refreshOwnershipAfterObservedExit()
+            return Snapshot(status: status, ownsProcessGroup: !isReleased)
+        }
+    }
+
+    public var currentStatus: ExitStatus? { snapshot.status }
 
     public func waitForExit(timeout: Duration?) async -> ExitStatus? {
         await withCheckedContinuation { continuation in
             queue.async {
+                // 待機登録の前に一度観測する。登録してから通知を待つと、
+                // 既に終了しているプロセスを猶予いっぱい待つことになる。
+                self.observeExit()
                 if let status = self.status {
                     continuation.resume(returning: status)
                     return
@@ -181,6 +204,21 @@ public final class ChildProcess: @unchecked Sendable {
         waiters.removeAll()
         for (_, continuation) in pending {
             continuation.resume(returning: newStatus)
+        }
+    }
+
+    /// `WNOWAIT` で終了を観測した後に別経路が子を回収することがある。
+    /// 終了状態を一度キャッシュしただけで所有権まで固定すると、既に再利用可能なPGIDへ
+    /// シグナルを送りうるため、snapshotごとにカーネル上の回収状態を再確認する。
+    private func refreshOwnershipAfterObservedExit() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard status != nil, !isReleased else { return }
+
+        var info = siginfo_t()
+        info.si_pid = 0
+        let result = waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT | WNOHANG)
+        if result == -1, errno == ECHILD {
+            isReleased = true
         }
     }
 }

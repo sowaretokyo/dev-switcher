@@ -22,7 +22,9 @@
 
 ## 実装ルール
 
-- 最初は `IMPLEMENTATION_BRIEF.md` の Milestone 1 だけを実装する。Milestone 2 以降を先回りしない。
+- 現在は `IMPLEMENTATION_BRIEF.md` の Milestone 2 だけを実装する。Milestone 1 の安全性を維持し、Milestone 3 以降を先回りしない。
+- Milestone 2 ではヘルスチェックと、アプリ再起動後の実プロセス再検証・引き継ぎまでを安全な切替の前提として実装する。
+- 複数サービスを追加・編集する完成版UI、自動検出、managed command、Docker lifecycleはMilestone 3に残す。Milestone 2のロジックは複数サービスの定義を扱えるようにし、テストでは値型から複数サービス構成を作る。
 - 必須値の欠落や不正な設定は fail-fast にする。空文字や既定値で握りつぶさない。
 - 実行コマンドは `executable` と `arguments` に分けた構造化データとして扱う。利用者入力を shell 文字列へ連結しない。
 - GUI 起動時の `PATH` は固定コマンドで取得し、利用者のコマンド実行には login shell を使わない。
@@ -52,4 +54,4 @@ swift build
 swift test
 ```
 
-該当するテストが未作成、または環境上実行できない場合は、未検証として理由を明記する。「完了」と報告する前に、Milestone の受け入れ条件と照合すること。
+該当するテストが未作成、または環境上実行できない場合は、未検証として理由を明記する。ローカルポートのlistenが禁止された環境に合わせてテストを弱めたりskipしたりしない。「完了」と報告する前に、Milestone の受け入れ条件と照合すること。

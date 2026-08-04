@@ -119,7 +119,7 @@ struct ServiceSupervisorTests {
         let runtime = try #require(await log.startedRuntime)
 
         #expect(runtime.identity.executablePath == "/bin/sleep")
-        #expect(runtime.identity.startTimeMicroseconds > 0)
+        #expect(runtime.identity.startAbstime > 0)
         #expect(runtime.processGroupID == runtime.identity.pid)
         #expect(ProcessInspector.matchesRunningProcess(runtime.identity))
 
@@ -557,7 +557,8 @@ struct ProcessIdentityTests {
         )
         let recycled = ProcessIdentity(
             pid: identity.pid,
-            startTimeMicroseconds: identity.startTimeMicroseconds &+ 1,
+            startAbstime: identity.startAbstime &+ 1,
+            startedAt: identity.startedAt,
             executablePath: identity.executablePath,
             workingDirectory: identity.workingDirectory
         )
@@ -608,5 +609,91 @@ struct ProcessIdentityTests {
         }
         #expect(ProcessInspector.identity(pid: candidate, workingDirectory: URL(fileURLWithPath: "/")) == nil)
         #expect(ProcessInspector.processGroupState(candidate).hasLiveMembers == false)
+    }
+
+
+    @Test("外部で回収されて所有権を失ったら、停止も強制終了もシグナルを送らない")
+    func doesNotSignalAfterLosingOwnership() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let recorder = SignalRecorder()
+        let supervisor = ServiceSupervisor(
+            serviceID: UUID(),
+            serviceName: "Sleep",
+            command: ResolvedCommand(
+                executableURL: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                workingDirectory: directory
+            ),
+            logDirectory: directory,
+            portPollInterval: .seconds(60),
+            // 回収後に同じPGIDが別グループを指している状況を再現する。
+            groupStateProbe: { _ in
+                .members([ProcessInspector.ProcessGroupMember(pid: 777, isZombie: false)])
+            },
+            signalSender: { processGroupID, signal in recorder.send(processGroupID, signal) }
+        )
+
+        let log = EventLog()
+        let stream = try await supervisor.start(environment: fixedShellEnvironment.variables)
+        let consumer = Task { await log.consume(stream) }
+        defer { consumer.cancel() }
+        let runtime = try #require(await waitForValue { await log.startedRuntime })
+
+        // 外部が先に回収する。ここから先、この PGID は再利用されうる。
+        kill(runtime.identity.pid, SIGKILL)
+        #expect(await waitUntil {
+            var status: Int32 = 0
+            return waitpid(runtime.identity.pid, &status, WNOHANG) != 0
+        })
+
+        // 所有権喪失を専用結果で返し、古い PGID を残存扱いしない。
+        let outcome = try await supervisor.stop(grace: .milliseconds(300))
+        #expect(outcome == .ownershipLost)
+        #expect(recorder.count == 0, "所有権を失った PGID へ \(recorder.signals) を送った")
+
+        // 占有判定も強制終了導線も、失った PGID を参照しない。
+        #expect(await supervisor.isOccupyingResources() == false)
+        #expect(await supervisor.processGroupID == nil)
+        await #expect(throws: RuntimeError.self) {
+            _ = try await supervisor.forceStop(grace: .milliseconds(300))
+        }
+        #expect(recorder.count == 0)
+    }
+
+
+    @Test("ポートを実測できなければ、0件ではなく不明として記録する")
+    func failedPortMeasurementIsRecordedAsUnavailable() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let supervisor = ServiceSupervisor(
+            serviceID: UUID(),
+            serviceName: "Sleep",
+            command: ResolvedCommand(
+                executableURL: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                workingDirectory: directory
+            ),
+            logDirectory: directory,
+            portPollInterval: .seconds(60),
+            portProbe: { _ in
+                throw PortInspectorError.unparsableOutput(line: "broken")
+            }
+        )
+
+        let log = EventLog()
+        let stream = try await supervisor.start(environment: fixedShellEnvironment.variables)
+        let consumer = Task { await log.consume(stream) }
+        defer { consumer.cancel() }
+        #expect(await waitForValue { await log.startedRuntime } != nil)
+
+        await #expect(throws: PortInspectorError.self) {
+            try await supervisor.refreshPorts()
+        }
+        #expect(await supervisor.observedPortRecord == .unavailable)
+
+        _ = try? await supervisor.stop(grace: .seconds(5))
     }
 }

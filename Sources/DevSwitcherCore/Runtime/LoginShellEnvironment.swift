@@ -2,13 +2,14 @@ import Foundation
 
 public struct ShellEnvironment: Equatable, Sendable {
     public let variables: [String: String]
+    public let path: String
 
-    public init(variables: [String: String]) {
+    public init(variables: [String: String]) throws {
+        guard let path = variables["PATH"], !path.isEmpty else {
+            throw LoginShellEnvironmentError.missingPATH
+        }
         self.variables = variables
-    }
-
-    public var path: String {
-        variables["PATH"] ?? ""
+        self.path = path
     }
 
     public var searchPath: [String] {
@@ -79,7 +80,7 @@ public enum LoginShellEnvironment {
         guard let path = variables["PATH"], !path.isEmpty else {
             throw LoginShellEnvironmentError.missingPATH
         }
-        return ShellEnvironment(variables: variables)
+        return try ShellEnvironment(variables: variables)
     }
 
     /// シェルの設定ファイルが標準出力へ何か書いていると先頭のエントリが壊れるため、

@@ -35,6 +35,12 @@ final class ProjectFormModel {
     private let projectID: UUID
     private let serviceID: UUID
     private let preservedServices: [ServiceDefinition]
+    /// このフォームは1サービスしか編集しない（完成版UIは Milestone 3）。
+    /// 編集画面が扱わない設定を保存時に落とすと、利用者の指定が黙って消える。
+    /// 触らない値はそのまま持ち回る。
+    private let preservedStopOrder: [UUID]?
+    private let preservedEnabledNow: [UUID: Bool]
+    private let preservedStopCommand: CommandSpec?
 
     var name: String
     var color: ProjectColor
@@ -56,6 +62,9 @@ final class ProjectFormModel {
         projectID = project?.id ?? UUID()
         serviceID = service?.id ?? UUID()
         preservedServices = project.map { Array($0.services.dropFirst()) } ?? []
+        preservedStopOrder = project?.stopOrder
+        preservedEnabledNow = project?.enabledNow ?? [:]
+        preservedStopCommand = service?.stop
         name = project?.name ?? ""
         color = project?.color ?? .blue
         directory = project?.directory
@@ -111,6 +120,7 @@ final class ProjectFormModel {
                 arguments: parsedArguments,
                 workingDirectory: directory
             ),
+            stop: preservedStopCommand,
             enabledByDefault: enabledByDefault,
             failurePolicy: failurePolicy
         )
@@ -120,7 +130,9 @@ final class ProjectFormModel {
             name: name.trimmed,
             color: color,
             directory: directory,
-            services: [service] + preservedServices
+            services: [service] + preservedServices,
+            stopOrder: preservedStopOrder,
+            enabledNow: preservedEnabledNow
         )
 
         let errors = portErrors + ProjectValidator.validate(project)

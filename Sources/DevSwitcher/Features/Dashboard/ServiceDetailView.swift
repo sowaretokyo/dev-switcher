@@ -31,7 +31,11 @@ struct ServiceDetailView: View {
                     .foregroundStyle(.secondary)
                 StatusLabel(phase: uiState.phase)
                 Spacer()
-                ServiceControlButtons(project: project, service: service)
+                // 起動・停止はプロジェクト単位でのみ行う。サービス単体の起動経路を残すと、
+                // 起動順・ゲート・failurePolicy を迂回できてしまう。
+                Text("起動と停止はプロジェクト単位で行います")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
             }
 
             HStack(alignment: .top, spacing: 20) {
@@ -44,9 +48,8 @@ struct ServiceDetailView: View {
                 LabeledValue(label: "失敗時の扱い", value: service.failurePolicy.displayName)
             }
 
-            if !uiState.phase.isActive {
-                StartBlockedNotice(project: project)
-            }
+            LabeledValue(label: "ヘルスチェック", value: healthCheckDescription)
+
             if let warning = uiState.warning {
                 Text(warning)
                     .font(.system(size: 11))
@@ -95,9 +98,23 @@ struct ServiceDetailView: View {
         .padding(.vertical, 8)
     }
 
+    /// 種別ごとの既定を内蔵しており、利用者には設定させない。何を見ているかは表示する。
+    private var healthCheckDescription: String {
+        do {
+            return try HealthCheckPolicy.spec(for: service).description
+        } catch {
+            return "\(error)"
+        }
+    }
+
     private func observedPortsText(_ uiState: AppState.ServiceUIState) -> String {
-        guard uiState.phase.isActive else { return "—" }
-        guard !uiState.observedPorts.isEmpty else { return "listen なし" }
+        if let text = uiState.observedPortsAvailabilityText { return text }
+        guard case let .observed(ports) = uiState.observedPortRecord else {
+            preconditionFailure("観測状態の分岐が不足しています。")
+        }
+        if uiState.observedPorts.isEmpty {
+            return ports.map { ":\($0)" }.joined(separator: " · ")
+        }
         return uiState.observedPorts
             .map { "\($0.address):\($0.port)" }
             .joined(separator: " · ")

@@ -13,6 +13,7 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case serviceNameEmpty(serviceIndex: Int)
     case duplicateServiceName(String)
     case duplicateServiceID(UUID)
+    case duplicateServiceIDAcrossProjects(UUID)
     case executableEmpty(service: String)
     case emptyArgument(service: String, argumentIndex: Int)
     case workingDirectoryMissing(service: String, url: URL)
@@ -24,6 +25,12 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case multiplePrimaryPorts(service: String)
     case portLabelEmpty(service: String, port: Int)
     case invalidOpenURL(service: String, value: String)
+    case stopOrderMissingService(service: String)
+    case stopOrderUnknownService(id: UUID)
+    case stopOrderDuplicate(service: String)
+    case enabledNowUnknownService(id: UUID)
+    case stopExecutableEmpty(service: String)
+    case stopEmptyArgument(service: String, argumentIndex: Int)
 
     public var description: String {
         switch self {
@@ -49,6 +56,8 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "サービス名「\(name)」がプロジェクト内で重複しています。"
         case let .duplicateServiceID(id):
             "サービス ID が重複しています（\(id.uuidString)）。"
+        case let .duplicateServiceIDAcrossProjects(id):
+            "サービス ID が別のプロジェクトと重複しています（\(id.uuidString)）。"
         case let .executableEmpty(service):
             "サービス「\(service)」の実行ファイルが空です。"
         case let .emptyArgument(service, index):
@@ -71,6 +80,18 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "サービス「\(service)」のポート \(port) のラベルが空文字です。ラベルを入力するか未設定にしてください。"
         case let .invalidOpenURL(service, value):
             "サービス「\(service)」の開く URL「\(value)」は http / https の URL として解釈できません。"
+        case let .stopOrderMissingService(service):
+            "終了順にサービス「\(service)」が含まれていません。終了順を指定する場合は全サービスを並べてください。"
+        case let .stopOrderUnknownService(id):
+            "終了順に、このプロジェクトに存在しないサービス ID が含まれています（\(id.uuidString)）。"
+        case let .stopOrderDuplicate(service):
+            "終了順でサービス「\(service)」が重複しています。"
+        case let .enabledNowUnknownService(id):
+            "起動対象の指定に、このプロジェクトに存在しないサービス ID が含まれています（\(id.uuidString)）。"
+        case let .stopExecutableEmpty(service):
+            "サービス「\(service)」の終了コマンドの実行ファイルが空です。"
+        case let .stopEmptyArgument(service, index):
+            "サービス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。"
         }
     }
 }

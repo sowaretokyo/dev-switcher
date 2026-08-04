@@ -18,6 +18,7 @@ public actor ServiceSupervisor {
     public enum StopOutcome: Equatable, Sendable {
         case exited(ExitStatus)
         case residual(processGroupID: pid_t)
+        case ownershipLost
     }
 
     /// 観測不能時の取消経路を再現できるよう、同一性の取得処理を差し替え可能にする。
@@ -25,6 +26,12 @@ public actor ServiceSupervisor {
 
     /// 取得失敗時の挙動を試験できるよう、プロセスグループの観測も差し替え可能にする。
     public typealias ProcessGroupStateProbe = @Sendable (pid_t) -> ProcessInspector.ProcessGroupState
+
+    /// 「所有権を失ったら送らない」ことをテストで確かめられるよう、送出も差し替え可能にする。
+    public typealias SignalSender = @Sendable (pid_t, Int32) -> Int32
+    public typealias PortProbe = @Sendable (pid_t) async throws -> [ObservedPort]
+    public typealias StartAbstimeProbe = @Sendable (pid_t) -> ProcessInspector.StartAbstimeObservation
+    public typealias BootSessionProbe = @Sendable () -> String?
 
     public let serviceID: UUID
     public let serviceName: String
@@ -34,6 +41,10 @@ public actor ServiceSupervisor {
     private let portPollInterval: Duration
     private let identityProbe: ProcessIdentityProbe
     private let groupStateProbe: ProcessGroupStateProbe
+    private let signalSender: SignalSender
+    private let portProbe: PortProbe
+    private let startAbstimeProbe: StartAbstimeProbe
+    private let bootSessionProbe: BootSessionProbe
 
     private var child: ChildProcess?
     private var tail: LogFileTail?
@@ -44,6 +55,8 @@ public actor ServiceSupervisor {
     private var portTask: Task<Void, Never>?
     private var exitTask: Task<Void, Never>?
     private var lastWarning: String?
+    /// ポートの実測結果。「0件だった」と「実測できなかった」を区別して保持する。
+    private var portRecord: ObservedPortRecord = .unavailable
     private var didExit = false
     private var stopRequested = false
 
@@ -58,7 +71,17 @@ public actor ServiceSupervisor {
         },
         groupStateProbe: @escaping ProcessGroupStateProbe = { processGroupID in
             ProcessInspector.processGroupState(processGroupID)
-        }
+        },
+        signalSender: @escaping SignalSender = { processGroupID, signal in
+            kill(-processGroupID, signal)
+        },
+        portProbe: @escaping PortProbe = { processGroupID in
+            try await PortInspector.listeningPorts(processGroupID: processGroupID)
+        },
+        startAbstimeProbe: @escaping StartAbstimeProbe = {
+            ProcessInspector.startAbstimeObservation(pid: $0)
+        },
+        bootSessionProbe: @escaping BootSessionProbe = { ProcessInspector.bootSessionID() }
     ) {
         self.serviceID = serviceID
         self.serviceName = serviceName
@@ -67,9 +90,16 @@ public actor ServiceSupervisor {
         self.portPollInterval = portPollInterval
         self.identityProbe = identityProbe
         self.groupStateProbe = groupStateProbe
+        self.signalSender = signalSender
+        self.portProbe = portProbe
+        self.startAbstimeProbe = startAbstimeProbe
+        self.bootSessionProbe = bootSessionProbe
     }
 
     public var observedRuntime: ObservedRuntime? { runtime }
+
+    /// 手掛かりへ書くポート。実測できていなければ `.unavailable`。
+    public var observedPortRecord: ObservedPortRecord { portRecord }
 
     public var isRunning: Bool {
         guard let child else { return false }
@@ -84,6 +114,11 @@ public actor ServiceSupervisor {
     public func isOccupyingResources() -> Bool {
         if isRunning { return true }
         guard let processGroupID = launchedProcessGroupID else { return false }
+        // 所有権を失った PGID は再利用されうる。自分の占有として主張しない。
+        guard let child, child.snapshot.ownsProcessGroup else {
+            releaseOwnershipWithoutSignal()
+            return false
+        }
 
         switch groupStateProbe(processGroupID).hasLiveMembers {
         case true?:
@@ -112,7 +147,7 @@ public actor ServiceSupervisor {
     private func noteGroupStateUnavailable(_ processGroupID: pid_t) {
         guard case let .unavailable(code) = groupStateProbe(processGroupID) else { return }
         let message = "プロセスグループ \(processGroupID) の状態を取得できませんでした"
-            + "（errno \(code): \(String(cString: strerror(code)))）。"
+            + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
             + "残っている可能性があるため占有中として扱います。"
         guard lastWarning != message else { return }
         lastWarning = message
@@ -203,7 +238,9 @@ public actor ServiceSupervisor {
         if process.currentStatus != nil { return nil }
 
         stopRequested = true
-        sendSignal(SIGTERM, toProcessGroup: spawned.processGroupID)
+        guard sendOwnedSignal(SIGTERM) else {
+            throw RuntimeError.ownershipLost(service: serviceName)
+        }
         // UIが停止手段を出せるよう、取消後の残存PGIDをエラーに含める。
         let drained = await waitForGroupToDrain(
             processGroupID: spawned.processGroupID,
@@ -232,7 +269,7 @@ public actor ServiceSupervisor {
                 return .exited(status)
             }
             stopRequested = true
-            sendSignal(SIGTERM, toProcessGroup: processGroupID)
+            guard sendOwnedSignal(SIGTERM) else { return .ownershipLost }
             return await outcome(
                 after: status,
                 processGroupID: processGroupID,
@@ -252,7 +289,7 @@ public actor ServiceSupervisor {
 
         stopRequested = true
         let deadline = ContinuousClock.now + grace
-        sendSignal(SIGTERM, toProcessGroup: processGroupID)
+        guard sendOwnedSignal(SIGTERM) else { return .ownershipLost }
 
         guard let status = await child.waitForExit(timeout: grace) else {
             return .residual(processGroupID: processGroupID)
@@ -278,20 +315,45 @@ public actor ServiceSupervisor {
         return .exited(status)
     }
 
-    /// グループへシグナルを送る。送出の失敗では操作を中断しない。
+    /// 所有している PGID にだけシグナルを送る。
     ///
-    /// 停止できたかどうかは、最終的に「動いているプロセスが残っているか」で判断する。
-    /// 送出直前に最後のメンバーが終了してゾンビだけになると EPERM になるなど、
-    /// 失敗しても結果としては停止できている場合があるため。
+    /// 未回収のリーダー（ゾンビ）が PID を予約している間だけ、この PGID は
+    /// 再利用されない。所有権を失っていたら PGID は別のグループを指しうるので、
+    /// 送らずに所有権の記録も落とす。以後どの経路からも送れなくなる。
+    ///
+    /// 送出の失敗では操作を中断しない。停止できたかどうかは、最終的に
+    /// 「動いているプロセスが残っているか」で判断する。送出直前に最後のメンバーが
+    /// 終了してゾンビだけになると EPERM になるなど、失敗しても停止できている場合があるため。
     /// ただし黙って捨てず、警告として画面へ流す。
-    private func sendSignal(_ signal: Int32, toProcessGroup processGroupID: pid_t) {
-        guard kill(-processGroupID, signal) != 0 else { return }
+    @discardableResult
+    private func sendOwnedSignal(_ signal: Int32) -> Bool {
+        guard let processGroupID = launchedProcessGroupID else { return false }
+        guard let child, child.snapshot.ownsProcessGroup else {
+            releaseOwnershipWithoutSignal()
+            return false
+        }
+
+        guard signalSender(processGroupID, signal) != 0 else { return true }
         let code = errno
         // 既に誰も居ないグループへの送信は警告にもしない。
-        guard code != ESRCH else { return }
+        guard code != ESRCH else { return true }
 
         let message = "プロセスグループ \(processGroupID) へシグナル \(signal) を送れませんでした"
-            + "（errno \(code): \(String(cString: strerror(code)))）。"
+            + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+        if lastWarning != message {
+            lastWarning = message
+            continuation?.yield(.warning(message))
+        }
+        return true
+    }
+
+    /// 所有権を失った PGID は二度と参照しない。
+    /// 記録を残すと、占有判定や手掛かりの保存が別グループを指すことになる。
+    private func releaseOwnershipWithoutSignal() {
+        guard launchedProcessGroupID != nil else { return }
+        launchedProcessGroupID = nil
+        let message = "プロセスグループの所有権を失ったため、停止操作を行いません。"
+            + "別のプロセスへシグナルを送らないためです。"
         guard lastWarning != message else { return }
         lastWarning = message
         continuation?.yield(.warning(message))
@@ -339,7 +401,7 @@ public actor ServiceSupervisor {
             }
         }
         stopRequested = true
-        sendSignal(SIGKILL, toProcessGroup: processGroupID)
+        guard sendOwnedSignal(SIGKILL) else { return .ownershipLost }
 
         let deadline = ContinuousClock.now + grace
         let status = await child.waitForExit(timeout: grace)
@@ -348,6 +410,54 @@ public actor ServiceSupervisor {
             processGroupID: processGroupID,
             drainTimeout: deadline - ContinuousClock.now
         )
+    }
+
+    /// 現在のプロセスグループから、再検証用の証拠を作る。
+    ///
+    /// 起動した子は未回収のゾンビが PID を予約しているため、この時点で PGID が
+    /// 再利用されていないことが保証されている。よってここで測った錨は信用してよい。
+    /// 取得できない場合は退避せず nil を返す。
+    public func captureGroupEvidence() -> ProcessGroupEvidence? {
+        guard let processGroupID = launchedProcessGroupID else { return nil }
+        guard let child, child.snapshot.ownsProcessGroup else {
+            releaseOwnershipWithoutSignal()
+            return nil
+        }
+        return ProcessGroupIdentification.captureEvidence(
+            processGroupID: processGroupID,
+            groupStateProbe: groupStateProbe,
+            startAbstimeProbe: startAbstimeProbe,
+            bootSessionProbe: bootSessionProbe
+        )
+    }
+
+    /// ポートを今すぐ実測し直す。
+    ///
+    /// 定期ポーリングの間隔ぶん古い値で切替のゲートを判定すると、
+    /// 直前に増えた listen を見落とす。停止前に必ずここを通す。
+    /// 観測に失敗した場合は握りつぶさず送出する。「ポートなし」と扱ってはいけない。
+    public func refreshPorts() async throws {
+        guard let processGroupID = launchedProcessGroupID else { return }
+        let ports: [ObservedPort]
+        do {
+            ports = try await portProbe(processGroupID)
+                .sorted { ($0.port, $0.pid) < ($1.port, $1.pid) }
+        } catch {
+            // 実測できなかったことを「0件」と混同しない。
+            portRecord = .unavailable
+            let message = "\(error)"
+            if lastWarning != message {
+                lastWarning = message
+                continuation?.yield(.warning(message))
+            }
+            throw error
+        }
+        portRecord = .observed(ports.map(\.port))
+        guard var runtime else { return }
+        guard runtime.observedPorts != ports else { return }
+        runtime.observedPorts = ports
+        self.runtime = runtime
+        continuation?.yield(.ports(ports))
     }
 
     private func startPortPolling(processGroupID: pid_t) {
@@ -367,8 +477,9 @@ public actor ServiceSupervisor {
 
     private func pollPorts(processGroupID: pid_t) async {
         do {
-            let ports = try await PortInspector.listeningPorts(processGroupID: processGroupID)
+            let ports = try await portProbe(processGroupID)
                 .sorted { ($0.port, $0.pid) < ($1.port, $1.pid) }
+            portRecord = .observed(ports.map(\.port))
             guard var runtime else { return }
             guard runtime.observedPorts != ports else { return }
             runtime.observedPorts = ports
@@ -376,6 +487,7 @@ public actor ServiceSupervisor {
             continuation?.yield(.ports(ports))
         } catch {
             // 実測に失敗しても「ポートなし」とは扱わない。警告として表示へ回す。
+            portRecord = .unavailable
             let message = "\(error)"
             guard lastWarning != message else { return }
             lastWarning = message

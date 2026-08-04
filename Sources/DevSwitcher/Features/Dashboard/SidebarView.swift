@@ -93,7 +93,7 @@ private struct ProjectRow: View {
 
             Spacer(minLength: 4)
 
-            StatusDot(phase: state.phase(of: project))
+            ProjectStatusDot(phase: state.phase(of: project))
         }
         .frame(height: 27)
     }
@@ -105,8 +105,10 @@ private struct ServiceRow: View {
     let service: ServiceDefinition
 
     var body: some View {
+        let phase = state.state(of: service.id).phase
+
         HStack(spacing: 6) {
-            StatusDot(phase: state.state(of: service.id).phase)
+            StatusDot(phase: phase)
             Text(service.name)
                 .font(.system(size: 12.5))
                 .lineLimit(1)
@@ -117,9 +119,13 @@ private struct ServiceRow: View {
         }
         .padding(.leading, 24)
         .frame(height: 25)
+        // 対象外は意図して外したものなので、警告色ではなく彩度を落として示す。
+        .opacity(phase == .excluded ? 0.55 : 1)
     }
 
     private var portSummary: String {
+        // 対象外は今回起動しないので、ポートの代わりに状態を出す。
+        if state.state(of: service.id).phase == .excluded { return "対象外" }
         guard let primary = service.primaryPort else { return "ポートなし" }
         let remaining = service.ports.count - 1
         return remaining > 0 ? ":\(primary.port) +\(remaining)" : ":\(primary.port)"

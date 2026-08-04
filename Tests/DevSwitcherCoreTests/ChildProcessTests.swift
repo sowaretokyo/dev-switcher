@@ -110,4 +110,68 @@ struct ChildProcessTests {
         #expect(await child.waitForExit(timeout: .seconds(2)) == .signaled(signal: SIGTERM))
         #expect(child.release())
     }
+
+    @Test("終了通知が来ない場合でも、最初の読み取りで終了を検知する")
+    func detectsExitSynchronouslyWithoutNotification() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let spawned = try ProcessRunner.spawn(
+            ResolvedCommand(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "exit 3"],
+                workingDirectory: directory
+            ),
+            environment: fixedShellEnvironment.variables,
+            output: .files(
+                standardOutput: directory.appendingPathComponent("out.log"),
+                standardError: directory.appendingPathComponent("err.log")
+            )
+        )
+
+        // 監視を始める前に終了させる。この場合、終了通知は二度と配送されない。
+        #expect(await waitUntil {
+            ProcessInspector.processGroupState(spawned.processGroupID)
+                .hasLiveMembers == false
+        })
+
+        let child = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
+        // 通知や 250ms のポーリングを待たずに、読んだ時点で終了を返す。
+        // ここが nil のままだと、既に終了したプロセスをヘルスチェックが通す。
+        #expect(child.currentStatus == .exited(code: 3))
+        #expect(child.release())
+    }
+
+    @Test("終了済みのプロセスを待つとき、猶予を使い切らない")
+    func waitForExitReturnsImmediatelyForFinishedProcess() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let spawned = try ProcessRunner.spawn(
+            ResolvedCommand(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "exit 0"],
+                workingDirectory: directory
+            ),
+            environment: fixedShellEnvironment.variables,
+            output: .files(
+                standardOutput: directory.appendingPathComponent("out2.log"),
+                standardError: directory.appendingPathComponent("err2.log")
+            )
+        )
+        #expect(await waitUntil {
+            ProcessInspector.processGroupState(spawned.processGroupID)
+                .hasLiveMembers == false
+        })
+
+        let child = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
+        let started = ContinuousClock.now
+        let status = await child.waitForExit(timeout: .seconds(5))
+        let elapsed = ContinuousClock.now - started
+
+        #expect(status == .exited(code: 0))
+        // 待機登録の前に観測するので、通知待ちで猶予を消費しない。
+        #expect(elapsed < .seconds(1))
+        #expect(child.release())
+    }
 }
