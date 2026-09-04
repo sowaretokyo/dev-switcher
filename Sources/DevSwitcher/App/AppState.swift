@@ -108,17 +108,43 @@ final class AppState {
         }
     }
 
-    /// 切替中はシートで背後の操作を遮る。無効化ではなくモーダルで遮ることが
-    /// 「切替中に次を起動しない」の実体（DESIGN.md I-1）。
+    /// 停止を伴う切替だけをシートで出す。
+    ///
+    /// 2段階ゲートの進捗と、起動フェーズ前だけ受け付ける中止のためのUI。
+    /// 多重操作を止めているのはこのシートではなく `ActivityToken` のAPI境界（DESIGN.md I-1）。
+    /// 単純な起動・停止では出さないので、切替元と切替先は必ず存在する。
     struct SwitchPresentation: Identifiable {
         let id = UUID()
-        let sourceName: String?
-        let targetName: String?
+        let sourceName: String
+        let targetName: String
         var state: SwitchState = .idle
         var cancelRequested = false
 
         /// 起動フェーズへ入ったら中止は受け付けない（I-4）。
         var canCancel: Bool { !state.hasEnteredStartPhase && !cancelRequested }
+    }
+
+    /// シートを出さない単純な起動・停止の進捗。
+    ///
+    /// 画面を遮らず、利用者が見ているプロジェクトのボタン内で進捗を示す。
+    /// 二重操作を防ぐのはこの値ではなく `ActivityToken` なので、
+    /// 表示が消えるより先に別の操作が始まることはない。
+    struct InlineOperation: Equatable {
+        enum Kind: Equatable {
+            case starting
+            case stopping
+
+            var label: String {
+                switch self {
+                case .starting: "起動中"
+                case .stopping: "停止中"
+                }
+            }
+        }
+
+        let projectID: UUID
+        var kind: Kind
+        var state: SwitchState = .idle
     }
 
     struct FailurePresentation: Identifiable {
@@ -169,9 +195,18 @@ final class AppState {
         let project: ProjectDefinition?
     }
 
+    /// 登録解除の確認。破壊的に見える操作なので、実行前に対象パスを明示する。
+    struct UnregisterPresentation: Identifiable {
+        let id = UUID()
+        let project: ProjectDefinition
+    }
+
     private enum UIEvent: Sendable {
         case service(UUID, ServiceSupervisor.Event)
-        case progress(SwitchState)
+        /// どの操作の進捗かを識別できるよう、`ActivityToken` の id を持たせる。
+        /// 持たせないと、完了した操作の遅れて届いた進捗が次の操作の表示を書き換え、
+        /// 「完了」と出たうえに中止も受け付けられなくなる。
+        case progress(activityID: UInt64, state: SwitchState)
     }
 
     /// 手掛かりファイルの読み込み状態。
@@ -204,12 +239,16 @@ final class AppState {
     private(set) var isTerminating = false
     /// 引き継ぎの判断待ち。閉じるのも差し替えるのも`AppState`だけ。
     private(set) var handoffPresentation: HandoffPresentation?
+    /// 停止を伴う切替の進捗シート。開閉するのは`AppState`だけ。
+    private(set) var switchPresentation: SwitchPresentation?
+    /// 単純な起動・停止の進捗。対象プロジェクトの行にだけ出す。
+    private(set) var inlineOperation: InlineOperation?
 
     var selection: SidebarItem?
     var expandedProjectIDs: Set<UUID> = []
     var projectFormPresentation: ProjectFormPresentation?
+    var unregisterPresentation: UnregisterPresentation?
     var operationError: String?
-    var switchPresentation: SwitchPresentation?
     var failurePresentation: FailurePresentation?
 
     private let registry: RuntimeRegistry
@@ -467,8 +506,13 @@ final class AppState {
                     if case .exited = serviceEvent {
                         await self.refreshPhases()
                     }
-                case let .progress(state):
+                case let .progress(activityID, state):
+                    // 終わった操作の進捗は副作用なしで捨てる。反映すると、次の操作が
+                    // いきなり完了表示になり、起動フェーズ前でも中止が効かなくなる。
+                    guard self.currentActivityID == activityID else { break }
+                    // 進捗の出し先は、切替シートかインライン表示のどちらか一方だけ。
                     self.switchPresentation?.state = state
+                    self.inlineOperation?.state = state
                     await self.refreshPhases()
                 }
             }
@@ -696,7 +740,7 @@ final class AppState {
         }
     }
 
-    /// 候補を引き継ぐ。ヘルスチェックまで通ったものだけを稼働中として表示する。
+    /// 候補を引き継ぐ。初期観測まで通ったものだけを起動済みとして表示する。
     private func adopt(_ candidates: [HandoffCandidate]) async {
         claimPending(candidates.map(\.hint))
 
@@ -851,10 +895,66 @@ final class AppState {
             throw AppError.projectNotFound(project.id)
         }
 
+        let previous = projects[index]
         var updatedProjects = projects
         updatedProjects[index] = project
         try store.save(updatedProjects)
         projects = updatedProjects
+
+        // 編集で消えたサービスの画面状態を残さない。ログの実ファイルには触らない。
+        let remaining = Set(project.services.map(\.id))
+        for service in previous.services where !remaining.contains(service.id) {
+            serviceStates[service.id] = nil
+            logBuffers[service.id] = nil
+            if case let .service(_, serviceID) = selection, serviceID == service.id {
+                selection = .project(project.id)
+            }
+        }
+    }
+
+    /// Dev Switcher の登録から外す。ローカルのリポジトリ・ファイル・ログには一切触らない。
+    ///
+    /// 保存に成功してからメモリ上の一覧を変更する。先にメモリを変えると、保存が失敗した
+    /// ときに「画面からは消えたのに設定ファイルには残っている」状態になり、次回起動で復活する。
+    func unregisterProject(_ project: ProjectDefinition) throws {
+        if let reason = configurationBlockedReason(for: project) { throw AppError.busy(reason) }
+        guard let store else {
+            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+        }
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else {
+            throw AppError.projectNotFound(project.id)
+        }
+
+        var updatedProjects = projects
+        let removed = updatedProjects.remove(at: index)
+        try store.save(updatedProjects)
+        projects = updatedProjects
+
+        // 消えたプロジェクトを指す画面状態を残さない。
+        expandedProjectIDs.remove(removed.id)
+        projectPhases[removed.id] = nil
+        for service in removed.services {
+            serviceStates[service.id] = nil
+            logBuffers[service.id] = nil
+        }
+        if selection?.projectID == removed.id {
+            selection = projects.first.map { SidebarItem.project($0.id) }
+            if let first = projects.first { expandedProjectIDs.insert(first.id) }
+        }
+        unregisterPresentation = nil
+    }
+
+    /// 登録解除の確認を出す。拒否理由はここでも API 境界と同じ判断を使う。
+    func presentUnregisterConfirmation(for project: ProjectDefinition) {
+        if let reason = configurationBlockedReason(for: project) {
+            operationError = "プロジェクトの登録を解除できません。\n\(reason)"
+            return
+        }
+        unregisterPresentation = UnregisterPresentation(project: project)
+    }
+
+    func canUnregister(_ project: ProjectDefinition) -> Bool {
+        configurationBlockedReason(for: project) == nil
     }
 
     func presentProjectForm(editing project: ProjectDefinition? = nil) {
@@ -982,7 +1082,7 @@ final class AppState {
     func configurationBlockedReason(for project: ProjectDefinition) -> String? {
         if let reason = configurationBlockedReason { return reason }
         if phase(of: project).isActive {
-            return "「\(project.name)」が稼働中です。"
+            return "「\(project.name)」は起動済みです。"
                 + "設定値と実測がずれるため、停止してから変更してください。"
         }
         return nil
@@ -1009,7 +1109,7 @@ final class AppState {
     /// 禁止理由ではないので `startBlockedReason` と混ぜない。
     func switchNotice(for project: ProjectDefinition) -> String? {
         guard let activeProject, activeProject.id != project.id else { return nil }
-        return "プロジェクト「\(activeProject.name)」が稼働中です。切り替えると、"
+        return "プロジェクト「\(activeProject.name)」は起動済みです。切り替えると、"
             + "先に「\(activeProject.name)」を停止し、ポートの解放を確認してから起動します。"
     }
 
@@ -1040,12 +1140,21 @@ final class AppState {
         guard source?.id != target.id, canStart else { return }
         guard let token = beginActivity(.operation) else { return }
 
-        switchPresentation = SwitchPresentation(
-            sourceName: source?.name,
-            targetName: target.name
-        )
+        // 停止を伴う切替だけシートで出す。単純な起動は画面を遮らず、
+        // 利用者が見ているプロジェクトのボタン内で進捗を示す。
+        if let source {
+            switchPresentation = SwitchPresentation(
+                sourceName: source.name,
+                targetName: target.name
+            )
+        } else {
+            inlineOperation = InlineOperation(projectID: target.id, kind: .starting)
+        }
 
         runActivity(token) { [self] in
+            // 成功・失敗・補償停止のどの経路を通っても、必ずインライン表示を解除する。
+            defer { inlineOperation = nil }
+
             // 停止フェーズへ入る前に、完全なスナップショットを保存できることを確かめる。
             // ここで確かめずに進むと、切替元を停止したうえに、起動したプロセスの
             // 手掛かりも残せない状態になりうる。
@@ -1063,13 +1172,13 @@ final class AppState {
                     _ = try await coordinator.switchProject(
                         from: source,
                         to: target,
-                        progress: progressSink,
+                        progress: progressSink(for: token),
                         events: eventSink
                     )
                 } else {
                     _ = try await coordinator.start(
                         target,
-                        progress: progressSink,
+                        progress: progressSink(for: token),
                         events: eventSink
                     )
                 }
@@ -1084,7 +1193,7 @@ final class AppState {
             await refreshPhases()
             // 起動したプロセスの手掛かりを残せなかったら、成功として閉じない。
             if await persistRuntimeHints() == false {
-                await compensateUnsavedStart(of: target)
+                await compensateUnsavedStart(of: target, token: token)
             }
         }
     }
@@ -1093,7 +1202,10 @@ final class AppState {
     ///
     /// 記録に無いプロセスを残したままクラッシュすると、次回起動時に検出も停止もできない。
     /// ポートを持たないサービスは特に回収不能になるため、今回起動した対象を停止する。
-    private func compensateUnsavedStart(of target: ProjectDefinition) async {
+    private func compensateUnsavedStart(
+        of target: ProjectDefinition,
+        token: ActivityToken
+    ) async {
         guard await registry.occupyingServiceIDs(projectID: target.id).isEmpty == false else {
             operationError = "再検証の手掛かりを保存できませんでした。\n"
                 + (hintStorageFailure ?? "")
@@ -1106,11 +1218,17 @@ final class AppState {
             hintStorageFailure ?? "",
         ].filter { !$0.isEmpty }
 
+        // インライン表示中なら、いま何をしているのかに合わせる。
+        // 停止しているのに「起動中」と出し続けない。
+        if inlineOperation != nil {
+            inlineOperation = InlineOperation(projectID: target.id, kind: .stopping)
+        }
+
         var stopFailure: SwitchFailure?
         do {
             _ = try await coordinator.stop(
                 target,
-                progress: progressSink,
+                progress: progressSink(for: token),
                 events: eventSink
             )
         } catch let failure as SwitchFailure {
@@ -1143,21 +1261,21 @@ final class AppState {
     func stopProject(_ project: ProjectDefinition) {
         guard canStop else { return }
         guard let token = beginActivity(.operation) else { return }
-        switchPresentation = SwitchPresentation(sourceName: project.name, targetName: nil)
+        // 停止だけの操作にシートは出さない。中止できる余地も無いので、
+        // 「切替を中止」を持つUIを見せる意味がない。
+        inlineOperation = InlineOperation(projectID: project.id, kind: .stopping)
 
         runActivity(token) { [self] in
+            defer { inlineOperation = nil }
             do {
                 _ = try await coordinator.stop(
                     project,
-                    progress: progressSink,
+                    progress: progressSink(for: token),
                     events: eventSink
                 )
-                switchPresentation = nil
             } catch let failure as SwitchFailure {
-                switchPresentation = nil
                 present(failure)
             } catch {
-                switchPresentation = nil
                 operationError = "\(error)"
             }
             await refreshPhases()
@@ -1219,9 +1337,23 @@ final class AppState {
         }
     }
 
-    private var progressSink: SwitchCoordinator.ProgressSink {
+    /// 進捗の受け口。どの操作から来た進捗かを、送り出す時点で確定させる。
+    /// 受信側で「いまの操作」を推測すると、遅れて届いた古い進捗と区別できない。
+    private func progressSink(for token: ActivityToken) -> SwitchCoordinator.ProgressSink {
         let continuation = eventContinuation
-        return { state in continuation.yield(.progress(state)) }
+        let activityID = token.id
+        return { state in continuation.yield(.progress(activityID: activityID, state: state)) }
+    }
+
+    /// 実行中の操作の識別子。進捗イベントの取捨に使う。
+    private var currentActivityID: UInt64? { currentToken?.id }
+
+    /// 実行中の操作に紐づいた進捗の受け口を返す。
+    ///
+    /// 「終わった操作の進捗が遅れて届く」状況をテストから再現するための入口で、
+    /// `waitForPendingOperation()` と同じくテスト支援。UI からは呼ばない。
+    func progressSinkForCurrentActivity() -> SwitchCoordinator.ProgressSink? {
+        currentToken.map { progressSink(for: $0) }
     }
 
     private var eventSink: SwitchCoordinator.EventSink {
@@ -1424,7 +1556,7 @@ final class AppState {
         switch event {
         case let .started(runtime):
             update(serviceID) {
-                // ヘルスチェック通過前なので「起動中」。稼働中にはしない。
+                // 初期観測が終わっていないので「起動中」。起動済みにはしない。
                 $0.phase = .running
                 $0.observedPortRecord = .unavailable
                 $0.startedAt = runtime.startedAt

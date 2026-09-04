@@ -23,7 +23,7 @@ struct StatusDot: View {
         switch phase {
         case .excluded: .clear
         case .stopped: .secondary
-        // listen しただけの `.running` は遷移中の色。緑は `.healthy` だけ。
+        // 観測が終わっていない `.running` は遷移中の色。緑は初期観測を通過した `.healthy` だけ。
         case .starting, .running, .stopping: .accentColor
         case .healthy: .green
         case .residual: .orange

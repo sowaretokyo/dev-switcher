@@ -60,14 +60,10 @@ struct ProjectDetailView: View {
                     .font(.system(size: 13.5, weight: .semibold))
                 ProjectStatusLabel(phase: state.phase(of: project))
                 Spacer()
-                openMenu
-                Button("編集…") {
-                    state.presentProjectForm(editing: project)
+                if hasOpenMenuItems {
+                    openMenu
                 }
-                .disabled(!state.canEdit(project))
-                // 無効の理由は1か所から出す。固定文にすると、稼働中でない理由で
-                // 無効なときに嘘の案内を出すことになる。
-                .help(state.configurationBlockedReason(for: project) ?? "プロジェクト設定を編集")
+                moreMenu
             }
             Text(project.directory.path)
                 .font(.system(size: 11, design: .monospaced))
@@ -81,6 +77,13 @@ struct ProjectDetailView: View {
         }
     }
 
+    /// URL付きポートが1件もなければ、空のメニューを表示しない。
+    var hasOpenMenuItems: Bool {
+        project.services.contains { service in
+            service.ports.contains { $0.openURL != nil }
+        }
+    }
+
     /// `openUrl` を持つポートだけがメニューに載る。
     private var openMenu: some View {
         Menu("開く") {
@@ -91,19 +94,61 @@ struct ProjectDetailView: View {
                     }
                 }
             }
-            Divider()
-            Button("Finder で表示") {
-                state.revealInFinder(project)
-            }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
     }
 
+    /// 編集と登録解除の導線（DESIGN.md 決定 i）。複製はPost-MVPなので出さない。
+    private var moreMenu: some View {
+        Menu {
+            Button("編集…") {
+                state.presentProjectForm(editing: project)
+            }
+            .disabled(!state.canEdit(project))
+            Button("Finder で表示") {
+                state.revealInFinder(project)
+            }
+            Divider()
+            Button("登録を解除…") {
+                state.presentUnregisterConfirmation(for: project)
+            }
+            .disabled(!state.canUnregister(project))
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        // 無効の理由は1か所から出す。固定文にすると、稼働中でない理由で
+        // 無効なときに嘘の案内を出すことになる。
+        .help(
+            state.configurationBlockedReason(for: project)
+                ?? "プロジェクトの編集・Finder 表示・登録解除"
+        )
+    }
+
+    /// このプロジェクトを対象にした、シートを出さない進行中の操作。
+    private var inlineOperation: AppState.InlineOperation? {
+        guard let operation = state.inlineOperation, operation.projectID == project.id else {
+            return nil
+        }
+        return operation
+    }
+
     private var controls: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                if state.phase(of: project).isActive {
+                if let inlineOperation {
+                    // 進捗はボタンの中で示す。画面を遮らないので、シートが一瞬だけ
+                    // 出て消えることがない。二重操作は AppState の API 境界が止める。
+                    Button {} label: {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(inlineOperation.kind.label)
+                        }
+                    }
+                    .disabled(true)
+                } else if state.phase(of: project).isActive {
                     Button("停止") {
                         state.stopProject(project)
                     }
@@ -120,8 +165,16 @@ struct ProjectDetailView: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
-            // 起動できない間もボタンを黙って無効化しない。何を待っているのかを必ず出す。
-            if let reason = state.startBlockedReason {
+            // いまどの段階かを出す。ボタンの「起動中」だけでは、
+            // どのサービスで止まっているのか分からない。
+            // 自分の操作中に「ほかの処理を実行中」と出さないよう、理由表示より優先する。
+            if let inlineOperation {
+                Text(inlineOperation.state.label)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let reason = state.startBlockedReason {
+                // 起動できない間もボタンを黙って無効化しない。何を待っているのかを必ず出す。
                 Text(reason)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.orange)

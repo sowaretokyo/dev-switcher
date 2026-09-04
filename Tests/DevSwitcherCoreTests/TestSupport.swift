@@ -89,16 +89,19 @@ func makeOrderedService(
 }
 
 /// 起動直後に異常終了するサービス。
+/// ポートを取れずに終了した開発サーバーと同じ結末を、実プロセスで再現するために使う。
 func makeFailingService(
     name: String,
+    kind: ServiceKind = .worker,
+    ports: [PortSpec] = [],
     workingDirectory: URL,
     failurePolicy: FailurePolicy,
     exitCode: Int32 = 3
 ) -> ServiceDefinition {
     makeService(
         name: name,
-        kind: .worker,
-        ports: [],
+        kind: kind,
+        ports: ports,
         executable: "/bin/sh",
         arguments: ["-c", "exit \(exitCode)"],
         workingDirectory: workingDirectory,
@@ -115,8 +118,8 @@ func readLines(_ url: URL) -> [String] {
 
 /// テスト内で使う本物の TCP リスナー。
 ///
-/// 「listen しているのに HTTP へ応答しない」状態を再現するために使う。
-/// 外部コマンドへ依存せず、ポートの確保と応答の有無をテスト側で制御できる。
+/// ポートを実際に確保した状態を作るために使う。接続を受けた回数を数えるので、
+/// 「設定ポートへ接続していないこと」を実測で確かめられる。
 final class LocalTCPServer: @unchecked Sendable {
     enum Behavior {
         /// HTTP として応答する。
@@ -130,7 +133,15 @@ final class LocalTCPServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "jp.devswitcher.tests.tcp")
     private let lock = NSLock()
     private var acceptedDescriptors: [Int32] = []
+    private var acceptedConnections = 0
     private var isStopped = false
+
+    /// 接続を受け付けた回数。Dev Switcher が設定ポートへ触っていないことの根拠にする。
+    var acceptedConnectionCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return acceptedConnections
+    }
 
     init(behavior: Behavior) throws {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
@@ -175,6 +186,7 @@ final class LocalTCPServer: @unchecked Sendable {
             while true {
                 let accepted = accept(descriptor, nil, nil)
                 guard accepted >= 0 else { return }
+                self.countAccepted()
                 switch behavior {
                 case let .http(status):
                     var request = [UInt8](repeating: 0, count: 1024)
@@ -190,6 +202,12 @@ final class LocalTCPServer: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private func countAccepted() {
+        lock.lock()
+        acceptedConnections += 1
+        lock.unlock()
     }
 
     private func retain(_ descriptor: Int32) {

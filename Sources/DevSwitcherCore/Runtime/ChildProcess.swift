@@ -124,7 +124,7 @@ public final class ChildProcess: @unchecked Sendable {
     /// この2つを別々に読むと、間で所有権を失った PGID へシグナルを送れてしまう。
     /// 読むたびにカーネルへ問い合わせて最新化する。通知（`DispatchSourceProcess`）と
     /// 250ms のポーリングだけに頼ると、負荷時に配送が遅れて
-    /// 「もう終了しているのに動作中」と読め、短命プロセスをヘルスチェックが通す。
+    /// 「もう終了しているのに動作中」と読め、短命プロセスが起動確認を通ってしまう。
     public struct Snapshot: Equatable, Sendable {
         public let status: ExitStatus?
         /// リーダーを未回収で保持しているか。false なら PGID は再利用されうる。

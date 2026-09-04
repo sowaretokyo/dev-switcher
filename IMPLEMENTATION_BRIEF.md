@@ -2,6 +2,7 @@
 
 - ステータス: 実装開始可能
 - 作成日: 2026-08-01
+- MVP範囲更新: 2026-08-05
 - 対象: Claude Codeおよび実装担当者
 
 ## 1. 最初に読むもの
@@ -22,7 +23,6 @@
 - 必要箇所のみAppKit
 - Foundation
 - Swift Testing
-- UIテストはXCTest
 - macOS 15以降
 - 外部パッケージなしで開始する
 
@@ -32,10 +32,10 @@
 Package.swift
 Sources/DevSwitcher/
 Tests/DevSwitcherTests/
-scripts/build-app.sh        # 配布工程で追加
+scripts/build-app.sh        # Milestone 4で追加
 ```
 
-SwiftPMのexecutable targetをSwiftUIアプリとして実装する。機能MVPを`swift build`と`swift test`で検証した後、`.app`、署名、公証、DMGの工程を追加する。
+SwiftPMのexecutable targetをSwiftUIアプリとして実装する。Milestone 3までは`swift build`と`swift test`を正とし、Milestone 4でローカル実行用の`.app`を追加する。Universal build、Developer ID署名、公証、DMG、別Mac確認はPost-MVPとする。
 
 ## 3. 推奨ディレクトリ
 
@@ -62,12 +62,9 @@ Sources/DevSwitcher/
 │  └─ SwitchCoordinator.swift
 ├─ Persistence/
 │  └─ ProjectStore.swift
-├─ Detection/
-│  └─ ProjectDetector.swift
 └─ Features/
    ├─ Dashboard/
    ├─ ProjectEditor/
-   ├─ ProjectWizard/
    ├─ Logs/
    └─ Switching/
 ```
@@ -84,7 +81,7 @@ Sources/DevSwitcher/
 - `PortSpec`: ラベル、番号、代表指定、開くURL
 - `RuntimeState`: 実プロセスから再構築する現在状態
 - `ObservedRuntime`: 起動・引き継ぎ済みサービスのプロセス識別情報と実測ポート
-- `SwitchState`: 停止、解放確認、取得確認、起動の進行状態
+- `SwitchState`: 停止、解放確認、起動、起動確認の進行状態
 
 設定と実状態を同じ型へ保存しない。必須値が欠けた定義はデコードまたは登録時に拒否する。
 
@@ -126,9 +123,11 @@ Finderから起動したGUIアプリは、ターミナルと同じ`PATH`を持�
 
 必要であれば`posix_spawn`と`POSIX_SPAWN_SETPGROUP`を使用する。stdoutとstderrは別のpipeから受け取り、受信時刻を付けて同じログストリームへ統合する。
 
-### 5.4 managed command
+### 5.4 managed command（Post-MVP）
 
 `supabase start`や`docker compose up -d`のように起動コマンド自身が終了してもサービスが残るものは、通常の子プロセスと区別する。
+
+MVPでは通常のforeground child processだけを管理する。managed commandとDockerを設定できる旧形式を読み込んだ場合は、起動前に明示的に拒否し、通常のプロセスグループ停止へ黙ってフォールバックしない。将来対応する場合は次の責務分離を維持する。
 
 - child process: プロセスグループで管理
 - managed command: 明示的な終了コマンドと実測ポートで管理
@@ -145,7 +144,7 @@ Finderから起動したGUIアプリは、ターミナルと同じ`PATH`を持�
 - ポート検査には固定引数で`/usr/sbin/lsof`を実行してよい
 - `lsof`の出力解析失敗を「ポートなし」と扱わない
 
-停止側は`ObservedRuntime`に記録した実測ポートを検証し、起動側は今回有効なサービスの設定ポートを検証する。
+停止側は`ObservedRuntime`に記録した実測ポートの解放を検証する。起動側の設定ポートは検証しない（rev.3 の判断。`DESIGN.md` の I-3 と決定 b を参照）。設定ポートは表示と「開く」URL のための補助情報であり、起動可否の根拠にしない。
 
 ## 7. 並行処理
 
@@ -162,7 +161,8 @@ Finderから起動したGUIアプリは、ターミナルと同じ`PATH`を持�
 - 保存先はApplication Support配下
 - JSONへスキーマバージョンを含める
 - 一時ファイルへ書いてからatomicに置き換える
-- 必須値欠落、重複ID、範囲外ポート、代表ポートなし・複数、起動対象サービス間の重複ポートを拒否する
+- 必須値欠落、重複ID、範囲外ポート、同一サービス内の重複ポート、代表ポートなし・複数を拒否する
+- ポートの入力自体は任意とし、未入力を拒否しない。サービス間の同じポートも拒否しない
 - 空文字や0で補完しない
 
 保存するのはプロジェクト定義とUI設定であり、「稼働中」という実状態ではない。
@@ -188,37 +188,44 @@ Finderから起動したGUIアプリは、ターミナルと同じ`PATH`を持�
 ### Milestone 2: 安全な切替
 
 - 複数サービスと起動・終了順
-- サービス種別ごとのヘルスチェックと「起動中」から「稼働中」への遷移
+- プロセスの生存による起動確認と「起動中」から「起動済み」への遷移
 - `failurePolicy`に従った起動失敗の中断または一部停止
 - 停止側の全サービス終了
 - 停止側の実測ポート解放確認
-- 起動側の全対象ポート確認
 - 失敗時の現在状態表示
 - 一部停止と対象外
 - アプリ再起動後の実プロセス再検証と、引き継ぐ・停止する・無視する選択
 
-Milestone 2で扱うヘルスチェックは`DESIGN.md`の種別ごとの既定値を使い、利用者へ設定を求めない。ポートもHTTPエンドポイントも持たないworker／watcherは、プロセスが正常に起動し、短い初期観測期間に異常終了しなかったことを利用可能性の判定とする。Docker固有のhealth判定はmanaged commandとともにMilestone 3で実装する。
+Milestone 2ではHTTPヘルスチェックを行わない（rev.3 の判断）。全サービスの起動成功は「プロセスが既定の初期観測期間中に終了せず、観測終了時点でも管理下にあること」で判定し、利用者へ設定を求めない。種別による判定の違いも持たせない。設定ポートへHTTPリクエストを送ってはいけない。同じポートを先に取った別サービスの応答を自分の応答と誤認するため。Dockerはコマンド自身が終了してもコンテナが残るため、この判定を当てはめられない。managed commandとともにPost-MVPで実装するまで、起動前に明示的に拒否する。
 
 再起動後の引き継ぎでは、前回観測したPIDなどを「稼働中」という事実として復元しない。再検証の手掛かりはプロジェクト設定と別に保存し、開始時刻、実行ファイル、作業ディレクトリ、期待するポートを実測して、一致したプロセスだけを候補にする。候補が一致しない場合や観測に失敗した場合は引き継がない。プロセス不存在など確実に古い手掛かりだけを自動整理し、観測不能な手掛かりは利用者が判断するまで保持する。外部プロセスは自動終了しない。
 
-Milestone 2では切替ロジックと日常操作のUIを完成させる。複数サービスを追加・編集する完成版UI、自動検出、managed command、Docker lifecycleはMilestone 3の対象とし、Milestone 2のテストでは値型から複数サービス構成を作る。
+Milestone 2では切替ロジックと日常操作のUIを完成させる。複数サービスを追加・編集するUIはMilestone 3の対象とし、Milestone 2のテストでは値型から複数サービス構成を作る。自動検出、managed command、Docker lifecycleはPost-MVPとする。
 
-### Milestone 3: プロジェクト管理
+### Milestone 3: 手動の複数サービス管理
 
-- 追加ウィザード
-- 編集、複製、登録解除
-- JavaScript、Expo、Supabase、Inngest、Docker Composeの自動検出
-- managed commandとDocker lifecycle
+- 単一の編集画面でプロジェクトを手動追加、編集、登録解除する
+- 1プロジェクトに複数サービスを追加、削除、並べ替えする
+- サービス名、種別、起動コマンド、作業ディレクトリ、任意のポート、既定の起動対象、失敗ポリシーを編集する
+- 起動済みプロジェクトは編集できず、先に停止を求める
+- 既存の終了順、今回の起動対象、未対応の終了方法を編集保存で欠落させない
+- 5ステップウィザード、自動検出、複製、managed command、Docker、HTTP readinessは実装しない
 
-### Milestone 4: 配布
+### Milestone 4: ローカル`.app`
 
-- アプリアイコン
-- `.app`生成
-- Universal buildの要否確認
-- Developer ID署名
-- 公証
-- DMG生成
-- 別Macでの初回起動確認
+- `scripts/build-app.sh`でローカル実行用の`.app`を生成する
+- 生成した`.app`から起動、設定読込、終了時flushまで確認する
+- 製品名とSwiftPMの実行ファイル名を維持する
+
+### Post-MVP
+
+- JavaScript、Expo、Supabase、Inngest、Docker Composeの自動検出と5ステップウィザード
+- プロジェクト複製
+- managed command、カスタム終了コマンド、Docker lifecycle
+- HTTP readinessとカスタムヘルスチェック
+- Expo QR、メニューバー、グローバルショートカット
+- Universal buildの確定、Developer ID署名、公証、DMG、別Macでの初回起動確認
+- XCTest UI自動化
 
 ## 10. Milestone 1の完了条件
 
@@ -237,18 +244,40 @@ Milestone 2では切替ロジックと日常操作のUIを完成させる。複�
 
 - 複数サービスを設定順に起動し、終了順（既定は起動順の逆）に停止できる
 - 起動対象外のサービスを起動せず、警告や一部停止として扱わない
-- listen開始だけで稼働中にせず、ヘルスチェックを通過してから稼働中にする
+- ポート未入力のサービスを保存でき、プロセスの生存だけで起動成功にできる
+- 起動前に設定ポートの空き確認を行わず、HTTPリクエストも送らない
 - `failurePolicy: block`の起動失敗では今回起動したサービスを安全に停止し、後続を起動しない
 - `failurePolicy: continue`の起動失敗では後続を起動し、プロジェクトを一部停止として表示する
+- 同じ設定ポートを持つサービスが複数あっても、保存を拒否せず設定順に起動を試行する
 - 停止側で実際に起動または引き継いだ全サービスを停止する
-- 停止側の全実測ポートが解放されるまで、起動側の検証へ進まない
-- 起動側で今回有効な全サービスの全設定ポートが空くまで、サービスを1つも起動しない
+- 停止側の全実測ポートが解放されるまで、切替先を1件も起動しない
+- 起動後の実測ポートをsnapshot・UI・再検証の手掛かりへ反映する
 - 切替失敗時に、切替元と切替先の現在状態を必須情報として表示する
 - 起動前までの中止では切替元の停止を完了し、切替先を起動しない。起動開始後は中止を受け付けない
 - アプリ再起動後に候補プロセスを実測し、引き継ぐ・停止する・無視するを選べる
 - PIDが再利用された場合や実測情報が一致しない場合、別プロセスを誤って引き継いだり終了したりしない
-- Swift Testingで、起動順、終了順、2段階の切替ゲート、失敗ポリシー、PID再検証を確認する
+- Swift Testingで、起動順、終了順、停止側のポート解放ゲート、失敗ポリシー、PID再検証を確認する
 - `swift build`と`swift test`が成功する
+
+## 10.2 Milestone 3の完了条件
+
+- GUIからプロジェクトを手動追加し、複数サービスを1つのプロジェクトへ登録できる
+- サービスの追加、削除、並べ替えを保存し、再起動後も同じ構成を復元できる
+- サービス名、種別、起動コマンド、作業ディレクトリ、任意のポート、既定の起動対象、失敗ポリシーを編集できる
+- ポート未入力のWeb、Inngest、workerを保存でき、種別からポートを自動入力しない
+- 同じ設定ポートを持つ複数サービスを保存できる
+- 起動済みプロジェクトの編集と登録解除をUIとAPI境界の両方で拒否し、停止後は同じ操作を実行できる
+- 編集対象外の終了順、今回の起動対象、未対応の終了方法を保存時に欠落させない
+- プロジェクト設定を読み込めない状態では、古いメモリ内容による追加、更新、起動を拒否する。停止は復旧手段として維持する
+- Milestone 2の起動順、停止順、排他、引き継ぎ、終了時flushの安全性を変更しない
+- `swift build`と`swift test`が成功する
+
+## 10.3 Milestone 4の完了条件
+
+- `scripts/build-app.sh`がローカル実行用の`DevSwitcher.app`を生成する
+- 生成物を起動し、設定読込、通常操作、終了時flushが動作する
+- SwiftPMの`DevSwitcher`実行ファイル名と既存テストを維持する
+- 署名、公証、DMG、別Mac確認を完了条件に含めない
 
 ## 11. 実装開始時の禁止事項
 
@@ -262,18 +291,18 @@ Milestone 2では切替ロジックと日常操作のUIを完成させる。複�
 - ローカルリポジトリを削除・移動しない
 - lint、build、test未実行で完了報告しない
 
-## 12. Milestone 2を実装するClaude Codeへの依頼
+## 12. Milestone 3を実装するClaude Codeへの依頼
 
 ```text
-このリポジトリのCLAUDE.md、MVP_SPEC.md、DESIGN.md、IMPLEMENTATION_BRIEF.mdを全文読み、既存のMilestone 1実装を調査したうえで、IMPLEMENTATION_BRIEF.mdのMilestone 2だけを実装してください。
+このリポジトリのCLAUDE.md、MVP_SPEC.md、DESIGN.md、IMPLEMENTATION_BRIEF.mdを全文読み、既存のMilestone 2実装を調査したうえで、IMPLEMENTATION_BRIEF.mdのMilestone 3だけを実装してください。
 
-既存の設計資料とMilestone 1の安全性を保持してください。Swift 6＋SwiftUI＋必要箇所のみAppKit、macOS 15以降、SwiftPM、外部パッケージなしを維持してください。
+既存の設計資料とMilestone 2の安全性を保持してください。Swift 6＋SwiftUI＋必要箇所のみAppKit、macOS 15以降、SwiftPM、外部パッケージなしを維持してください。
 
-最初にswift buildとswift testを実行してMilestone 1の基準線を確認し、その後「ファイル × 変更内容」の短い実装プランを提示してください。ローカルポートのlistenが禁止された実行環境では、そのテストを弱めたりskipしたりせず、未検証として報告してください。
+最初にswift buildとswift testを実行してMilestone 2の基準線を確認し、その後「ファイル × 変更内容」の短い実装プランを提示してください。利用者のApplication Supportへテストデータを書かず、実プロセス検査やローカルlistenが禁止された実行環境では、そのテストを弱めたりskipしたりせず、未検証として報告してください。
 
-Milestone 2には、複数サービスの起動・終了順、ヘルスチェック、failurePolicy、一部停止と対象外、停止側と起動側を分けた2段階ゲート、失敗時の現在状態、アプリ再起動後の再検証と引き継ぎを含めます。切替はactorで直列化し、ゲートを通過しなければ起動フェーズへ入れない構造にしてください。
+Milestone 3は手動のプロジェクト管理に絞ります。単一の編集画面でプロジェクトを追加、編集、登録解除でき、1プロジェクト内の複数サービスを追加、削除、並べ替えできるようにしてください。編集対象はサービス名、種別、起動コマンド、作業ディレクトリ、任意のポート、既定の起動対象、失敗ポリシーです。ポートは任意で、種別やコマンドから推測・自動入力しないでください。同じ設定ポートを持つ複数サービスも保存可能にします。
 
-ProjectDefinitionには終了順と今回の起動対象、ServiceDefinitionには必要な終了方法を表現できるようにします。既存のschema version 1を暗黙の既定値で握りつぶさず、明示的に新形式へ変換してください。再検証の手掛かりはプロジェクト設定とは別に保存し、保存値を稼働中の事実として信用しないでください。
+起動済みプロジェクトの編集と登録解除はUIだけでなくAPI境界でも拒否し、停止後に許可してください。設定ファイルを読み込めない状態では古いメモリ内容による追加、更新、起動を拒否し、停止は復旧手段として維持してください。編集画面が扱わない終了順、今回の起動対象、未対応の終了方法を保存時に欠落させないでください。必須値を空文字や0で補完せず、具体的な検証エラーを表示してください。
 
-複数サービスを追加・編集する完成版UI、自動検出、managed command、Docker lifecycle、配布工程は実装しないでください。最後にMilestone 2の完了条件と照合し、swift buildとswift testの成功・失敗を正確に報告してください。
+5ステップウィザード、自動検出、プロジェクト複製、managed command、カスタム終了コマンド、Docker lifecycle、HTTP readiness、配布工程は実装しないでください。Milestone 2の起動・停止・切替・排他・引き継ぎ・終了時flushを変更しないでください。最後にMilestone 3の完了条件と照合し、swift buildとswift testの成功・失敗を正確に報告してください。
 ```

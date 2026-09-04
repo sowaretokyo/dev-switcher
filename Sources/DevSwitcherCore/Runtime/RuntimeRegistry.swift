@@ -147,7 +147,7 @@ public actor RuntimeRegistry {
         operationInFlight = true
         defer { operationInFlight = false }
 
-        // 終了コマンドを持つサービスは managed command として Milestone 3 で扱う。
+        // 終了コマンドを持つサービスは Post-MVP の managed command として扱う。
         // プロセスグループ停止へ黙って倒すと、停止したつもりでサービスが残る。
         guard service.usesProcessGroupStop else {
             throw RuntimeError.stopCommandUnsupported(service: service.name)

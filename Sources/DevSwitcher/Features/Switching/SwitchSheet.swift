@@ -1,10 +1,11 @@
 import DevSwitcherCore
 import SwiftUI
 
-/// 切替中のシート。
+/// 停止を伴う切替のシート。
 ///
-/// 表示中はサイドバーへイベントが届かない。無効化ではなくモーダルで遮ることが
-/// 「切替中に次を起動しない」の実体（DESIGN.md I-1）。
+/// ポート解放ゲートの進捗と、起動フェーズ前だけ受け付ける中止のためのUI。
+/// 多重操作を止めているのは `AppState` の `ActivityToken` であり、このシートではない
+/// （DESIGN.md I-1）。単純な起動・停止では出さない。
 struct SwitchSheet: View {
     @Environment(AppState.self) private var state
     /// 提示された時点の値。同一性の判定にだけ使う。
@@ -22,43 +23,33 @@ struct SwitchSheet: View {
                 .font(.system(size: 13.5, weight: .semibold))
 
             VStack(alignment: .leading, spacing: 8) {
-                if let sourceName = presentation.sourceName {
-                    StageRow(
-                        label: "\(sourceName) を停止",
-                        status: stopStatus,
-                        detail: stopDetail
-                    )
-                }
-                // ゲートは2つの独立した検証なので2行で出す（I-3）。
+                StageRow(
+                    label: "\(presentation.sourceName) を停止",
+                    status: stopStatus,
+                    detail: stopDetail
+                )
+                // ゲートは「切替元が実際に握っていたポートの解放」だけ（I-3）。
+                // 切替先の設定ポートは調べない。取得できるかは OS が決める。
                 GateBox(
                     rows: [
                         GateBox.Row(
-                            label: presentation.sourceName.map { "\($0) のポートが解放された" }
-                                ?? "停止元のポート解放",
+                            label: "\(presentation.sourceName) のポートが解放された",
                             status: releaseStatus,
                             counter: releaseCounter
                         ),
-                        GateBox.Row(
-                            label: presentation.targetName.map { "\($0) のポートを確認" }
-                                ?? "起動先のポート確認",
-                            status: acquireStatus,
-                            counter: acquireCounter
-                        ),
                     ]
                 )
-                if let targetName = presentation.targetName {
-                    StageRow(
-                        label: "\(targetName) を起動",
-                        status: startStatus,
-                        detail: startDetail
-                    )
-                }
+                StageRow(
+                    label: "\(presentation.targetName) を起動",
+                    status: startStatus,
+                    detail: startDetail
+                )
             }
 
             Divider()
 
             if presentation.canCancel {
-                Text("中止すると、\(presentation.sourceName ?? "切替元")の停止は最後まで実行し、\(presentation.targetName ?? "切替先")は起動しません。")
+                Text("中止すると、\(presentation.sourceName)の停止は最後まで実行し、\(presentation.targetName)は起動しません。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,12 +78,7 @@ struct SwitchSheet: View {
     }
 
     private var title: String {
-        switch (presentation.sourceName, presentation.targetName) {
-        case let (source?, target?): "「\(source)」から「\(target)」へ切り替えています"
-        case let (nil, target?): "「\(target)」を起動しています"
-        case let (source?, nil): "「\(source)」を停止しています"
-        case (nil, nil): "処理中"
-        }
+        "「\(presentation.sourceName)」から「\(presentation.targetName)」へ切り替えています"
     }
 
     private var stopStatus: StageStatus {
@@ -125,24 +111,9 @@ struct SwitchSheet: View {
         return nil
     }
 
-    private var acquireStatus: StageStatus {
-        switch presentation.state {
-        case .idle, .stopping, .verifyingRelease: .pending
-        case .verifyingAcquire: .inProgress
-        default: .done
-        }
-    }
-
-    private var acquireCounter: String? {
-        if case let .verifyingAcquire(free, total) = presentation.state {
-            return "\(free)/\(total)"
-        }
-        return nil
-    }
-
     private var startStatus: StageStatus {
         switch presentation.state {
-        case .starting, .awaitingHealth, .rollingBack: .inProgress
+        case .starting, .observingStartup, .rollingBack: .inProgress
         case .completed: .done
         default: .pending
         }
@@ -151,7 +122,7 @@ struct SwitchSheet: View {
     private var startDetail: String? {
         switch presentation.state {
         case let .starting(service, index, total): "\(service)（\(index)/\(total)）"
-        case let .awaitingHealth(service): "\(service) のヘルスチェックを待機"
+        case let .observingStartup(service): "\(service) の起動を確認"
         case let .rollingBack(service): "\(service) を停止（巻き戻し）"
         default: nil
         }
@@ -202,7 +173,7 @@ struct StageRow: View {
     }
 }
 
-/// 2つのゲート検証をひとまとまりで見せる。進捗は数で出す。
+/// ゲートの検証をひとまとまりで見せる。進捗は数で出す。
 struct GateBox: View {
     struct Row: Identifiable {
         let label: String

@@ -1,4 +1,5 @@
 import Darwin
+@testable import DevSwitcherApp
 @testable import DevSwitcherCore
 import Foundation
 
@@ -6,6 +7,169 @@ import Foundation
 let fixedShellEnvironment = try! ShellEnvironment(
     variables: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
 )
+
+/// テストを実時間で待たせないための設定。猶予と観測窓だけを縮め、判定は変えない。
+let fastCoordinatorOptions = SwitchCoordinator.Options(
+    releaseTimeout: .seconds(2),
+    stopGrace: .seconds(2),
+    startupObservationWindow: .milliseconds(200),
+    startupPollInterval: .milliseconds(50),
+    gatePollInterval: .milliseconds(50)
+)
+
+/// 保存先と実行環境を必ず一時ディレクトリへ差し替えた `AppState`。
+/// 既定のままだと、設定・手掛かりに加えてサービスのログまで
+/// 利用者の Application Support へ書き込む。
+@MainActor
+func makeAppState(
+    directory: URL,
+    registry providedRegistry: RuntimeRegistry? = nil,
+    environmentLoader: @escaping RuntimeRegistry.ShellEnvironmentLoader = {
+        fixedShellEnvironment
+    },
+    handoffInspector: HandoffInspector = HandoffInspector(),
+    hintStore: (any RuntimeHintPersisting)? = nil,
+    options: SwitchCoordinator.Options = fastCoordinatorOptions
+) -> AppState {
+    let registry = providedRegistry ?? RuntimeRegistry(
+        portPollInterval: .seconds(60),
+        // ログの出力先も一時ディレクトリにする。
+        logDirectory: directory.appendingPathComponent("logs", isDirectory: true),
+        environmentLoader: environmentLoader
+    )
+    return AppState(
+        registry: registry,
+        store: ProjectStore(directory: directory),
+        hintStore: hintStore ?? RuntimeHintStore(directory: directory),
+        handoffInspector: handoffInspector,
+        coordinatorOptions: options
+    )
+}
+
+func makeStoredHint(
+    projectID: UUID,
+    serviceID: UUID,
+    serviceName: String = "Worker",
+    pid: pid_t = 999_999,
+    startAbstime: UInt64 = 1,
+    directory: URL
+) -> RuntimeHint {
+    let anchor = ProcessAnchor(pid: pid, startAbstime: startAbstime)
+    return RuntimeHint(
+        projectID: projectID,
+        serviceID: serviceID,
+        serviceName: serviceName,
+        processGroupID: anchor.pid,
+        leader: anchor,
+        groupEvidence: ProcessGroupEvidence(
+            bootSessionID: "TEST-BOOT-SESSION",
+            anchors: [anchor]
+        ),
+        executablePath: "/bin/sleep",
+        workingDirectory: directory,
+        observedPorts: .observed([])
+    )
+}
+
+func makeCandidate(for hint: RuntimeHint) -> HandoffCandidate {
+    HandoffCandidate(
+        hint: hint,
+        identity: ProcessIdentity(
+            pid: hint.leader.pid,
+            startAbstime: hint.leader.startAbstime,
+            startedAt: Date(timeIntervalSince1970: 1),
+            executablePath: hint.executablePath,
+            workingDirectory: hint.workingDirectory
+        ),
+        evidence: hint.groupEvidence,
+        observedPorts: []
+    )
+}
+
+func makeRegistry(
+    directory: URL,
+    observations: ProcessObservationControl,
+    signalSender: (@Sendable (pid_t, Int32) -> Int32)? = nil,
+    portProbe: @escaping ServiceSupervisor.PortProbe = { _ in [] }
+) -> RuntimeRegistry {
+    RuntimeRegistry(
+        portPollInterval: .seconds(60),
+        logDirectory: directory.appendingPathComponent("logs", isDirectory: true),
+        environmentLoader: { fixedShellEnvironment },
+        portProbe: portProbe,
+        signalSender: signalSender ?? { kill(-$0, $1) },
+        groupStateProbe: { observations.groupState(processGroupID: $0) },
+        startAbstimeProbe: { observations.startObservation(pid: $0) },
+        bootSessionProbe: { observations.bootSession() }
+    )
+}
+
+/// 実プロセスを使わずに「引き継げる候補が1件ある」状況を作る。
+/// 停止シグナルは記録するだけで、送出先の観測を空へ切り替えて成功を再現する。
+struct SyntheticFixture {
+    let project: ProjectDefinition
+    let hint: RuntimeHint
+    let observations: ProcessObservationControl
+    let signals: SignalRecorder
+    let registry: RuntimeRegistry
+    let inspector: HandoffInspector
+
+    var service: ServiceDefinition { project.services[0] }
+}
+
+func makeSyntheticFixture(
+    directory: URL,
+    projectName: String = "Bell",
+    pid: pid_t = 45_001,
+    startAbstime: UInt64 = 501,
+    portProbe: @escaping ServiceSupervisor.PortProbe = { _ in [] }
+) -> SyntheticFixture {
+    let project = makeWorkerProject(name: projectName, directory: directory)
+    let hint = makeStoredHint(
+        projectID: project.id,
+        serviceID: project.services[0].id,
+        serviceName: project.services[0].name,
+        pid: pid,
+        startAbstime: startAbstime,
+        directory: directory
+    )
+    let observations = ProcessObservationControl(
+        startObservations: [hint.leader.pid: .present(hint.leader.startAbstime)],
+        groupStates: [
+            hint.processGroupID: .members([
+                ProcessInspector.ProcessGroupMember(pid: hint.leader.pid, isZombie: false),
+            ]),
+        ]
+    )
+    // 停止できたことを決定的に再現する。観測を切り替えないと猶予いっぱい待つ。
+    let signals = SignalRecorder { processGroupID, _ in
+        observations.setGroupState(.members([]), for: processGroupID)
+        observations.setStartObservation(.notPresent, for: processGroupID)
+    }
+    let registry = makeRegistry(
+        directory: directory,
+        observations: observations,
+        signalSender: { signals.send($0, $1) },
+        portProbe: portProbe
+    )
+    let inspector = HandoffInspector(
+        startAbstimeProbe: { observations.startObservation(pid: $0) },
+        startTimeProbe: { _ in 1_000_000 },
+        executablePathProbe: { _ in "/bin/sleep" },
+        workingDirectoryProbe: { _ in directory },
+        portProbe: { _ in [] },
+        groupStateProbe: { observations.groupState(processGroupID: $0) },
+        bootSessionProbe: { observations.bootSession() }
+    )
+    return SyntheticFixture(
+        project: project,
+        hint: hint,
+        observations: observations,
+        signals: signals,
+        registry: registry,
+        inspector: inspector
+    )
+}
 
 enum TestFactoryError: Error {
     case unavailable
@@ -232,6 +396,42 @@ actor TestGate {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
+}
+
+/// 武装したときだけ処理を止める門。
+///
+/// 準備段階と検証対象が同じ経路（ポート実測など）を通る場合に使う。
+/// `TestGate` は最初から止めるので、準備を済ませてから止めたいときはこちらにする。
+actor ArmedGate {
+    private var armed = false
+    private var reached = false
+    private var released = false
+
+    func arm() {
+        armed = true
+        reached = false
+        released = false
+    }
+
+    /// 武装していれば、解放されるまで待つ。していなければ素通りする。
+    func passOrWait() async {
+        guard armed else { return }
+        reached = true
+        while !released {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func waitUntilReached(timeout: Duration = .seconds(10)) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if reached { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return reached
+    }
+
+    func release() { released = true }
 }
 
 /// 空きポート番号を取るためだけの一時的な listen。番号を得たらすぐ解放する。

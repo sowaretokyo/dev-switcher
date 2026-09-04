@@ -215,8 +215,8 @@ struct ProjectSchemaMigrationTests {
         #expect(ProjectValidator.validate(project).contains(.enabledNowUnknownService(id: unknownID)))
     }
 
-    @Test("対象外のサービスとはポートが重複しても構わない")
-    func excludedServicesDoNotConflict() throws {
+    @Test("サービス間でポートが重複していても、起動対象かどうかによらず保存できる")
+    func servicesMaySharePorts() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -228,23 +228,16 @@ struct ProjectSchemaMigrationTests {
             workingDirectory: directory
         )
 
-        // 両方とも起動対象なら重複として拒否する。
-        let conflicting = makeProject(directory: directory, services: [web, other])
-        #expect(
-            ProjectValidator.validate(conflicting)
-                .contains(.duplicatePortAcrossServices(port: 3000, services: ["Other", "Web"]))
-        )
+        // 両方とも起動対象でも拒否しない。ポートを取れなかった側は起動失敗として扱う。
+        let sharing = makeProject(directory: directory, services: [web, other])
+        #expect(ProjectValidator.validate(sharing).isEmpty)
 
-        // 片方を対象外にすれば同時に listen しないので競合しない。
-        let resolved = makeProject(
+        let excluded = makeProject(
             directory: directory,
             services: [web, other],
             enabledNow: [other.id: false]
         )
-        #expect(
-            !ProjectValidator.validate(resolved)
-                .contains(.duplicatePortAcrossServices(port: 3000, services: ["Other", "Web"]))
-        )
+        #expect(ProjectValidator.validate(excluded).isEmpty)
     }
 
     @Test("終了コマンドの必須値欠落を拒否する")

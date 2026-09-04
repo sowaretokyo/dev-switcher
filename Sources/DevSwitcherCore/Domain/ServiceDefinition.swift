@@ -44,7 +44,7 @@ public struct ServiceDefinition: Codable, Equatable, Sendable, Identifiable {
     public var start: CommandSpec
     /// `supabase stop`のように、起動コマンド自身が終了してもサービスが残るものの終了方法。
     /// nilはプロセスグループへのシグナルで停止することを意味する。
-    /// 実行はmanaged commandとしてMilestone 3で扱うため、Milestone 2では起動計画時に明示的に拒否する。
+    /// 実行はPost-MVPのmanaged commandとして扱うため、MVPでは起動計画時に明示的に拒否する。
     public var stop: CommandSpec?
     public var enabledByDefault: Bool
     public var failurePolicy: FailurePolicy

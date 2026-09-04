@@ -53,7 +53,6 @@ public enum ProjectValidator {
         var seenServiceIDs: Set<UUID> = []
         let existingServiceIDs = Set(existingProjects.flatMap { $0.services.map(\.id) })
         var seenServiceNames: Set<String> = []
-        var portOwners: [Int: [String]] = [:]
 
         for (index, service) in project.services.enumerated() {
             let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,21 +88,10 @@ public enum ProjectValidator {
                 }
             }
 
+            // サービス間で同じポートを設定していても拒否しない。
+            // どちらがポートを取るかは OS が決める（先に bind したプロセスが取る）。
+            // 取れなかった側は起動失敗として `failurePolicy` に従って扱う。
             errors.append(contentsOf: portErrors(for: service, label: label))
-
-            // 重複を見るのは今回の起動対象どうし。対象外のサービスは同時に listen しない。
-            if project.isEnabledNow(service.id) {
-                for port in service.ports {
-                    portOwners[port.port, default: []].append(label)
-                }
-            }
-        }
-
-        for (port, owners) in portOwners.sorted(by: { $0.key < $1.key }) {
-            let distinctOwners = Array(Set(owners)).sorted()
-            if distinctOwners.count > 1 {
-                errors.append(.duplicatePortAcrossServices(port: port, services: distinctOwners))
-            }
         }
 
         errors.append(contentsOf: orderErrors(project))

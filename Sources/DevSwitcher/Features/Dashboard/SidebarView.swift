@@ -10,7 +10,7 @@ struct SidebarView: View {
 
         List(selection: $state.selection) {
             if !activeProjects.isEmpty {
-                Section("稼働中") {
+                Section("起動済み") {
                     ForEach(activeProjects) { project in
                         projectRows(project)
                     }

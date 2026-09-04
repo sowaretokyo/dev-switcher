@@ -125,11 +125,12 @@ struct ProjectValidationTests {
         )
     }
 
-    @Test("起動対象サービス間のポート重複を拒否する")
-    func duplicatePortAcrossEnabledServicesRejected() throws {
+    @Test("起動対象サービス間で同じポートを設定していても保存を拒否しない")
+    func duplicatePortAcrossEnabledServicesIsAccepted() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
+        // どちらがポートを取るかは OS が決める。DevSwitcher は保存も起動も拒否しない。
         let web = makeService(name: "Web", ports: [PortSpec(port: 3000, isPrimary: true)], workingDirectory: directory)
         let studio = makeService(
             name: "Studio",
@@ -137,25 +138,18 @@ struct ProjectValidationTests {
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [web, studio])
-        #expect(
-            ProjectValidator.structuralErrors(project)
-                .contains(.duplicatePortAcrossServices(port: 3000, services: ["Studio", "Web"]))
-        )
+        #expect(ProjectValidator.validate(project).isEmpty)
     }
 
-    @Test("既定で起動しないサービスはポート重複の判定から外す")
-    func disabledServiceIsNotCountedForPortConflict() throws {
+    @Test("ポートを1つも入力しないサービスを保存できる")
+    func servicesWithoutPortsAreAccepted() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let web = makeService(name: "Web", ports: [PortSpec(port: 3000, isPrimary: true)], workingDirectory: directory)
-        let alternate = makeService(
-            name: "Web (old)",
-            ports: [PortSpec(port: 3000, isPrimary: true)],
-            workingDirectory: directory,
-            enabledByDefault: false
-        )
-        let project = makeProject(directory: directory, services: [web, alternate])
+        // ポートは全種別で任意。代表ポートの検証はポートを入力した場合にだけ働く。
+        let web = makeService(name: "Web", kind: .web, ports: [], workingDirectory: directory)
+        let inngest = makeService(name: "Inngest", kind: .inngest, ports: [], workingDirectory: directory)
+        let project = makeProject(directory: directory, services: [web, inngest])
         #expect(ProjectValidator.validate(project).isEmpty)
     }
 

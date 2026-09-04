@@ -48,7 +48,7 @@ struct ServiceDetailView: View {
                 LabeledValue(label: "失敗時の扱い", value: service.failurePolicy.displayName)
             }
 
-            LabeledValue(label: "ヘルスチェック", value: healthCheckDescription)
+            LabeledValue(label: "起動確認", value: startupObservationDescription)
 
             if let warning = uiState.warning {
                 Text(warning)
@@ -98,10 +98,11 @@ struct ServiceDetailView: View {
         .padding(.vertical, 8)
     }
 
-    /// 種別ごとの既定を内蔵しており、利用者には設定させない。何を見ているかは表示する。
-    private var healthCheckDescription: String {
+    /// 何を見て起動成功と判断しているかを表示する。
+    /// HTTP は投げないので、応答するかどうかまでは保証しないことが分かる文言にする。
+    private var startupObservationDescription: String {
         do {
-            return try HealthCheckPolicy.spec(for: service).description
+            return try StartupObservationPolicy.spec(for: service).description
         } catch {
             return "\(error)"
         }

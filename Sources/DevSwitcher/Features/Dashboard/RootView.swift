@@ -25,8 +25,13 @@ struct RootView: View {
         .sheet(item: $state.projectFormPresentation) { presentation in
             ProjectFormView(project: presentation.project)
         }
+        .sheet(item: $state.unregisterPresentation) { presentation in
+            UnregisterConfirmationSheet(presentation: presentation)
+        }
         // 切替中・失敗・引き継ぎはシートで出す。表示中は背後を操作できない（I-1）。
-        .sheet(item: $state.switchPresentation) { presentation in
+        // 停止を伴う切替だけシートで出す。単純な起動・停止は画面を遮らず、
+        // プロジェクト詳細のボタン内で進捗を示す。
+        .sheet(item: Binding(get: { state.switchPresentation }, set: { _ in })) { presentation in
             SwitchSheet(initialPresentation: presentation)
         }
         .sheet(item: $state.failurePresentation) { presentation in
@@ -70,7 +75,7 @@ private struct BannerArea: View {
             if let hintError = state.hintError {
                 Banner(
                     title: "再検証の手掛かりを扱えません",
-                    message: "\(hintError)\nアプリ再起動後の引き継ぎができない可能性があります。稼働中の判定には影響しません。",
+                    message: "\(hintError)\nアプリ再起動後の引き継ぎができない可能性があります。起動済みかどうかの判定には影響しません。",
                     tint: .orange,
                     messageLineLimit: 3
                 ) {

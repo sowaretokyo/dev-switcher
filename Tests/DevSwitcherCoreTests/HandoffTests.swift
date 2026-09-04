@@ -917,9 +917,8 @@ struct HandoffTests {
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(3),
                 stopGrace: .seconds(5),
-                healthTimeout: .seconds(5),
-                healthObservationWindow: .milliseconds(200),
-                healthPollInterval: .milliseconds(50),
+                startupObservationWindow: .milliseconds(200),
+                startupPollInterval: .milliseconds(50),
                 gatePollInterval: .milliseconds(50)
             )
         )

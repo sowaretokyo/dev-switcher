@@ -20,7 +20,6 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case portNotANumber(service: String, value: String)
     case portOutOfRange(service: String, port: Int)
     case duplicatePortInService(service: String, port: Int)
-    case duplicatePortAcrossServices(port: Int, services: [String])
     case missingPrimaryPort(service: String)
     case multiplePrimaryPorts(service: String)
     case portLabelEmpty(service: String, port: Int)
@@ -70,8 +69,6 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "サービス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。"
         case let .duplicatePortInService(service, port):
             "サービス「\(service)」でポート \(port) が重複しています。"
-        case let .duplicatePortAcrossServices(port, services):
-            "起動対象のサービス間でポート \(port) が重複しています（\(services.joined(separator: " / "))）。"
         case let .missingPrimaryPort(service):
             "サービス「\(service)」に代表ポートが指定されていません。"
         case let .multiplePrimaryPorts(service):

@@ -20,7 +20,7 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
         case .operationInProgress:
             "ほかの起動・停止処理が実行中です。完了してから操作してください。"
         case let .otherProjectRunning(running, requested):
-            "プロジェクト「\(running)」が稼働中です。同時に稼働できるプロジェクトは1つだけのため、「\(requested)」は起動できません。先に「\(running)」を停止してください。"
+            "プロジェクト「\(running)」が起動済みです。同時に動かせるプロジェクトは1つだけのため、「\(requested)」は起動できません。先に「\(running)」を停止してください。"
         case let .alreadyRunning(service):
             "サービス「\(service)」は既に起動しています。"
         case let .notRunning(service):
@@ -44,7 +44,7 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
         case let .projectDirectoryMissing(url):
             "プロジェクトのディレクトリが存在しません（\(url.path)）。"
         case let .stopCommandUnsupported(service):
-            "サービス「\(service)」には終了コマンドが設定されています。終了コマンドで管理するサービス（managed command）の実行は Milestone 3 で対応します。プロセスグループの停止で代用すると停止できたか確認できないため、起動を中止しました。"
+            "サービス「\(service)」には終了コマンドが設定されています。終了コマンドで管理するサービス（managed command）の実行は Post-MVP で対応します。プロセスグループの停止で代用すると停止できたか確認できないため、起動を中止しました。"
         }
     }
 }

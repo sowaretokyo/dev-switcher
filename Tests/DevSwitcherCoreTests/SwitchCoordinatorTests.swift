@@ -5,29 +5,33 @@ import Testing
 
 @Suite("プロジェクトの起動・停止・切替")
 struct SwitchCoordinatorTests {
-    /// ヘルスチェックとポート実測を差し替えたスタック。
+    /// ポート実測を差し替えたスタック。
     /// 実プロセスの起動・停止・順序は本物のまま検証する。
+    ///
+    /// `portProbe` は「そのサービスが実際に listen していた」という観測を差し替える。
+    /// 停止元の解放確認（ゲート）の対象は、設定値ではなくこの実測から決まる。
     private func makeStack(
         logDirectory: URL,
         world: FakePortWorld? = nil,
-        health: @escaping HealthProbe.HTTPRequest = { _ in .healthy(statusCode: 200) },
+        portProbe: ServiceSupervisor.PortProbe? = nil,
         options: SwitchCoordinator.Options = SwitchCoordinator.Options(
             releaseTimeout: .seconds(3),
             stopGrace: .seconds(5),
-            healthTimeout: .seconds(5),
-            healthObservationWindow: .milliseconds(200),
-            healthPollInterval: .milliseconds(50),
+            startupObservationWindow: .milliseconds(200),
+            startupPollInterval: .milliseconds(50),
             gatePollInterval: .milliseconds(50)
         )
     ) -> (RuntimeRegistry, SwitchCoordinator) {
         let registry = RuntimeRegistry(
             portPollInterval: .seconds(60),
             logDirectory: logDirectory,
-            environmentLoader: { fixedShellEnvironment }
+            environmentLoader: { fixedShellEnvironment },
+            portProbe: portProbe ?? { processGroupID in
+                try await PortInspector.listeningPorts(processGroupID: processGroupID)
+            }
         )
         let coordinator = SwitchCoordinator(
             registry: registry,
-            healthProbe: HealthProbe(request: health),
             portHolderProbe: { ports in
                 guard let world else { return [] }
                 return try await world.probe(ports)
@@ -299,22 +303,22 @@ struct SwitchCoordinatorTests {
             #expect(failure.facts.target != nil)
         }
 
-        // ゲート2の実測が行われていないことを、問い合わせたポート集合から確かめる。
+        // 切替先の設定ポートを調べていないことを、問い合わせたポート集合から確かめる。
         let probedSets = await world.probedPortSets
         #expect(probedSets.allSatisfy { $0 == [sourcePort] })
 
         _ = try? await coordinator.stop(source)
     }
 
-    @Test("起動側の設定ポートが空くまで、サービスを1つも起動しない")
-    func doesNotStartAnyServiceWhenTargetPortIsTaken() async throws {
+    @Test("設定ポートが外部プロセスに使われていても、起動前に競合として止めない")
+    func configuredPortInUseDoesNotBlockStart() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
 
         let world = FakePortWorld()
-        // 2番目のサービスのポートだけが埋まっている状況。
+        // 設定ポートを外部プロセスが握っている状況。
         await world.occupy(port: 3101, pid: 999_002, command: "other-project")
 
         let first = makeOrderedService(
@@ -335,66 +339,208 @@ struct SwitchCoordinatorTests {
         let project = makeProject(directory: directory, services: [first, second])
         let (_, coordinator) = makeStack(logDirectory: directory, world: world)
 
-        let failure = await #expect(throws: SwitchFailure.self) {
-            _ = try await coordinator.start(project)
-        }
+        let outcome = try await coordinator.start(project)
 
-        // 1つ目のポートが空いていても、1つも起動しない。
-        #expect(readLines(startLog).isEmpty)
-        if let failure {
-            guard case let .portConflict(holders) = failure.reason else {
-                Issue.record("ポート競合として扱われなかった: \(failure.reason)")
-                return
-            }
-            #expect(holders.map(\.port) == [3101])
-            // failurePolicy: continue のサービスのポートもゲートの対象にする。
-            #expect(holders.first?.ownership == .systemOwned)
-        }
+        // 設定ポートの空き確認をしないので、両方とも起動を試みる。
+        #expect(readLines(startLog) == ["First", "Second"])
+        #expect(outcome.facts.target?.phase == .running)
+        // 起動前にポートを1つも調べていない。
+        #expect(await world.probedPortSets.isEmpty)
+
+        _ = try await coordinator.stop(project)
     }
 
-    @Test("listen 開始だけでは稼働中にせず、ヘルスチェック通過を待つ")
-    func listeningAloneIsNotHealthy() async throws {
+    @Test("設定ポートを持つサービスでも、そのポートへ接続しない")
+    func doesNotConnectToConfiguredPort() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // 応答しない HTTP プローブ。listen していても利用可能とは扱わない。
-        let (_, coordinator) = makeStack(
-            logDirectory: directory,
-            health: { _ in .unreachable(reason: "接続できません") },
-            options: SwitchCoordinator.Options(
-                releaseTimeout: .seconds(3),
-                stopGrace: .seconds(5),
-                healthTimeout: .milliseconds(600),
-                healthObservationWindow: .milliseconds(200),
-                healthPollInterval: .milliseconds(50),
-                gatePollInterval: .milliseconds(50)
-            )
-        )
+        // 設定ポートを本物のリスナーが握っている状況。接続されたら数が増える。
+        let listener = try LocalTCPServer(behavior: .http(status: 200))
+        defer { listener.stop() }
 
         let web = makeService(
             name: "Web",
             kind: .web,
-            ports: [PortSpec(port: 3200, isPrimary: true)],
+            ports: [PortSpec(port: listener.port, isPrimary: true)],
             executable: "/bin/sh",
             arguments: ["-c", "while true; do sleep 0.1; done"],
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [web])
+        let (_, coordinator) = makeStack(logDirectory: directory)
+
+        let outcome = try await coordinator.start(project)
+
+        // 設定ポートへ GET していたら、別プロセスの 200 を自分の応答と誤認していた。
+        #expect(listener.acceptedConnectionCount == 0)
+        #expect(outcome.facts.target?.phase == .running)
+        #expect(await coordinator.servicePhase(web, in: project) == .healthy)
+
+        _ = try await coordinator.stop(project)
+        #expect(listener.acceptedConnectionCount == 0)
+    }
+
+    @Test("ポート未入力の Web サービスをプロセスの生存だけで起動できる")
+    func webServiceWithoutPortStarts() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let startLog = directory.appendingPathComponent("start.log")
+        let stopLog = directory.appendingPathComponent("stop.log")
+
+        let web = makeOrderedService(
+            name: "Web",
+            kind: .web,
+            ports: [],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let project = makeProject(directory: directory, services: [web])
+        let (registry, coordinator) = makeStack(logDirectory: directory)
+
+        let outcome = try await coordinator.start(project)
+
+        #expect(outcome.facts.target?.phase == .running)
+        #expect(await coordinator.servicePhase(web, in: project) == .healthy)
+        #expect(await registry.isRunning(serviceID: web.id))
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("ポート未入力の Inngest サービスをプロセスの生存だけで起動できる")
+    func inngestServiceWithoutPortStarts() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let startLog = directory.appendingPathComponent("start.log")
+        let stopLog = directory.appendingPathComponent("stop.log")
+
+        let inngest = makeOrderedService(
+            name: "Inngest",
+            kind: .inngest,
+            ports: [],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let project = makeProject(directory: directory, services: [inngest])
+        let (registry, coordinator) = makeStack(logDirectory: directory)
+
+        let outcome = try await coordinator.start(project)
+
+        #expect(outcome.facts.target?.phase == .running)
+        #expect(await coordinator.servicePhase(inngest, in: project) == .healthy)
+        #expect(await registry.isRunning(serviceID: inngest.id))
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("同じ設定ポートの2サービスも、設定順に両方とも起動を試みる")
+    func servicesSharingAPortAreBothStartedInOrder() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let startLog = directory.appendingPathComponent("start.log")
+        let stopLog = directory.appendingPathComponent("stop.log")
+
+        // 同じポートを設定していても、後続をスキップしない。
+        // どちらが取るかは OS が決める（先に bind したプロセスが取る）。
+        let first = makeOrderedService(
+            name: "First",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let second = makeOrderedService(
+            name: "Second",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let project = makeProject(directory: directory, services: [first, second])
+        let (_, coordinator) = makeStack(logDirectory: directory)
+
+        let outcome = try await coordinator.start(project)
+
+        #expect(readLines(startLog) == ["First", "Second"])
+        #expect(outcome.degradedServices.isEmpty)
+        #expect(outcome.facts.target?.phase == .running)
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("同じ設定ポートの2番目が終了しても、continue なら1番目を残して一部停止にする")
+    func secondServiceOnSamePortExitingIsDegradedWhenContinue() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let startLog = directory.appendingPathComponent("start.log")
+        let stopLog = directory.appendingPathComponent("stop.log")
+
+        let first = makeOrderedService(
+            name: "First",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        // ポートを取れずに終了した後続サービスは、通常の起動失敗として扱う。
+        let second = makeFailingService(
+            name: "Second",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            failurePolicy: .continue
+        )
+        let project = makeProject(directory: directory, services: [first, second])
+        let (registry, coordinator) = makeStack(logDirectory: directory)
+
+        let outcome = try await coordinator.start(project)
+
+        #expect(outcome.degradedServices == ["Second"])
+        #expect(outcome.facts.target?.phase == .degraded(stoppedServices: ["Second"]))
+        #expect(await registry.isRunning(serviceID: first.id))
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("同じ設定ポートの2番目が終了したら、block では1番目を補償停止する")
+    func secondServiceOnSamePortExitingRollsBackWhenBlock() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let startLog = directory.appendingPathComponent("start.log")
+        let stopLog = directory.appendingPathComponent("stop.log")
+
+        let first = makeOrderedService(
+            name: "First",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let second = makeFailingService(
+            name: "Second",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            workingDirectory: directory,
+            failurePolicy: .block
+        )
+        let project = makeProject(directory: directory, services: [first, second])
+        let (registry, coordinator) = makeStack(logDirectory: directory)
 
         let failure = await #expect(throws: SwitchFailure.self) {
             _ = try await coordinator.start(project)
         }
-
         if let failure {
-            guard case let .startFailed(service, reason) = failure.reason else {
+            guard case let .startFailed(service, _) = failure.reason else {
                 Issue.record("起動失敗として扱われなかった: \(failure.reason)")
                 return
             }
-            #expect(service == "Web")
-            // プロセスは生きていた。落ちたのではなくヘルスチェックが通らなかった。
-            #expect(reason.contains("ヘルスチェック"))
-            #expect(!reason.contains("起動直後に終了"))
+            #expect(service == "Second")
         }
+
+        // 2番目を起動しようとはした。落ちたので1番目を巻き戻す。
+        #expect(readLines(startLog) == ["First"])
+        #expect(readLines(stopLog) == ["First"])
+        #expect(await registry.isRunning(serviceID: first.id) == false)
     }
 
     @Test("起動前までの中止では切替元の停止を完了し、切替先を起動しない")
@@ -424,7 +570,15 @@ struct SwitchCoordinatorTests {
         let world = FakePortWorld()
         let gate = TestGate()
 
-        let (registry, coordinator) = makeStack(logDirectory: directory, world: world)
+        // 切替元が 3300 を listen していたことにする。ゲートの対象は実測から決まるので、
+        // これがないと解放確認そのものが起きない。
+        let (registry, coordinator) = makeStack(
+            logDirectory: directory,
+            world: world,
+            portProbe: { processGroupID in
+                [ObservedPort(port: 3300, pid: processGroupID, address: "127.0.0.1")]
+            }
+        )
         _ = try await coordinator.start(source)
         #expect(await waitUntil { readLines(startLog) == ["Source"] })
 
@@ -462,7 +616,6 @@ struct SwitchCoordinatorTests {
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
 
-        let gate = TestGate()
         let service = makeOrderedService(
             name: "Web",
             kind: .web,
@@ -473,20 +626,27 @@ struct SwitchCoordinatorTests {
         )
         let project = makeProject(directory: directory, services: [service])
 
-        // ヘルスチェック中（＝起動フェーズ内）で止めて、中止が拒否されることを見る。
+        // 起動確認の観測中（＝起動フェーズ内）で中止が拒否されることを見る。
         let (_, coordinator) = makeStack(
             logDirectory: directory,
-            health: { [gate] _ in
-                await gate.markReached()
-                await gate.waitForRelease()
-                return .healthy(statusCode: 200)
-            }
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(3),
+                stopGrace: .seconds(5),
+                startupObservationWindow: .seconds(2),
+                startupPollInterval: .milliseconds(50),
+                gatePollInterval: .milliseconds(50)
+            )
         )
 
-        let startTask = Task { try await coordinator.start(project) }
-        #expect(await gate.waitUntilReached())
+        let recorder = ProgressRecorder()
+        let startTask = Task {
+            try await coordinator.start(project, progress: { recorder.append($0) })
+        }
+        // 起動フェーズへ入ったことを進捗から確かめてから中止する。
+        #expect(await waitUntil {
+            recorder.states.contains { $0.hasEnteredStartPhase }
+        })
         #expect(await coordinator.cancel() == false)
-        await gate.release()
 
         _ = try await startTask.value
         #expect(await waitUntil { readLines(startLog) == ["Web"] })
@@ -494,7 +654,7 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(project)
     }
 
-    @Test("切替は停止・ゲート1・ゲート2・起動の順に進む")
+    @Test("切替元の実測ポートが解放されていれば、停止・解放確認・起動の順に進む")
     func switchFollowsStopGateStartOrder() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -519,7 +679,14 @@ struct SwitchCoordinatorTests {
         let target = makeProject(name: "Penta", directory: directory, services: [targetService])
 
         let world = FakePortWorld()
-        let (_, coordinator) = makeStack(logDirectory: directory, world: world)
+        // 切替元が 3500 を listen していたことにする。解放確認の対象は実測から決まる。
+        let (_, coordinator) = makeStack(
+            logDirectory: directory,
+            world: world,
+            portProbe: { processGroupID in
+                [ObservedPort(port: 3500, pid: processGroupID, address: "127.0.0.1")]
+            }
+        )
 
         _ = try await coordinator.start(source)
 
@@ -533,18 +700,19 @@ struct SwitchCoordinatorTests {
         let states = recorder.states
         let stopIndex = states.firstIndex { if case .stopping = $0 { return true } else { return false } }
         let releaseIndex = states.firstIndex { if case .verifyingRelease = $0 { return true } else { return false } }
-        let acquireIndex = states.firstIndex { if case .verifyingAcquire = $0 { return true } else { return false } }
         let startIndex = states.firstIndex { if case .starting = $0 { return true } else { return false } }
 
         #expect(stopIndex != nil)
         #expect(releaseIndex != nil)
-        #expect(acquireIndex != nil)
         #expect(startIndex != nil)
-        if let stopIndex, let releaseIndex, let acquireIndex, let startIndex {
+        if let stopIndex, let releaseIndex, let startIndex {
             #expect(stopIndex < releaseIndex)
-            #expect(releaseIndex < acquireIndex)
-            #expect(acquireIndex < startIndex)
+            #expect(releaseIndex < startIndex)
         }
+
+        // 解放確認の対象は切替元の実測ポートだけ。切替先の設定ポート 3501 は調べない。
+        #expect(await world.probedPortSets.allSatisfy { $0 == [3500] })
+        #expect(await world.probedPortSets.isEmpty == false)
 
         #expect(readLines(startLog) == ["Source", "Target"])
         #expect(readLines(stopLog) == ["Source"])
@@ -561,7 +729,6 @@ struct SwitchCoordinatorTests {
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
 
-        let gate = TestGate()
         let service = makeOrderedService(
             name: "Web",
             kind: .web,
@@ -571,17 +738,25 @@ struct SwitchCoordinatorTests {
             stopLog: stopLog
         )
         let project = makeProject(directory: directory, services: [service])
+        // 起動確認の観測窓を長めに取り、1件目が実行中の間に2件目を試す。
         let (_, coordinator) = makeStack(
             logDirectory: directory,
-            health: { [gate] _ in
-                await gate.markReached()
-                await gate.waitForRelease()
-                return .healthy(statusCode: 200)
-            }
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(3),
+                stopGrace: .seconds(5),
+                startupObservationWindow: .seconds(2),
+                startupPollInterval: .milliseconds(50),
+                gatePollInterval: .milliseconds(50)
+            )
         )
 
-        let first = Task { try await coordinator.start(project) }
-        #expect(await gate.waitUntilReached())
+        let recorder = ProgressRecorder()
+        let first = Task {
+            try await coordinator.start(project, progress: { recorder.append($0) })
+        }
+        #expect(await waitUntil {
+            recorder.states.contains { if case .observingStartup = $0 { return true } else { return false } }
+        })
 
         let failure = await #expect(throws: SwitchFailure.self) {
             _ = try await coordinator.start(project)
@@ -590,12 +765,11 @@ struct SwitchCoordinatorTests {
             #expect(failure.reason == .operationInProgress)
         }
 
-        await gate.release()
         _ = try await first.value
         _ = try await coordinator.stop(project)
     }
 
-    @Test("Milestone 2 で実行できない設定は、停止を始める前に失敗させる")
+    @Test("MVP で実行できない設定は、停止を始める前に失敗させる")
     func unsupportedConfigurationFailsBeforeStopping() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -610,7 +784,7 @@ struct SwitchCoordinatorTests {
         )
         let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
 
-        // 終了コマンドを持つサービス（managed command）は Milestone 3。
+        // 終了コマンドを持つサービス（managed command）は Post-MVP。
         let managed = makeService(
             name: "Supabase",
             kind: .supabase,
@@ -645,7 +819,7 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(source)
     }
 
-    @Test("Docker 種別はヘルスチェック未実装として起動前に失敗させる")
+    @Test("Docker 種別は Post-MVP として起動前に明示的に拒否する")
     func dockerKindIsRejectedBeforeStart() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -671,6 +845,25 @@ struct SwitchCoordinatorTests {
             }
         }
         #expect(await registry.isRunning(serviceID: docker.id) == false)
+
+        // ポートを外しても拒否は変わらない。ポートの有無が理由ではない。
+        let withoutPort = makeService(
+            name: "Docker",
+            kind: .docker,
+            ports: [],
+            executable: "/bin/sh",
+            arguments: ["-c", "while true; do sleep 0.1; done"],
+            workingDirectory: directory
+        )
+        let portless = makeProject(
+            name: "Penta",
+            directory: directory,
+            services: [withoutPort]
+        )
+        await #expect(throws: SwitchFailure.self) {
+            _ = try await coordinator.start(portless)
+        }
+        #expect(await registry.isRunning(serviceID: withoutPort.id) == false)
     }
 
     @Test("一部停止のまま明示的に停止したら、停止中になる")
@@ -740,7 +933,7 @@ struct SwitchCoordinatorTests {
         let stopLog = directory.appendingPathComponent("stop.log")
 
         let marker = directory.appendingPathComponent("gone.marker")
-        // ヘルスチェックを通過してから落ちる、失敗を許容するサービス。
+        // 起動確認を通過してから落ちる、失敗を許容するサービス。
         let optional = makeService(
             name: "Optional",
             kind: .worker,
@@ -777,7 +970,7 @@ struct SwitchCoordinatorTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // ヘルスチェックを通過したあとに親だけが終了し、孫がグループに残る。
+        // 起動確認を通過したあとに親だけが終了し、孫がグループに残る。
         let detached = makeService(
             name: "Detached",
             kind: .worker,
@@ -834,9 +1027,8 @@ struct SwitchCoordinatorTests {
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(3),
                 stopGrace: .milliseconds(800),
-                healthTimeout: .seconds(5),
-                healthObservationWindow: .milliseconds(200),
-                healthPollInterval: .milliseconds(50),
+                startupObservationWindow: .milliseconds(200),
+                startupPollInterval: .milliseconds(50),
                 gatePollInterval: .milliseconds(50)
             )
         )
@@ -898,9 +1090,8 @@ struct SwitchCoordinatorTests {
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(3),
                 stopGrace: .milliseconds(800),
-                healthTimeout: .seconds(5),
-                healthObservationWindow: .milliseconds(200),
-                healthPollInterval: .milliseconds(50),
+                startupObservationWindow: .milliseconds(200),
+                startupPollInterval: .milliseconds(50),
                 gatePollInterval: .milliseconds(50)
             )
         )
@@ -948,10 +1139,9 @@ struct SwitchCoordinatorTests {
                 options: SwitchCoordinator.Options(
                     releaseTimeout: .seconds(3),
                     stopGrace: .seconds(2),
-                    healthTimeout: .seconds(2),
                     // 報告された条件と同じ観測窓。伸ばして隠さない。
-                    healthObservationWindow: .milliseconds(200),
-                    healthPollInterval: .milliseconds(10),
+                    startupObservationWindow: .milliseconds(200),
+                    startupPollInterval: .milliseconds(10),
                     gatePollInterval: .milliseconds(10)
                 )
             )
@@ -961,7 +1151,7 @@ struct SwitchCoordinatorTests {
             }
             #expect(await registry.isRunning(serviceID: broken.id) == false)
             let phase = await coordinator.servicePhase(broken, in: project)
-            #expect(phase != .healthy, "\(attempt) 回目で短命プロセスを稼働中と判定した")
+                #expect(phase != .healthy, "\(attempt) 回目で短命プロセスを起動済みと判定した")
         }
     }
 
@@ -991,9 +1181,8 @@ struct SwitchCoordinatorTests {
                 options: SwitchCoordinator.Options(
                     releaseTimeout: .seconds(3),
                     stopGrace: .seconds(2),
-                    healthTimeout: .seconds(2),
-                    healthObservationWindow: .milliseconds(200),
-                    healthPollInterval: .milliseconds(10),
+                    startupObservationWindow: .milliseconds(200),
+                    startupPollInterval: .milliseconds(10),
                     gatePollInterval: .milliseconds(10)
                 )
             )
@@ -1014,7 +1203,7 @@ struct SwitchCoordinatorTests {
         let stopLog = directory.appendingPathComponent("stop.log")
 
         let marker = directory.appendingPathComponent("gone.marker")
-        // ヘルスチェックを通過したあとに、自分から終了するサービス。
+        // 起動確認を通過したあとに、自分から終了するサービス。
         let selfExiting = makeService(
             name: "SelfExit",
             kind: .worker,
@@ -1053,7 +1242,7 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(project)
     }
 
-    @Test("ポートを実測できない場合は、空いているとみなさず起動しない")
+    @Test("停止元のポート解放を実測できない場合は、解放されたとみなさず切替先を起動しない")
     func portObservationFailureStopsTheSwitch() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1063,18 +1252,36 @@ struct SwitchCoordinatorTests {
         let world = FakePortWorld()
         await world.fail(with: PortInspectorError.unparsableOutput(line: "n???"))
 
-        let service = makeOrderedService(
-            name: "Web",
+        let sourceService = makeOrderedService(
+            name: "Source",
             ports: [PortSpec(port: 3700, isPrimary: true)],
             workingDirectory: directory,
             startLog: startLog,
             stopLog: stopLog
         )
-        let project = makeProject(directory: directory, services: [service])
-        let (_, coordinator) = makeStack(logDirectory: directory, world: world)
+        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let targetService = makeOrderedService(
+            name: "Target",
+            ports: [PortSpec(port: 3701, isPrimary: true)],
+            workingDirectory: directory,
+            startLog: startLog,
+            stopLog: stopLog
+        )
+        let target = makeProject(name: "Penta", directory: directory, services: [targetService])
+
+        let (registry, coordinator) = makeStack(
+            logDirectory: directory,
+            world: world,
+            portProbe: { processGroupID in
+                [ObservedPort(port: 3700, pid: processGroupID, address: "127.0.0.1")]
+            }
+        )
+
+        _ = try await coordinator.start(source)
+        #expect(await waitUntil { readLines(startLog) == ["Source"] })
 
         let failure = await #expect(throws: SwitchFailure.self) {
-            _ = try await coordinator.start(project)
+            _ = try await coordinator.switchProject(from: source, to: target)
         }
         if let failure {
             guard case .portObservationFailed = failure.reason else {
@@ -1082,7 +1289,8 @@ struct SwitchCoordinatorTests {
                 return
             }
         }
-        #expect(readLines(startLog).isEmpty)
+        #expect(readLines(startLog) == ["Source"])
+        #expect(await registry.isRunning(serviceID: targetService.id) == false)
     }
 
     @Test("切替元の最新ポート観測に失敗したら停止も切替先起動も行わない")
@@ -1111,9 +1319,8 @@ struct SwitchCoordinatorTests {
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(2),
                 stopGrace: .seconds(2),
-                healthTimeout: .seconds(2),
-                healthObservationWindow: .milliseconds(100),
-                healthPollInterval: .milliseconds(20),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
                 gatePollInterval: .milliseconds(20)
             ),
             currentUserName: "test-user"

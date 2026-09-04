@@ -1,18 +1,16 @@
 import Darwin
 import Foundation
 
-/// 切替の進行状態。停止・解放確認・取得確認・起動を別のケースにして、
-/// 「どのゲートで止まったか」が画面と失敗理由の両方から分かるようにする。
+/// 切替の進行状態。停止・解放確認・起動を別のケースにして、
+/// 「どこで止まったか」が画面と失敗理由の両方から分かるようにする。
 public enum SwitchState: Equatable, Sendable {
     case idle
     case stopping(service: String, index: Int, total: Int)
-    /// ゲート1。停止元が実際に握っていたポートの解放待ち。
+    /// ゲート。停止元が実際に握っていたポートの解放待ち。
     case verifyingRelease(released: Int, total: Int)
-    /// ゲート2。起動先が今回使う全ポートの空き確認。
-    case verifyingAcquire(free: Int, total: Int)
     case starting(service: String, index: Int, total: Int)
-    /// listen 開始とヘルスチェック通過を分けるため、待機を独立した状態にする。
-    case awaitingHealth(service: String)
+    /// プロセスを起こした直後の観測。ここを通過して初めて起動成功として扱う。
+    case observingStartup(service: String)
     /// 起動失敗後の巻き戻し。今回起動したサービスだけを停止する。
     case rollingBack(service: String)
     case completed
@@ -20,8 +18,8 @@ public enum SwitchState: Equatable, Sendable {
     /// 起動フェーズへ入ったか。入った後は中止を受け付けない（DESIGN.md I-4）。
     public var hasEnteredStartPhase: Bool {
         switch self {
-        case .starting, .awaitingHealth, .rollingBack, .completed: true
-        case .idle, .stopping, .verifyingRelease, .verifyingAcquire: false
+        case .starting, .observingStartup, .rollingBack, .completed: true
+        case .idle, .stopping, .verifyingRelease: false
         }
     }
 
@@ -30,9 +28,8 @@ public enum SwitchState: Equatable, Sendable {
         case .idle: "待機中"
         case let .stopping(service, index, total): "\(service) を停止（\(index)/\(total)）"
         case let .verifyingRelease(released, total): "停止元のポート解放を確認（\(released)/\(total)）"
-        case let .verifyingAcquire(free, total): "起動先のポートを確認（\(free)/\(total)）"
         case let .starting(service, index, total): "\(service) を起動（\(index)/\(total)）"
-        case let .awaitingHealth(service): "\(service) のヘルスチェックを待機"
+        case let .observingStartup(service): "\(service) の起動を確認"
         case let .rollingBack(service): "\(service) を停止（巻き戻し）"
         case .completed: "完了"
         }
@@ -43,7 +40,7 @@ public enum SwitchState: Equatable, Sendable {
 public enum PortOwnership: Equatable, Sendable {
     /// Dev Switcher が起動または引き継いだプロセス。通常の自動停止対象。
     case ownedByUs(serviceID: UUID, serviceName: String)
-    /// 同一利用者の外部プロセス。自動終了しない。表示して明示的な確認を取る。
+    /// 同一利用者の外部プロセス。表示はするが、Dev Switcher から signal は送らない。
     case external
     /// 別利用者またはシステム管理下。終了操作を提供しない。
     case systemOwned
@@ -56,11 +53,11 @@ public enum PortOwnership: Equatable, Sendable {
         }
     }
 
-    /// 利用者の確認を経れば終了操作を出してよいか。
+    /// Dev Switcher から終了操作を提供してよいか。
     public var canOfferTermination: Bool {
         switch self {
-        case .ownedByUs, .external: true
-        case .systemOwned: false
+        case .ownedByUs: true
+        case .external, .systemOwned: false
         }
     }
 }
@@ -128,7 +125,7 @@ public struct ProjectFact: Equatable, Sendable {
         switch phase {
         case .stopped: "「\(projectName)」は停止しました。"
         case .starting: "「\(projectName)」は起動処理の途中です。"
-        case .running: "「\(projectName)」は稼働中です。"
+        case .running: "「\(projectName)」は起動済みです。"
         case let .degraded(stoppedServices):
             "「\(projectName)」は一部停止です（停止中: \(stoppedServices.joined(separator: " / "))）。"
         case .stopping: "「\(projectName)」は終了処理の途中です。"
@@ -201,17 +198,15 @@ public struct StopFailureDetail: Equatable, Sendable, Identifiable {
 
 public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible {
     public enum Reason: Equatable, Sendable {
-        /// ゲート1の前段。停止操作そのものが完了しなかった。
+        /// ゲートの前段。停止操作そのものが完了しなかった。
         case stopFailed(services: [StopFailureDetail])
-        /// ゲート1。停止元の実測ポートが解放されなかった。
+        /// ゲート。停止元の実測ポートが解放されなかった。
         case portsNotReleased(holders: [ResolvedPortHolder])
-        /// ゲート2。起動先の設定ポートが空いていない。
-        case portConflict(holders: [ResolvedPortHolder])
         /// 起動フェーズ。`failurePolicy: block` のサービスが起動できなかった。
         case startFailed(service: String, reason: String)
         /// 起動フェーズ前の中止。切替元の停止は完了している。
         case cancelled
-        /// Milestone 2 で実行できない設定。既定へ倒さず起動前に止める。
+        /// MVP で実行できない設定。既定へ倒さず起動前に止める。
         case unsupportedConfiguration(String)
         /// ポートを実測できなかった。「空いている」と解釈せず、ここで止める。
         case portObservationFailed(context: String, reason: String)
@@ -221,7 +216,6 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
             switch self {
             case .stopFailed: "終了できない"
             case .portsNotReleased: "ポートが解放されない"
-            case .portConflict: "ポート競合"
             case .startFailed: "起動直後に落ちた"
             case .cancelled: "切替を中止した"
             case .unsupportedConfiguration: "未対応の設定"
@@ -237,9 +231,6 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
                     + services.map(\.description).joined(separator: "\n")
             case let .portsNotReleased(holders):
                 "解放されていないポート:\n"
-                    + holders.map(\.description).joined(separator: "\n")
-            case let .portConflict(holders):
-                "使用中のポート:\n"
                     + holders.map(\.description).joined(separator: "\n")
             case let .startFailed(service, reason):
                 "サービス「\(service)」を起動できませんでした。\n\(reason)"

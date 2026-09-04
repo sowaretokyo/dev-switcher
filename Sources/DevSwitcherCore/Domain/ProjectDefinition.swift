@@ -96,12 +96,6 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         services.filter { !isEnabledNow($0.id) }
     }
 
-    /// ゲート検証2の対象。今回起動する全サービスの全設定ポート。
-    /// `failurePolicy`で範囲を絞らない（DESIGN.md I-3）。
-    public func portsToAcquire() -> [Int] {
-        Array(Set(enabledStartupOrder.flatMap { $0.ports.map(\.port) })).sorted()
-    }
-
     /// 起動対象を明示的に切り替えた新しい定義を返す。
     public func settingEnabledNow(_ serviceID: UUID, to enabled: Bool) -> ProjectDefinition {
         var updated = self

@@ -1,15 +1,16 @@
 import Foundation
 
-/// ヘルスチェック前のプロセス生存を「正常稼働」と誤認させないため、`.running` は「起動中」と表示し、
-/// ヘルスチェックを通過した`.healthy`だけを「稼働中」とする。
+/// Milestone 2 は HTTP 到達性を確認しない。表示できるのは「プロセスを起こして、
+/// 初期観測のあいだ終了しなかった」という事実までなので、`.healthy` も「起動済み」と表示する。
+/// アプリが応答するかどうかは保証しない。
 public enum ServicePhase: Equatable, Sendable {
     /// 今回の起動対象から外したサービス。失敗でも停止でもないため、警告や一部停止に含めない。
     case excluded
     case stopped
     case starting
-    /// プロセスは起動済み。listen していてもヘルスチェック未通過の段階。
+    /// プロセスを起こした直後。初期観測がまだ終わっていない段階。
     case running
-    /// ヘルスチェックを通過した。ここで初めて「稼働中」と表示してよい。
+    /// 初期観測を通過した。ここで初めて「起動済み」と表示してよい。
     case healthy
     case stopping
     case failed(reason: String)
@@ -22,7 +23,7 @@ public enum ServicePhase: Equatable, Sendable {
         case .stopped: "停止中"
         case .starting: "起動処理中"
         case .running: "起動中"
-        case .healthy: "稼働中"
+        case .healthy: "起動済み"
         case .stopping: "終了中"
         case .failed: "失敗"
         case .residual: "残存あり"
@@ -42,7 +43,7 @@ public enum ProjectPhase: Equatable, Sendable {
     case stopped
     case starting
     case running
-    /// `failurePolicy: continue` のサービスだけが停止している。稼働中の一種。
+    /// `failurePolicy: continue` のサービスだけが停止している。起動済みの一種。
     case degraded(stoppedServices: [String])
     case stopping
     /// 切替の停止・ゲート・起動のいずれか。この間は他プロジェクトを操作しない。
@@ -54,7 +55,7 @@ public enum ProjectPhase: Equatable, Sendable {
         switch self {
         case .stopped: "停止中"
         case .starting: "起動中"
-        case .running: "稼働中"
+        case .running: "起動済み"
         case .degraded: "一部停止"
         case .stopping: "終了中"
         case .switching: "切替中"

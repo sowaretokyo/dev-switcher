@@ -38,9 +38,6 @@ struct SwitchFailureSheet: View {
 
             currentState
 
-            if case let .portConflict(holders) = failure.reason {
-                holderList(holders)
-            }
             if case let .portsNotReleased(holders) = failure.reason {
                 holderList(holders)
             }
@@ -137,8 +134,7 @@ struct SwitchFailureSheet: View {
     }
 
     /// ポートは番号で名指しする。複数ポートを持つサービスでは名前だけでは原因が分からない。
-    /// 終了操作は出さない。外部プロセスの自動終了を禁止しているうえ、
-    /// 明示的な終了の導線は Milestone 3 の管理UIとあわせて用意する。
+    /// Dev Switcher の管理外にあるプロセスへ終了操作は出さない。
     private func holderList(_ holders: [ResolvedPortHolder]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("占有しているプロセス")
@@ -151,7 +147,7 @@ struct SwitchFailureSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if holders.contains(where: { !$0.ownership.canOfferTermination }) {
-                Text("システムまたは別ユーザーが管理するプロセスには、終了操作を提供しません。")
+                Text("外部プロセス、システムまたは別ユーザーが管理するプロセスには、Dev Switcher から終了操作を提供しません。起動元のターミナルや管理ツールで停止してください。")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

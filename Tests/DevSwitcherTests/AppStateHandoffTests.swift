@@ -47,9 +47,8 @@ struct AppStateHandoffTests {
             coordinatorOptions: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(2),
                 stopGrace: .seconds(2),
-                healthTimeout: .seconds(2),
-                healthObservationWindow: .milliseconds(100),
-                healthPollInterval: .milliseconds(20),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
                 gatePollInterval: .milliseconds(20)
             )
         )
@@ -70,161 +69,6 @@ struct AppStateHandoffTests {
             RuntimeHintStore(directory: directory).load().hints.first
         )
         #expect(hint.observedPorts == .unavailable)
-    }
-
-    // MARK: - 生成の補助
-
-    private func makeState(
-        directory: URL,
-        registry providedRegistry: RuntimeRegistry? = nil,
-        environmentLoader: @escaping RuntimeRegistry.ShellEnvironmentLoader = {
-            fixedShellEnvironment
-        },
-        handoffInspector: HandoffInspector = HandoffInspector(),
-        hintStore: (any RuntimeHintPersisting)? = nil,
-        options: SwitchCoordinator.Options = SwitchCoordinator.Options(
-            releaseTimeout: .seconds(2),
-            stopGrace: .seconds(2),
-            healthTimeout: .seconds(2),
-            healthObservationWindow: .milliseconds(200),
-            healthPollInterval: .milliseconds(50),
-            gatePollInterval: .milliseconds(50)
-        )
-    ) -> AppState {
-        let registry = providedRegistry ?? RuntimeRegistry(
-            portPollInterval: .seconds(60),
-            // ログの出力先も一時ディレクトリにする。
-            logDirectory: directory.appendingPathComponent("logs", isDirectory: true),
-            environmentLoader: environmentLoader
-        )
-        return AppState(
-            registry: registry,
-            store: ProjectStore(directory: directory),
-            hintStore: hintStore ?? RuntimeHintStore(directory: directory),
-            handoffInspector: handoffInspector,
-            coordinatorOptions: options
-        )
-    }
-
-    private func makeStoredHint(
-        projectID: UUID,
-        serviceID: UUID,
-        serviceName: String = "Worker",
-        pid: pid_t = 999_999,
-        startAbstime: UInt64 = 1,
-        directory: URL
-    ) -> RuntimeHint {
-        let anchor = ProcessAnchor(pid: pid, startAbstime: startAbstime)
-        return RuntimeHint(
-            projectID: projectID,
-            serviceID: serviceID,
-            serviceName: serviceName,
-            processGroupID: anchor.pid,
-            leader: anchor,
-            groupEvidence: ProcessGroupEvidence(
-                bootSessionID: "TEST-BOOT-SESSION",
-                anchors: [anchor]
-            ),
-            executablePath: "/bin/sleep",
-            workingDirectory: directory,
-            observedPorts: .observed([])
-        )
-    }
-
-    private func makeCandidate(for hint: RuntimeHint) -> HandoffCandidate {
-        HandoffCandidate(
-            hint: hint,
-            identity: ProcessIdentity(
-                pid: hint.leader.pid,
-                startAbstime: hint.leader.startAbstime,
-                startedAt: Date(timeIntervalSince1970: 1),
-                executablePath: hint.executablePath,
-                workingDirectory: hint.workingDirectory
-            ),
-            evidence: hint.groupEvidence,
-            observedPorts: []
-        )
-    }
-
-    private func makeRegistry(
-        directory: URL,
-        observations: ProcessObservationControl,
-        signalSender: (@Sendable (pid_t, Int32) -> Int32)? = nil
-    ) -> RuntimeRegistry {
-        RuntimeRegistry(
-            portPollInterval: .seconds(60),
-            logDirectory: directory.appendingPathComponent("logs", isDirectory: true),
-            environmentLoader: { fixedShellEnvironment },
-            portProbe: { _ in [] },
-            signalSender: signalSender ?? { kill(-$0, $1) },
-            groupStateProbe: { observations.groupState(processGroupID: $0) },
-            startAbstimeProbe: { observations.startObservation(pid: $0) },
-            bootSessionProbe: { observations.bootSession() }
-        )
-    }
-
-    /// 実プロセスを使わずに「引き継げる候補が1件ある」状況を作る。
-    /// 停止シグナルは記録するだけで、送出先の観測を空へ切り替えて成功を再現する。
-    private struct SyntheticFixture {
-        let project: ProjectDefinition
-        let hint: RuntimeHint
-        let observations: ProcessObservationControl
-        let signals: SignalRecorder
-        let registry: RuntimeRegistry
-        let inspector: HandoffInspector
-
-        var service: ServiceDefinition { project.services[0] }
-    }
-
-    private func makeSyntheticFixture(
-        directory: URL,
-        pid: pid_t = 45_001,
-        startAbstime: UInt64 = 501
-    ) -> SyntheticFixture {
-        let project = makeWorkerProject(directory: directory)
-        let hint = makeStoredHint(
-            projectID: project.id,
-            serviceID: project.services[0].id,
-            serviceName: project.services[0].name,
-            pid: pid,
-            startAbstime: startAbstime,
-            directory: directory
-        )
-        let observations = ProcessObservationControl(
-            startObservations: [hint.leader.pid: .present(hint.leader.startAbstime)],
-            groupStates: [
-                hint.processGroupID: .members([
-                    ProcessInspector.ProcessGroupMember(pid: hint.leader.pid, isZombie: false),
-                ]),
-            ]
-        )
-        // 停止できたことを決定的に再現する。観測を切り替えないと猶予いっぱい待つ。
-        let signals = SignalRecorder { processGroupID, _ in
-            observations.setGroupState(.members([]), for: processGroupID)
-            observations.setStartObservation(.notPresent, for: processGroupID)
-        }
-        let registry = makeRegistry(
-            directory: directory,
-            observations: observations,
-            signalSender: { signals.send($0, $1) }
-        )
-        let inspector = HandoffInspector(
-            startAbstimeProbe: { observations.startObservation(pid: $0) },
-            startTimeProbe: { _ in 1_000_000 },
-            executablePathProbe: { _ in "/bin/sleep" },
-            workingDirectoryProbe: { _ in directory },
-            portProbe: { _ in [] },
-            groupStateProbe: { observations.groupState(processGroupID: $0) },
-            bootSessionProbe: { observations.bootSession() }
-        )
-        return SyntheticFixture(
-            project: project,
-            hint: hint,
-            observations: observations,
-            signals: signals,
-            registry: registry,
-            inspector: inspector
-        )
     }
 
     /// 判断待ちの候補として提示させてから、本体だけを終了させる。
@@ -303,7 +147,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         let race = try await presentRaceCondition(
             state: state,
@@ -336,7 +180,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         let race = try await presentRaceCondition(
             state: state,
@@ -364,7 +208,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         let race = try await presentRaceCondition(
             state: state,
@@ -390,7 +234,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         let race = try await presentRaceCondition(
             state: state,
@@ -437,7 +281,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: HandoffInspector(
                 startAbstimeProbe: { _ in .notPresent },
@@ -477,7 +321,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([gone, missing])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: HandoffInspector(
                 startAbstimeProbe: { _ in .notPresent },
@@ -555,7 +399,7 @@ struct AppStateHandoffTests {
             groupStateProbe: { observations.groupState(processGroupID: $0) },
             bootSessionProbe: { observations.bootSession() }
         )
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: registry,
             handoffInspector: inspector
@@ -623,7 +467,7 @@ struct AppStateHandoffTests {
             groupStateProbe: { observations.groupState(processGroupID: $0) },
             bootSessionProbe: { observations.bootSession() }
         )
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: registry,
             handoffInspector: inspector,
@@ -677,7 +521,7 @@ struct AppStateHandoffTests {
             to: ProjectStore(directory: directory).fileURL
         )
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         #expect(state.storeError != nil)
@@ -711,7 +555,7 @@ struct AppStateHandoffTests {
             groupStateProbe: { _ in .unavailable(errno: EPERM) },
             bootSessionProbe: { "TEST-BOOT-SESSION" }
         )
-        let state = makeState(directory: directory, handoffInspector: inspector)
+        let state = makeAppState(directory: directory, handoffInspector: inspector)
         await state.bootstrap()
 
         #expect(state.storeError != nil)
@@ -745,7 +589,7 @@ struct AppStateHandoffTests {
         let projectStore = ProjectStore(directory: directory)
         try Data("{ broken projects json".utf8).write(to: projectStore.fileURL)
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         #expect(await state.flushRuntimeHintsBeforeTermination())
 
@@ -772,7 +616,7 @@ struct AppStateHandoffTests {
         )
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([hint])
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector()
         )
@@ -819,7 +663,7 @@ struct AppStateHandoffTests {
         try hintStore.save([hint])
         try ProjectStore(directory: directory).save([])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         let rejection = try #require(state.handoffPresentation?.review.rejected.first)
@@ -858,7 +702,7 @@ struct AppStateHandoffTests {
         try hintStore.save([hint])
         try ProjectStore(directory: directory).save([remaining])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         let rejection = try #require(state.handoffPresentation?.review.rejected.first)
@@ -896,7 +740,7 @@ struct AppStateHandoffTests {
             groupStateProbe: { fixture.observations.groupState(processGroupID: $0) },
             bootSessionProbe: { fixture.observations.bootSession() }
         )
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: inspector
@@ -944,7 +788,7 @@ struct AppStateHandoffTests {
         ])
 
         let gate = TestGate()
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             environmentLoader: {
                 await gate.markReached()
@@ -990,7 +834,7 @@ struct AppStateHandoffTests {
         )
         try RuntimeHintStore(directory: directory).save([hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector()
         )
@@ -1034,7 +878,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try Data("{ not json".utf8).write(to: hintStore.fileURL)
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector()
         )
@@ -1137,7 +981,7 @@ struct AppStateHandoffTests {
         try Data(broken.utf8).write(to: projectStore.fileURL)
         let originalData = try Data(contentsOf: projectStore.fileURL)
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         #expect(state.storeError != nil)
@@ -1171,7 +1015,7 @@ struct AppStateHandoffTests {
         let projectStore = ProjectStore(directory: directory)
         try projectStore.save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         #expect(state.canStart)
         #expect(state.canEdit(project))
@@ -1230,7 +1074,7 @@ struct AppStateHandoffTests {
         try projectStore.save([fixture.project])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector
@@ -1249,7 +1093,7 @@ struct AppStateHandoffTests {
         // UI の無効化だけでは、ゲートが見る設定ポートと実測のずれを防げない。
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
         state.setEnabledNow(false, for: fixture.service, in: fixture.project)
-        #expect(state.operationError?.contains("稼働中") == true)
+        #expect(state.operationError?.contains("起動済み") == true)
         state.resetEnabledNow(in: fixture.project)
         state.presentProjectForm(editing: fixture.project)
         #expect(state.projectFormPresentation == nil)
@@ -1279,7 +1123,7 @@ struct AppStateHandoffTests {
         try projectStore.save([fixture.project])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector
@@ -1309,7 +1153,7 @@ struct AppStateHandoffTests {
         let projectStore = ProjectStore(directory: directory)
         try projectStore.save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
@@ -1342,7 +1186,7 @@ struct AppStateHandoffTests {
         try projectStore.save([project])
         let service = project.services[0]
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
@@ -1365,7 +1209,7 @@ struct AppStateHandoffTests {
         // UI の無効化だけでは、ゲートが見る設定ポートと実測のずれを防げない。
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
         state.setEnabledNow(false, for: service, in: project)
-        #expect(state.operationError?.contains("稼働中") == true)
+        #expect(state.operationError?.contains("起動済み") == true)
         state.resetEnabledNow(in: project)
         state.presentProjectForm(editing: project)
         #expect(state.projectFormPresentation == nil)
@@ -1396,7 +1240,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([fixture.project])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector
@@ -1430,7 +1274,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([fixture.project])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector
@@ -1460,7 +1304,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([fixture.project])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector
@@ -1533,7 +1377,7 @@ struct AppStateHandoffTests {
             to: hintStore.fileURL
         )
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector,
@@ -1579,7 +1423,7 @@ struct AppStateHandoffTests {
             to: hintStore.fileURL
         )
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector,
@@ -1618,7 +1462,7 @@ struct AppStateHandoffTests {
             in: fixture.project
         )
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             registry: fixture.registry,
             handoffInspector: fixture.inspector,
@@ -1654,7 +1498,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([project])
         let hintStore = ControllableHintStore(directory: directory)
 
-        let state = makeState(directory: directory, hintStore: hintStore)
+        let state = makeAppState(directory: directory, hintStore: hintStore)
         await state.bootstrap()
         #expect(state.canStart)
 
@@ -1678,7 +1522,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([project])
         let hintStore = ControllableHintStore(directory: directory)
 
-        let state = makeState(directory: directory, hintStore: hintStore)
+        let state = makeAppState(directory: directory, hintStore: hintStore)
         await state.bootstrap()
 
         // 起動前の保存は成功させ、起動後の保存だけを失敗させる。
@@ -1709,7 +1553,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([source, target])
         let hintStore = ControllableHintStore(directory: directory)
 
-        let state = makeState(directory: directory, hintStore: hintStore)
+        let state = makeAppState(directory: directory, hintStore: hintStore)
         await state.bootstrap()
         state.startOrSwitch(to: source)
         await state.waitForPendingOperation()
@@ -1744,7 +1588,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([source, target])
         let hintStore = ControllableHintStore(directory: directory)
 
-        let state = makeState(directory: directory, hintStore: hintStore)
+        let state = makeAppState(directory: directory, hintStore: hintStore)
         await state.bootstrap()
         state.startOrSwitch(to: source)
         await state.waitForPendingOperation()
@@ -1785,15 +1629,14 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([project])
         let hintStore = ControllableHintStore(directory: directory)
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             hintStore: hintStore,
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(2),
                 stopGrace: .milliseconds(300),
-                healthTimeout: .seconds(2),
-                healthObservationWindow: .milliseconds(200),
-                healthPollInterval: .milliseconds(50),
+                startupObservationWindow: .milliseconds(200),
+                startupPollInterval: .milliseconds(50),
                 gatePollInterval: .milliseconds(50)
             )
         )
@@ -1837,7 +1680,7 @@ struct AppStateHandoffTests {
         )
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
@@ -1913,7 +1756,7 @@ struct AppStateHandoffTests {
             try await Task.sleep(for: .milliseconds(10))
         }
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         await state.reviewHandoffCandidates()
 
@@ -1973,7 +1816,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([hint])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         await state.reviewHandoffCandidates()
         let presentation = try #require(state.handoffPresentation)
@@ -2028,7 +1871,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([hint])
         let originalData = try Data(contentsOf: hintStore.fileURL)
-        let state = makeState(directory: directory, registry: registry)
+        let state = makeAppState(directory: directory, registry: registry)
         state.loadProjects()
         #expect(state.ensureHintsLoaded())
 
@@ -2101,7 +1944,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save(hints)
         let originalData = try Data(contentsOf: hintStore.fileURL)
-        let state = makeState(directory: directory, registry: registry)
+        let state = makeAppState(directory: directory, registry: registry)
         state.loadProjects()
         #expect(state.ensureHintsLoaded())
 
@@ -2125,15 +1968,14 @@ struct AppStateHandoffTests {
         )
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(2),
                 stopGrace: .seconds(2),
-                healthTimeout: .seconds(2),
                 // サービスごとに観測時間がかかるので、起動は即座には終わらない。
-                healthObservationWindow: .milliseconds(400),
-                healthPollInterval: .milliseconds(50),
+                startupObservationWindow: .milliseconds(400),
+                startupPollInterval: .milliseconds(50),
                 gatePollInterval: .milliseconds(50)
             )
         )
@@ -2178,7 +2020,7 @@ struct AppStateHandoffTests {
 
         // bootstrap の途中（環境取得）で止める。
         let gate = TestGate()
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             environmentLoader: {
                 await gate.markReached()
@@ -2221,7 +2063,7 @@ struct AppStateHandoffTests {
         )
         try RuntimeHintStore(directory: directory).save([hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector()
         )
@@ -2256,7 +2098,7 @@ struct AppStateHandoffTests {
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save([hint])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector()
         )
@@ -2289,7 +2131,7 @@ struct AppStateHandoffTests {
             legacy: []
         )
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector(),
             hintStore: hintStore
@@ -2334,7 +2176,7 @@ struct AppStateHandoffTests {
         )
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
@@ -2381,7 +2223,7 @@ struct AppStateHandoffTests {
             to: hintStore.fileURL
         )
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         await state.reviewHandoffCandidates()
 
@@ -2422,7 +2264,7 @@ struct AppStateHandoffTests {
             ),
         ])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         state.loadProjects()
         await state.reviewHandoffCandidates()
         let presentation = try #require(state.handoffPresentation)
@@ -2445,7 +2287,7 @@ struct AppStateHandoffTests {
         let brokenContent = "{ not json"
         try Data(brokenContent.utf8).write(to: hintStore.fileURL)
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         #expect(await state.flushRuntimeHintsBeforeTermination() == false)
         #expect(state.hintError != nil)
         #expect(state.isTerminating == false)
@@ -2497,7 +2339,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         #expect(await state.flushRuntimeHintsBeforeTermination())
@@ -2521,7 +2363,7 @@ struct AppStateHandoffTests {
 
         let hintStore = ControllableHintStore(directory: directory)
         try hintStore.save([], legacy: [])
-        let state = makeState(directory: directory, hintStore: hintStore)
+        let state = makeAppState(directory: directory, hintStore: hintStore)
         // 読み込みは成功させ、書き込みだけ失敗させる。
         #expect(state.ensureHintsLoaded())
         hintStore.failAllSaves()
@@ -2541,7 +2383,7 @@ struct AppStateHandoffTests {
 
         // bootstrap を止めたまま、短い猶予で終了を要求する。
         let gate = TestGate()
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             environmentLoader: {
                 await gate.markReached()
@@ -2578,7 +2420,7 @@ struct AppStateHandoffTests {
         )
         try hintStore.save([hint], legacy: [])
 
-        let state = makeState(
+        let state = makeAppState(
             directory: directory,
             handoffInspector: makeUnobservableInspector(),
             hintStore: hintStore
@@ -2618,7 +2460,7 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
 
-        let state = makeState(directory: directory)
+        let state = makeAppState(directory: directory)
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()

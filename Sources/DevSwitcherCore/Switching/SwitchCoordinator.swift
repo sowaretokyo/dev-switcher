@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// サービス1件分の観測。ヘルスチェック中の異常終了と、失敗画面へ出す末尾ログを持つ。
+/// サービス1件分の観測。起動直後の異常終了と、失敗画面へ出す末尾ログを持つ。
 actor ServiceObservation {
     struct ExitRecord: Equatable, Sendable {
         let status: ExitStatus
@@ -37,8 +37,9 @@ actor ServiceObservation {
 
 /// プロジェクトの停止・ゲート・起動を1本の直列処理として扱う。
 ///
-/// ゲートを通過しなければ起動フェーズへ入れない構造にしてある（DESIGN.md I-3）。
-/// 停止側は実測ポート、起動側は設定ポートと、検証のソースを分けている。
+/// ゲートは1つだけ。切替元が実際に握っていたポートの解放を確認するまで、
+/// 起動フェーズへ入れない構造にしてある（DESIGN.md I-3）。判定のソースは実測だけで、
+/// 切替先の設定ポートは起動可否の根拠にしない。ポートの取得は OS の先勝に任せる。
 /// 同時に2つの切替を開始できないよう、actor に加えて明示的なフラグでも守る
 /// （actor は `await` をまたいだ再入を防がないため）。
 public actor SwitchCoordinator {
@@ -53,31 +54,28 @@ public actor SwitchCoordinator {
         public var releaseTimeout: Duration
         /// 停止時に通常終了を待つ猶予。
         public var stopGrace: Duration
-        public var healthTimeout: Duration
-        public var healthObservationWindow: Duration
-        public var healthPollInterval: Duration
-        /// ゲート1のポーリング間隔。
+        /// 起動直後の観測時間。
+        public var startupObservationWindow: Duration
+        public var startupPollInterval: Duration
+        /// ポート解放ゲートのポーリング間隔。
         public var gatePollInterval: Duration
 
         public init(
             releaseTimeout: Duration = .seconds(20),
             stopGrace: Duration = .seconds(10),
-            healthTimeout: Duration = HealthCheckPolicy.defaultTimeout,
-            healthObservationWindow: Duration = HealthCheckPolicy.defaultObservationWindow,
-            healthPollInterval: Duration = HealthCheckPolicy.defaultPollInterval,
+            startupObservationWindow: Duration = StartupObservationPolicy.defaultObservationWindow,
+            startupPollInterval: Duration = StartupObservationPolicy.defaultPollInterval,
             gatePollInterval: Duration = .milliseconds(200)
         ) {
             self.releaseTimeout = releaseTimeout
             self.stopGrace = stopGrace
-            self.healthTimeout = healthTimeout
-            self.healthObservationWindow = healthObservationWindow
-            self.healthPollInterval = healthPollInterval
+            self.startupObservationWindow = startupObservationWindow
+            self.startupPollInterval = startupPollInterval
             self.gatePollInterval = gatePollInterval
         }
     }
 
     private let registry: RuntimeRegistry
-    private let healthProbe: HealthProbe
     private let portHolderProbe: PortHolderProbe
     private let options: Options
     private let currentUserName: String
@@ -86,8 +84,8 @@ public actor SwitchCoordinator {
     private var cancelRequested = false
     private var enteredStartPhase = false
 
-    /// ヘルスチェックを通過したサービス。listen しただけのものと区別する。
-    private var healthyServiceIDs: Set<UUID> = []
+    /// 起動確認を通過したサービス。起動直後で観測が終わっていないものと区別する。
+    private var startedServiceIDs: Set<UUID> = []
     private var failureReasons: [UUID: String] = [:]
     private var residualGroups: [UUID: pid_t] = [:]
     private var observations: [UUID: ServiceObservation] = [:]
@@ -95,7 +93,6 @@ public actor SwitchCoordinator {
 
     public init(
         registry: RuntimeRegistry,
-        healthProbe: HealthProbe = HealthProbe(),
         portHolderProbe: @escaping PortHolderProbe = { ports in
             try await PortInspector.holders(ofPorts: ports)
         },
@@ -103,7 +100,6 @@ public actor SwitchCoordinator {
         currentUserName: String = NSUserName()
     ) {
         self.registry = registry
-        self.healthProbe = healthProbe
         self.portHolderProbe = portHolderProbe
         self.options = options
         self.currentUserName = currentUserName
@@ -144,7 +140,7 @@ public actor SwitchCoordinator {
         try await run(stopping: project, starting: nil, progress: progress, events: events)
     }
 
-    /// 切替。停止 → ゲート1 → ゲート2 → 起動の順を崩さない。
+    /// 切替。停止 → ポート解放の確認 → 起動の順を崩さない。
     public func switchProject(
         from source: ProjectDefinition,
         to target: ProjectDefinition,
@@ -220,9 +216,6 @@ public actor SwitchCoordinator {
             )
         }
 
-        try await acquireGate(target, source: source, progress: progress)
-        try await throwIfCancelled(source: source, target: target)
-
         // ここから先は中止を受け付けない。
         enteredStartPhase = true
         let degraded = try await startPhase(
@@ -241,7 +234,7 @@ public actor SwitchCoordinator {
 
     // MARK: - 起動前の検証
 
-    /// Milestone 2 で実行できない設定を、停止を始める前に検出する。
+    /// MVP で実行できない設定を、停止を始める前に検出する。
     private func preflight(
         _ target: ProjectDefinition,
         source: ProjectDefinition?
@@ -266,7 +259,7 @@ public actor SwitchCoordinator {
                 )
             }
             do {
-                _ = try HealthCheckPolicy.spec(for: service)
+                _ = try StartupObservationPolicy.spec(for: service)
             } catch {
                 return SwitchFailure(
                     reason: .unsupportedConfiguration("\(error)"),
@@ -356,7 +349,7 @@ public actor SwitchCoordinator {
                 )
                 residualGroups[service.id] = processGroupID
                 failureReasons[service.id] = reason
-                healthyServiceIDs.remove(service.id)
+                startedServiceIDs.remove(service.id)
             case let .ownershipLost(reason):
                 stopFailures.append(
                     StopFailureDetail(
@@ -367,7 +360,7 @@ public actor SwitchCoordinator {
                     )
                 )
                 failureReasons[service.id] = reason
-                healthyServiceIDs.remove(service.id)
+                startedServiceIDs.remove(service.id)
             }
         }
 
@@ -398,7 +391,7 @@ public actor SwitchCoordinator {
         }
     }
 
-    // MARK: - ゲート1（停止元の実測ポート解放）
+    // MARK: - ゲート（停止元の実測ポート解放）
 
     private func releaseGate(
         ports: [Int],
@@ -441,47 +434,14 @@ public actor SwitchCoordinator {
         )
     }
 
-    // MARK: - ゲート2（起動先の設定ポート空き確認）
-
-    /// `failurePolicy` で範囲を絞らない。落ちても続行するサービスのポートも必ず検証する。
-    /// 互換なサービスが残っていると、エラーを出さずに別プロジェクトへ接続してしまうため。
-    private func acquireGate(
-        _ target: ProjectDefinition,
-        source: ProjectDefinition?,
-        progress: @escaping ProgressSink
-    ) async throws {
-        let ports = target.portsToAcquire()
-        guard !ports.isEmpty else {
-            progress(.verifyingAcquire(free: 0, total: 0))
-            return
-        }
-
-        let holders: [ObservedPortHolder]
-        do {
-            holders = try await portHolderProbe(ports)
-        } catch {
-            throw SwitchFailure(
-                reason: .portObservationFailed(
-                    context: "起動先のポート確認",
-                    reason: "\(error)"
-                ),
-                facts: await facts(source: source, target: target)
-            )
-        }
-
-        let occupied = Set(holders.map(\.port))
-        progress(.verifyingAcquire(free: ports.count - occupied.count, total: ports.count))
-
-        guard holders.isEmpty else {
-            throw SwitchFailure(
-                reason: .portConflict(holders: await resolve(holders)),
-                facts: await facts(source: source, target: target)
-            )
-        }
-    }
-
     // MARK: - 起動フェーズ
 
+    /// 設定順にすべてのサービスを起動する。
+    ///
+    /// 同じ設定ポートを持つサービスがあっても、後続をスキップしたり別のポートを割り当てたりしない。
+    /// ポートを取れるかは OS が決める（先に bind したプロセスが取る）。
+    /// 取れずに終了したサービスは、通常の起動失敗として `failurePolicy` に従って扱う。
+    ///
     /// 戻り値は `failurePolicy: continue` で起動できなかったサービス名（一部停止の内訳）。
     private func startPhase(
         _ target: ProjectDefinition,
@@ -496,13 +456,12 @@ public actor SwitchCoordinator {
         for (index, service) in services.enumerated() {
             progress(.starting(service: service.name, index: index + 1, total: services.count))
 
-            let spec: HealthCheckSpec
+            let spec: StartupObservationSpec
             do {
-                spec = try HealthCheckPolicy.spec(
+                spec = try StartupObservationPolicy.spec(
                     for: service,
-                    timeout: options.healthTimeout,
-                    observationWindow: options.healthObservationWindow,
-                    pollInterval: options.healthPollInterval
+                    observationWindow: options.startupObservationWindow,
+                    pollInterval: options.startupPollInterval
                 )
             } catch {
                 // preflight で弾いているはずだが、ここでも既定へ倒さない。
@@ -547,14 +506,14 @@ public actor SwitchCoordinator {
                 continue
             }
 
-            progress(.awaitingHealth(service: service.name))
-            let result = await awaitHealth(service: service, spec: spec)
+            progress(.observingStartup(service: service.name))
+            let result = await awaitStartupObservation(service: service, spec: spec)
             switch result {
             case .passed:
-                healthyServiceIDs.insert(service.id)
+                startedServiceIDs.insert(service.id)
                 failureReasons[service.id] = nil
             case let .failed(reason):
-                // 利用可能にならなかったサービスは、握った資源を残さないよう停止する。
+                // 起動できなかったサービスは、握った資源を残さないよう停止する。
                 await stopAfterFailedStart(service)
                 startedInThisRun.removeAll { $0.id == service.id }
                 try await failStart(
@@ -583,7 +542,7 @@ public actor SwitchCoordinator {
         progress: @escaping ProgressSink
     ) async throws {
         failureReasons[service.id] = reason
-        healthyServiceIDs.remove(service.id)
+        startedServiceIDs.remove(service.id)
 
         switch service.failurePolicy {
         case .continue:
@@ -604,83 +563,64 @@ public actor SwitchCoordinator {
 
     private func stopAfterFailedStart(_ service: ServiceDefinition) async {
         guard await registry.occupiedProcessGroup(serviceID: service.id) != nil else {
-            healthyServiceIDs.remove(service.id)
+            startedServiceIDs.remove(service.id)
             return
         }
         do {
             let outcome = try await registry.stop(service: service, grace: options.stopGrace)
             switch outcome {
             case .stopped:
-                healthyServiceIDs.remove(service.id)
+                startedServiceIDs.remove(service.id)
                 residualGroups[service.id] = nil
             case let .residual(processGroupID, reason):
                 residualGroups[service.id] = processGroupID
                 let existing = failureReasons[service.id].map { $0 + "\n" } ?? ""
                 failureReasons[service.id] = existing + reason
-                healthyServiceIDs.remove(service.id)
+                startedServiceIDs.remove(service.id)
             case let .ownershipLost(reason):
                 failureReasons[service.id] = reason
-                healthyServiceIDs.remove(service.id)
+                startedServiceIDs.remove(service.id)
             }
         } catch {
-            healthyServiceIDs.remove(service.id)
+            startedServiceIDs.remove(service.id)
             if let processGroupID = await registry.occupiedProcessGroup(serviceID: service.id) {
                 residualGroups[service.id] = processGroupID
             }
         }
     }
 
-    // MARK: - ヘルスチェック
+    // MARK: - 起動確認
 
-    private enum HealthResult {
+    private enum StartupResult {
         case passed
         case failed(reason: String)
     }
 
-    /// listen 開始だけでは通過にしない。種別ごとの既定に従って利用可能性を確かめる。
-    private func awaitHealth(
+    /// 起動成功の判定。
+    ///
+    /// 設定ポートへ HTTP は投げない。同じポートを先に取った別サービスの応答を
+    /// 自分の応答と誤認するため、判定材料はプロセスの生存だけにする。
+    /// 初期観測期間に終了せず、観測終了時点でも管理下にあれば起動成功とする。
+    private func awaitStartupObservation(
         service: ServiceDefinition,
-        spec: HealthCheckSpec
-    ) async -> HealthResult {
+        spec: StartupObservationSpec
+    ) async -> StartupResult {
         let observation = observations[service.id]
 
-        switch spec.method {
-        case .processAlive:
-            // ポートも HTTP エンドポイントも持たないサービスは、
-            // 短い初期観測期間に異常終了しなかったことを利用可能性の判定とする。
-            let deadline = ContinuousClock.now + spec.observationWindow
-            while ContinuousClock.now < deadline {
-                if let exit = await observation?.exit {
-                    return .failed(reason: await exitReason(exit, observation: observation))
-                }
-                try? await Task.sleep(for: spec.pollInterval)
-            }
+        let deadline = ContinuousClock.now + spec.observationWindow
+        while ContinuousClock.now < deadline {
             if let exit = await observation?.exit {
                 return .failed(reason: await exitReason(exit, observation: observation))
             }
-            guard await registry.isRunning(serviceID: service.id) else {
-                return .failed(reason: "起動直後にプロセスが終了しました。")
-            }
-            return .passed
-
-        case let .httpGet(port, path):
-            let deadline = ContinuousClock.now + spec.timeout
-            var lastReason = "応答がありません。"
-            while ContinuousClock.now < deadline {
-                if let exit = await observation?.exit {
-                    return .failed(reason: await exitReason(exit, observation: observation))
-                }
-                let result = await healthProbe.probe(port: port, path: path)
-                if result.isHealthy { return .passed }
-                lastReason = result.reason
-                try? await Task.sleep(for: spec.pollInterval)
-            }
-            // 黙って待ち続けない。何を待って諦めたのかを理由に残す。
-            let tail = await observation?.tailText ?? ""
-            let base = "ヘルスチェックが \(Int(spec.timeout.seconds)) 秒以内に通過しませんでした"
-                + "（\(spec.description) / 直近の結果: \(lastReason)）。"
-            return .failed(reason: tail.isEmpty ? base : base + "\n直近のログ:\n" + tail)
+            try? await Task.sleep(for: spec.pollInterval)
         }
+        if let exit = await observation?.exit {
+            return .failed(reason: await exitReason(exit, observation: observation))
+        }
+        guard await registry.isRunning(serviceID: service.id) else {
+            return .failed(reason: "起動直後にプロセスが終了しました。")
+        }
+        return .passed
     }
 
     private func exitReason(
@@ -695,7 +635,7 @@ public actor SwitchCoordinator {
     // MARK: - 引き継ぎ
 
     /// 実測で照合済みの候補を管理下へ置く。新しいプロセスは起動しない。
-    /// 引き継いだ後もヘルスチェックを行い、listen しているだけの状態を稼働中と扱わない。
+    /// 引き継いだ後も初期観測を行い、直後に消えるプロセスを起動済みと扱わない。
     public func adopt(
         _ candidate: HandoffCandidate,
         service: ServiceDefinition,
@@ -708,25 +648,24 @@ public actor SwitchCoordinator {
         try await registry.adopt(candidate: candidate, service: service, in: project)
         clearState(of: service.id)
 
-        let spec: HealthCheckSpec
+        let spec: StartupObservationSpec
         do {
-            spec = try HealthCheckPolicy.spec(
+            spec = try StartupObservationPolicy.spec(
                 for: service,
-                timeout: options.healthTimeout,
-                observationWindow: options.healthObservationWindow,
-                pollInterval: options.healthPollInterval
+                observationWindow: options.startupObservationWindow,
+                pollInterval: options.startupPollInterval
             )
         } catch {
             failureReasons[service.id] = "\(error)"
             return
         }
 
-        switch await awaitHealth(service: service, spec: spec) {
+        switch await awaitStartupObservation(service: service, spec: spec) {
         case .passed:
-            healthyServiceIDs.insert(service.id)
+            startedServiceIDs.insert(service.id)
         case let .failed(reason):
             // 利用者が明示的に「引き継ぐ」を選んだプロセスなので、勝手に停止しない。
-            // 稼働中とも扱わず、通らなかった事実を残す。
+            // 起動済みとも扱わず、確認できなかった事実を残す。
             failureReasons[service.id] = reason
         }
     }
@@ -853,7 +792,7 @@ public actor SwitchCoordinator {
         if residualGroups[service.id] != nil { return .residual }
         if let reason = failureReasons[service.id] { return .failed(reason: reason) }
         if await registry.isRunning(serviceID: service.id) {
-            return healthyServiceIDs.contains(service.id) ? .healthy : .running
+            return startedServiceIDs.contains(service.id) ? .healthy : .running
         }
         // 起動したプロセスは終了したのに、孫がプロセスグループに残っていることがある。
         // これを「失敗」や「停止中」と表示すると、資源を握ったままなのに
@@ -920,7 +859,7 @@ public actor SwitchCoordinator {
             if case let .failed(detail) = byID[blocking.id]?.phase {
                 reason = detail
             } else {
-                reason = "サービス「\(blocking.name)」が稼働していません。"
+                reason = "サービス「\(blocking.name)」が起動できていません。"
             }
             return .failed(reason: reason)
         }
@@ -963,7 +902,7 @@ public actor SwitchCoordinator {
     /// 観測記録も一緒に消す。停止操作なしの終了を`servicePhase`が失敗として読むため、
     /// 残したままだと明示的に停止したあとも失敗のままになる。
     private func clearState(of serviceID: UUID) {
-        healthyServiceIDs.remove(serviceID)
+        startedServiceIDs.remove(serviceID)
         failureReasons[serviceID] = nil
         residualGroups[serviceID] = nil
         observations[serviceID] = nil
