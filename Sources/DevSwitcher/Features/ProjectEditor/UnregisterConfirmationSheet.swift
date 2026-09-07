@@ -14,32 +14,31 @@ struct UnregisterConfirmationSheet: View {
     private var project: ProjectDefinition { presentation.project }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             Text("「\(project.name)」の登録を解除しますか？")
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(Typography.title)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.tight) {
                 Text("Dev Switcher の一覧から外すだけです。次のディレクトリとその中身は削除されません。")
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // パスは1度だけ、文ではなくブロックで出す。同じ保証を2回書くと、
+                // 読み飛ばされて肝心の「削除されない」が伝わらなくなる。
                 Text(project.directory.path)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(Typography.mono)
                     .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(project.directory.path) は削除されません。ローカルのリポジトリ、ファイル、ログはそのまま残ります。")
-                    .font(.system(size: 11.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("登録しているサービス \(project.services.count) 件の設定は失われます。もう一度使うには登録し直してください。")
-                .font(.system(size: 11.5))
+            Text("登録しているサービス \(project.services.count) 件の設定は失われます。")
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -55,8 +54,8 @@ struct UnregisterConfirmationSheet: View {
                 Button("登録を解除", role: .destructive) { unregister() }
             }
         }
-        .padding(20)
-        .frame(width: 452)
+        .padding(Spacing.xl)
+        .frame(width: Metrics.sheetWidth)
     }
 
     private func unregister() {

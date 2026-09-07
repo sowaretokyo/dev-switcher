@@ -1,7 +1,7 @@
 import DevSwitcherCore
 import SwiftUI
 
-/// サイドバーは選択しか発火しない。起動・停止は詳細側の明示的なボタンで行う。
+/// サイドバーは選択しか発火しない。起動・停止は詳細側とツールバーの明示的なボタンで行う。
 struct SidebarView: View {
     @Environment(AppState.self) private var state
 
@@ -10,36 +10,45 @@ struct SidebarView: View {
 
         List(selection: $state.selection) {
             if !activeProjects.isEmpty {
-                Section("起動済み") {
+                Section {
                     ForEach(activeProjects) { project in
                         projectRows(project)
                     }
+                } header: {
+                    SectionLabel("起動済み")
                 }
             }
-            Section("プロジェクト") {
+            Section {
                 if inactiveProjects.isEmpty {
                     Text("登録されていません")
-                        .font(.system(size: 11.5))
+                        .font(Typography.support)
                         .foregroundStyle(.tertiary)
+                        .rowLayout(height: Metrics.serviceRowHeight, leading: Spacing.s)
                 }
                 ForEach(inactiveProjects) { project in
                     projectRows(project)
                 }
+            } header: {
+                SectionLabel("プロジェクト")
             }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Divider()
-            Button {
-                state.presentProjectForm()
-            } label: {
-                Label("プロジェクトを追加…", systemImage: "plus")
-                    .font(.system(size: 12))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: 0) {
+                Divider()
+                Button {
+                    state.presentProjectForm()
+                } label: {
+                    Label("プロジェクトを追加…", systemImage: "plus")
+                        .font(Typography.row)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Spacing.m)
+                .padding(.vertical, Spacing.s)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .background(.bar)
         }
     }
 
@@ -54,14 +63,27 @@ struct SidebarView: View {
     @ViewBuilder
     private func projectRows(_ project: ProjectDefinition) -> some View {
         ProjectRow(project: project)
+            .rowLayout(height: Metrics.projectRowHeight, leading: Spacing.s)
             .tag(SidebarItem.project(project.id))
 
         if state.expandedProjectIDs.contains(project.id) {
             ForEach(project.services) { service in
                 ServiceRow(project: project, service: service)
+                    .rowLayout(height: Metrics.serviceRowHeight, leading: Spacing.indent)
                     .tag(SidebarItem.service(projectID: project.id, serviceID: service.id))
             }
         }
+    }
+}
+
+private extension View {
+    /// 行の高さを `DESIGN.md` 8章の値ちょうどにする。
+    ///
+    /// `frame` だけを指定すると List 自身の縦パディングが上乗せされ、指定した高さにならない。
+    /// インデントも `padding` ではなく行のインセットで表現し、選択ハイライトの左端を揃える。
+    func rowLayout(height: CGFloat, leading: CGFloat) -> some View {
+        frame(height: height)
+            .listRowInsets(EdgeInsets(top: 0, leading: leading, bottom: 0, trailing: Spacing.s))
     }
 }
 
@@ -69,33 +91,41 @@ private struct ProjectRow: View {
     @Environment(AppState.self) private var state
     let project: ProjectDefinition
 
+    private var isExpanded: Bool {
+        state.expandedProjectIDs.contains(project.id)
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.tight) {
             Button {
-                if state.expandedProjectIDs.contains(project.id) {
+                if isExpanded {
                     state.expandedProjectIDs.remove(project.id)
                 } else {
                     state.expandedProjectIDs.insert(project.id)
                 }
             } label: {
-                Image(systemName: state.expandedProjectIDs.contains(project.id) ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: Metrics.disclosureIcon, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 12)
+                    // 当たり判定を明示する。指定しないと図形の描画部分だけが反応し、
+                    // 押したつもりで行の選択だけが起きる。
+                    .frame(width: Spacing.m, height: Metrics.projectRowHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "サービスを隠す" : "サービスを表示")
 
             ProjectChip(project: project)
 
             Text(project.name)
-                .font(.system(size: 12.5))
+                .font(Typography.row)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: Spacing.xs)
 
             ProjectStatusDot(phase: state.phase(of: project))
         }
-        .frame(height: 27)
     }
 }
 
@@ -107,18 +137,18 @@ private struct ServiceRow: View {
     var body: some View {
         let phase = state.state(of: service.id).phase
 
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.tight) {
             StatusDot(phase: phase)
             Text(service.name)
-                .font(.system(size: 12.5))
+                .font(Typography.row)
                 .lineLimit(1)
-            Spacer(minLength: 4)
+                .truncationMode(.tail)
+            Spacer(minLength: Spacing.xs)
             Text(portSummary)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(Typography.monoSmall)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .padding(.leading, 24)
-        .frame(height: 25)
         // 対象外は意図して外したものなので、警告色ではなく彩度を落として示す。
         .opacity(phase == .excluded ? 0.55 : 1)
     }

@@ -15,7 +15,7 @@ struct StatusDot: View {
                 Circle().fill(color)
             }
         }
-        .frame(width: 7, height: 7)
+        .frame(width: Metrics.statusDot, height: Metrics.statusDot)
         .accessibilityLabel(phase.label)
     }
 
@@ -36,11 +36,12 @@ struct StatusLabel: View {
     let phase: ServicePhase
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.tight) {
             StatusDot(phase: phase)
             Text(phase.label)
-                .font(.system(size: 11.5))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }
@@ -51,7 +52,7 @@ struct ProjectStatusDot: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 7, height: 7)
+            .frame(width: Metrics.statusDot, height: Metrics.statusDot)
             .accessibilityLabel(phase.label)
     }
 
@@ -70,11 +71,12 @@ struct ProjectStatusLabel: View {
     let phase: ProjectPhase
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.tight) {
             ProjectStatusDot(phase: phase)
             Text(phase.label)
-                .font(.system(size: 11.5))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }
@@ -84,14 +86,15 @@ struct ProjectChip: View {
     let project: ProjectDefinition
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
+        RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
             .fill(project.color.swiftUIColor)
-            .frame(width: 16, height: 16)
+            .frame(width: Metrics.chip, height: Metrics.chip)
             .overlay {
                 Text(project.initial)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: Metrics.chipInitial, weight: .bold))
                     .foregroundStyle(.white)
             }
+            .accessibilityHidden(true)
     }
 }
 

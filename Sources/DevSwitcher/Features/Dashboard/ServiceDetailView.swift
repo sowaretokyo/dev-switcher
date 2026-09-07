@@ -22,80 +22,80 @@ struct ServiceDetailView: View {
     }
 
     private func header(_ uiState: AppState.ServiceUIState) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.s) {
+            HStack(spacing: Spacing.s) {
                 Text(service.name)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typography.heading)
+                    .lineLimit(1)
                 Text(service.kind.displayName)
-                    .font(.system(size: 10.5))
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
                 StatusLabel(phase: uiState.phase)
-                Spacer()
+                Spacer(minLength: Spacing.s)
                 // 起動・停止はプロジェクト単位でのみ行う。サービス単体の起動経路を残すと、
                 // 起動順・ゲート・failurePolicy を迂回できてしまう。
-                Text("起動と停止はプロジェクト単位で行います")
-                    .font(.system(size: 10.5))
+                Text("起動と停止はプロジェクト単位")
+                    .font(Typography.caption)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .help("サービス単体では起動・停止できません。プロジェクト詳細とツールバーから操作します。")
             }
 
-            HStack(alignment: .top, spacing: 20) {
+            // 値の長さは実行時に決まる。固定の横並びにすると狭い幅で切れるので折り返す。
+            FlowRow(horizontalSpacing: Spacing.xl, verticalSpacing: Spacing.m) {
                 LabeledValue(label: "実測ポート", value: observedPortsText(uiState))
-                LabeledValue(label: "PID", value: uiState.processID.map(String.init) ?? "—")
+                LabeledValue(label: "PID", value: uiState.processID.map(String.init) ?? "—", lineLimit: 1)
                 LabeledValue(
                     label: "プロセスグループ",
-                    value: uiState.processGroupID.map(String.init) ?? "—"
+                    value: uiState.processGroupID.map(String.init) ?? "—",
+                    lineLimit: 1
                 )
-                LabeledValue(label: "失敗時の扱い", value: service.failurePolicy.displayName)
+                LabeledValue(label: "失敗時の扱い", value: service.failurePolicy.displayName, lineLimit: 1)
             }
 
-            LabeledValue(label: "起動確認", value: startupObservationDescription)
+            LabeledValue(label: "起動確認", value: startupObservationDescription, lineLimit: 3)
+            // プロジェクト詳細から退避してきた。実行内容を確かめる場所はここ1か所にする。
+            LabeledValue(label: "起動コマンド", value: service.start.displayCommandLine, lineLimit: 3)
 
             if let warning = uiState.warning {
-                Text(warning)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                NoteText(warning, tint: .orange)
             }
             if case let .failed(reason) = uiState.phase {
-                Text(reason)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                NoteText(reason, tint: .red)
             } else if let message = uiState.lastMessage, !uiState.phase.isActive {
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                NoteText(message, tint: .secondary)
             }
         }
-        .padding(16)
+        .padding(Spacing.l)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func footer(_ buffer: LogBuffer) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.m) {
             Toggle("最新へ追従", isOn: $isFollowing)
                 .toggleStyle(.checkbox)
-                .font(.system(size: 11.5))
+                .font(Typography.support)
             Text("\(buffer.lines.count) 行")
-                .font(.system(size: 11))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
             if buffer.droppedCount > 0 {
                 Text("（古い \(buffer.droppedCount) 行は破棄）")
-                    .font(.system(size: 11))
+                    .font(Typography.support)
                     .foregroundStyle(.tertiary)
             }
             if buffer.stderrCount > 0 {
                 Text("stderr \(buffer.stderrCount) 行")
-                    .font(.system(size: 11))
+                    .font(Typography.support)
                     .foregroundStyle(.red)
             }
-            Spacer()
+            Spacer(minLength: Spacing.s)
             Text("ログのエラーはプロセスの状態を変えません")
-                .font(.system(size: 10.5))
+                .font(Typography.caption)
                 .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.l)
+        .padding(.vertical, Spacing.s)
     }
 
     /// 何を見て起動成功と判断しているかを表示する。

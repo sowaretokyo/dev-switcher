@@ -23,8 +23,8 @@ struct LogTextView: NSViewRepresentable {
             textView.isSelectable = true
             textView.drawsBackground = true
             textView.backgroundColor = .textBackgroundColor
-            textView.textContainerInset = NSSize(width: 8, height: 8)
-            textView.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+            textView.textContainerInset = NSSize(width: Spacing.s, height: Spacing.s)
+            textView.font = NSFont.monospacedSystemFont(ofSize: Metrics.logFontSize, weight: .regular)
             textView.textContainer?.widthTracksTextView = true
             context.coordinator.textView = textView
         }
@@ -162,7 +162,7 @@ struct LogTextView: NSViewRepresentable {
         }()
 
         private static func attributedLine(_ line: LogLine) -> NSAttributedString {
-            let font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+            let font = NSFont.monospacedSystemFont(ofSize: Metrics.logFontSize, weight: .regular)
             let result = NSMutableAttributedString()
             result.append(
                 NSAttributedString(

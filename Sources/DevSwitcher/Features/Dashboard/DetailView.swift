@@ -36,29 +36,33 @@ struct EmptyStateView: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.m) {
             Image(systemName: "square.stack.3d.up.slash")
-                .font(.system(size: 34, weight: .light))
+                .font(.system(size: Metrics.emptyStateIcon, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("プロジェクトが登録されていません")
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(Typography.title)
             Text("ローカルのリポジトリと起動コマンドを登録すると、ここから起動・停止できます。")
-                .font(.system(size: 12))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: Metrics.emptyStateTextWidth)
             Button("プロジェクトを追加…") {
                 state.presentProjectForm()
             }
             .controlSize(.large)
-            .padding(.top, 4)
+            .padding(.top, Spacing.xs)
 
             Text("保存先: \(state.storeLocation)")
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(Typography.monoSmall)
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
-                .padding(.top, 8)
+                .lineLimit(2)
+                .truncationMode(.head)
+                .frame(maxWidth: Metrics.emptyStateTextWidth)
+                .padding(.top, Spacing.s)
         }
+        .padding(Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -68,8 +72,10 @@ struct PlaceholderView: View {
 
     var body: some View {
         Text(message)
-            .font(.system(size: 12))
+            .font(Typography.support)
             .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(Spacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

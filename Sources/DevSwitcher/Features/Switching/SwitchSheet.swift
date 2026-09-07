@@ -18,11 +18,11 @@ struct SwitchSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             Text(title)
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(Typography.title)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.s) {
                 StageRow(
                     label: "\(presentation.sourceName) を停止",
                     status: stopStatus,
@@ -50,12 +50,12 @@ struct SwitchSheet: View {
 
             if presentation.canCancel {
                 Text("中止すると、\(presentation.sourceName)の停止は最後まで実行し、\(presentation.targetName)は起動しません。")
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("起動フェーズに入ったため、中止は受け付けられません。送出済みの停止処理を取り消せないためです。")
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -63,7 +63,7 @@ struct SwitchSheet: View {
             HStack {
                 ProgressView().controlSize(.small)
                 Text(presentation.state.label)
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("切替を中止") {
@@ -72,8 +72,8 @@ struct SwitchSheet: View {
                 .disabled(!presentation.canCancel)
             }
         }
-        .padding(20)
-        .frame(width: 452)
+        .padding(Spacing.xl)
+        .frame(width: Metrics.sheetWidth)
         .interactiveDismissDisabled()
     }
 
@@ -157,15 +157,15 @@ struct StageRow: View {
     var detail: String?
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.s) {
             Image(systemName: status.symbol)
-                .font(.system(size: 11))
+                .font(.system(size: Metrics.stageIcon))
                 .foregroundStyle(status.tint)
             Text(label)
-                .font(.system(size: 12))
+                .font(Typography.row)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 11))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -186,25 +186,25 @@ struct GateBox: View {
     let rows: [Row]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.tight) {
             ForEach(rows) { row in
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.s) {
                     Image(systemName: row.status.symbol)
-                        .font(.system(size: 11))
+                        .font(.system(size: Metrics.stageIcon))
                         .foregroundStyle(row.status.tint)
                     Text(row.label)
-                        .font(.system(size: 12))
+                        .font(Typography.row)
                     Spacer()
                     if let counter = row.counter {
                         Text(counter)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(Typography.mono)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
         }
-        .padding(10)
+        .padding(Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 }

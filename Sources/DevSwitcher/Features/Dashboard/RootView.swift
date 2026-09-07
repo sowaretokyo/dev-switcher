@@ -7,18 +7,32 @@ struct RootView: View {
     var body: some View {
         @Bindable var state = state
 
-        // バナーは NavigationSplitView の safeAreaInset にしない。
-        // inset にするとウィンドウの最小高さが押し上げられ、既定サイズ 880 × 544 が保てない。
-        VStack(spacing: 0) {
-            BannerArea()
-            NavigationSplitView {
-                SidebarView()
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 214, max: 300)
-            } detail: {
+        NavigationSplitView {
+            SidebarView()
+                .navigationSplitViewColumnWidth(
+                    min: Metrics.sidebarMinWidth,
+                    ideal: Metrics.sidebarIdealWidth,
+                    max: Metrics.sidebarMaxWidth
+                )
+        } detail: {
+            // バナーは詳細ペインの中に置く。NavigationSplitView の外へ積むと
+            // タイトルバーとサイドバーの間に全幅の帯が挟まり、サイドバーの頭が押し下がる。
+            // safeAreaInset にしないのも同じ理由で、ウィンドウの最小高さを押し上げるため。
+            VStack(spacing: 0) {
+                BannerArea()
                 DetailView()
             }
         }
-        .frame(minWidth: 720, minHeight: 460)
+        .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
+        // 稼働中のプロジェクトの識別と操作はツールバーが持つ（DESIGN.md 7章）。
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ToolbarIdentity()
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                ToolbarActions()
+            }
+        }
         .task {
             await state.bootstrap()
         }
@@ -45,7 +59,7 @@ struct RootView: View {
     }
 }
 
-/// 起動不能の原因を黙ってフォールバックせず、常に画面上部へ出す。
+/// 起動不能の原因を黙ってフォールバックせず、常に詳細ペインの上部へ出す。
 private struct BannerArea: View {
     @Environment(AppState.self) private var state
 
@@ -132,27 +146,27 @@ private struct Banner<Accessory: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Spacing.s) {
             Circle()
                 .fill(tint)
-                .frame(width: 7, height: 7)
-                .padding(.top, 5)
-            VStack(alignment: .leading, spacing: 2) {
+                .frame(width: Metrics.statusDot, height: Metrics.statusDot)
+                .padding(.top, Spacing.xs)
+            VStack(alignment: .leading, spacing: Spacing.hairline) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typography.heading)
                 Text(message)
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .lineLimit(messageLineLimit)
                     .fixedSize(horizontal: false, vertical: true)
                     .help(message)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Spacing.s)
             accessory()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Spacing.l)
+        .padding(.vertical, Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
         .overlay(alignment: .bottom) {

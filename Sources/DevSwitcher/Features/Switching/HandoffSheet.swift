@@ -21,17 +21,17 @@ struct HandoffSheet: View {
     @State private var isConfirmingStopAll = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             Text("既存のプロセスを検出しました")
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(Typography.title)
 
             Text("前回 Dev Switcher が起動したプロセスの手掛かりを、実際のプロセスと照合しました。開始時刻・実行ファイル・作業ディレクトリ・listen ポートがすべて一致したものだけを引き継ぎ候補にしています。")
-                .font(.system(size: 11.5))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: Spacing.m) {
                     if !review.candidates.isEmpty {
                         section("引き継げる候補") {
                             ForEach(review.candidates) { candidate in
@@ -53,11 +53,11 @@ struct HandoffSheet: View {
                     if !review.rejected.isEmpty {
                         section("対象にしないもの") {
                             ForEach(Array(review.rejected.enumerated()), id: \.offset) { _, record in
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: Spacing.hairline) {
                                     Text("\(record.serviceName)（PID \(record.processID)）")
-                                        .font(.system(size: 12))
+                                        .font(Typography.row)
                                     Text(record.reason.description)
-                                        .font(.system(size: 11))
+                                        .font(Typography.support)
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -66,10 +66,10 @@ struct HandoffSheet: View {
                     }
                 }
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: Metrics.handoffListMaxHeight)
 
             Text("「無視」を選んでもプロセスやポートが残る可能性があります。残っている場合、次の切替はゲートが止めます。")
-                .font(.system(size: 11))
+                .font(Typography.support)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -88,7 +88,7 @@ struct HandoffSheet: View {
                     // 何が起きているか分からないまま押させない。
                     ProgressView().controlSize(.small)
                     Text(description)
-                        .font(.system(size: 11.5))
+                        .font(Typography.support)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -109,8 +109,8 @@ struct HandoffSheet: View {
             // 決着処理の実行中は、この判断に対する操作を一切受け付けない。
             .disabled(live.isResolving)
         }
-        .padding(20)
-        .frame(width: 452)
+        .padding(Spacing.xl)
+        .frame(width: Metrics.sheetWidth)
         // 選択せずに閉じられると、引き継ぎも停止もしないまま再表示する導線が無くなる。
         .interactiveDismissDisabled()
         .confirmationDialog(
@@ -151,15 +151,15 @@ struct HandoffSheet: View {
         _ title: String,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.tight) {
             Text(title)
-                .font(.system(size: 9.5, weight: .bold))
+                .font(Typography.sectionLabel)
                 .foregroundStyle(.tertiary)
             content()
         }
-        .padding(10)
+        .padding(Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 }
 
@@ -168,16 +168,16 @@ private struct StoppableRow: View {
     let finding: StoppableProcessFinding
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.hairline) {
+            HStack(spacing: Spacing.s) {
                 Text(finding.hint.serviceName)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typography.heading)
                 Text(evidenceLabel)
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .font(Typography.monoSmall)
                     .foregroundStyle(.secondary)
             }
             Text(finding.reason)
-                .font(.system(size: 11))
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -198,19 +198,19 @@ private struct CandidateRow: View {
     let candidate: HandoffCandidate
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.hairline) {
+            HStack(spacing: Spacing.s) {
                 Text(candidate.hint.serviceName)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typography.heading)
                 Text("PID \(candidate.identity.pid)")
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .font(Typography.monoSmall)
                     .foregroundStyle(.secondary)
             }
             Text(portSummary)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(Typography.monoSmall)
                 .foregroundStyle(.secondary)
             Text(candidate.identity.workingDirectory.path)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(Typography.monoSmall)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.head)

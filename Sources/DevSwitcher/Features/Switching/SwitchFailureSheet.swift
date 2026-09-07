@@ -27,12 +27,12 @@ struct SwitchFailureSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             Text(failure.reason.title)
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(Typography.title)
 
             Text(failure.reason.detail)
-                .font(.system(size: 12))
+                .font(Typography.row)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -44,7 +44,7 @@ struct SwitchFailureSheet: View {
 
             if canForceStop {
                 Text("通常終了（SIGTERM）では停止できませんでした。強制終了（SIGKILL）は後始末を行わずにプロセスを止めます。実行するか判断してください。")
-                    .font(.system(size: 11.5))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -73,8 +73,8 @@ struct SwitchFailureSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
-        .frame(width: 452)
+        .padding(Spacing.xl)
+        .frame(width: Metrics.sheetWidth)
         // 強制終了の前に必ず再確認する（MVP_SPEC 12章）。
         .confirmationDialog(
             "強制終了しますか？",
@@ -118,37 +118,37 @@ struct SwitchFailureSheet: View {
 
     /// 中途半端な状態を黙って放置しないため、必ず1行ずつ断言する。
     private var currentState: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("現在の状態")
-                .font(.system(size: 9.5, weight: .bold))
+                .font(Typography.sectionLabel)
                 .foregroundStyle(.tertiary)
             ForEach(Array(failure.facts.statements.enumerated()), id: \.offset) { _, statement in
                 Text(statement)
-                    .font(.system(size: 12))
+                    .font(Typography.row)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(10)
+        .padding(Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
     /// ポートは番号で名指しする。複数ポートを持つサービスでは名前だけでは原因が分からない。
     /// Dev Switcher の管理外にあるプロセスへ終了操作は出さない。
     private func holderList(_ holders: [ResolvedPortHolder]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("占有しているプロセス")
-                .font(.system(size: 9.5, weight: .bold))
+                .font(Typography.sectionLabel)
                 .foregroundStyle(.tertiary)
             ForEach(holders, id: \.pid) { holder in
                 Text(holder.description)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(Typography.mono)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if holders.contains(where: { !$0.ownership.canOfferTermination }) {
                 Text("外部プロセス、システムまたは別ユーザーが管理するプロセスには、Dev Switcher から終了操作を提供しません。起動元のターミナルや管理ツールで停止してください。")
-                    .font(.system(size: 11))
+                    .font(Typography.support)
                     .foregroundStyle(.secondary)
             }
         }

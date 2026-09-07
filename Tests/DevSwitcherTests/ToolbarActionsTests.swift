@@ -3,9 +3,9 @@
 import Foundation
 import Testing
 
-@Suite("プロジェクト詳細")
+@Suite("ツールバーの操作")
 @MainActor
-struct ProjectDetailViewTests {
+struct ToolbarActionsTests {
     @Test("URL付きポートがない場合は開くメニューを表示しない")
     func openMenuVisibilityDependsOnOpenURL() {
         let directory = URL(fileURLWithPath: "/tmp/project-detail-test")
@@ -25,8 +25,8 @@ struct ProjectDetailViewTests {
             ]
         )
 
-        #expect(!ProjectDetailView(project: withoutPort).hasOpenMenuItems)
-        #expect(!ProjectDetailView(project: withoutURL).hasOpenMenuItems)
-        #expect(ProjectDetailView(project: withURL).hasOpenMenuItems)
+        #expect(!withoutPort.hasOpenableURLs)
+        #expect(!withoutURL.hasOpenableURLs)
+        #expect(withURL.hasOpenableURLs)
     }
 }

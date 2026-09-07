@@ -16,7 +16,7 @@ public struct DevSwitcherRootApp: App {
             RootView()
                 .environment(appDelegate.appState)
         }
-        .defaultSize(width: 880, height: 544)
+        .defaultSize(width: Metrics.windowWidth, height: Metrics.windowHeight)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
