@@ -273,7 +273,8 @@ struct AppStateProjectManagementTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.services[0].name = "Supabase"
         model.services[0].kind = .supabase
         model.services[0].executable = "/usr/bin/true"

@@ -176,15 +176,6 @@ public actor RuntimeRegistry {
             )
         }
 
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(
-            atPath: project.directory.path,
-            isDirectory: &isDirectory
-        )
-        guard exists, isDirectory.boolValue else {
-            throw RuntimeError.projectDirectoryMissing(project.directory)
-        }
-
         let environment = try await environment()
         let resolved = try ExecutableResolver.resolve(
             service.start,

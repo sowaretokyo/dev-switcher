@@ -5,10 +5,20 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case projectNameEmpty
     case duplicateProjectName(String)
     case duplicateProjectID(UUID)
-    case projectDirectoryEmpty
-    case projectDirectoryNotAbsolute(String)
-    case projectDirectoryMissing(URL)
-    case projectDirectoryNotADirectory(URL)
+    case noWorkingDirectories
+    case workingDirectoryNameEmpty(directoryIndex: Int)
+    case duplicateWorkingDirectoryName(String)
+    case duplicateWorkingDirectoryID(UUID)
+    case workingDirectoryPathEmpty(name: String)
+    case workingDirectoryPathNotAbsolute(name: String, path: String)
+    case duplicateWorkingDirectoryPath(URL)
+    case workingDirectoryHasNoServices(name: String)
+    case workingDirectoryUnknownService(name: String, id: UUID)
+    case serviceInMultipleWorkingDirectories(service: String)
+    case serviceWithoutWorkingDirectory(service: String)
+    case serviceWorkingDirectoryMismatch(service: String, expected: URL, actual: URL)
+    case namedWorkingDirectoryMissing(name: String, url: URL)
+    case namedWorkingDirectoryNotADirectory(name: String, url: URL)
     case noServices
     case serviceNameEmpty(serviceIndex: Int)
     case duplicateServiceName(String)
@@ -34,61 +44,81 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     public var description: String {
         switch self {
         case .projectNameEmpty:
-            "プロジェクト名が空です。"
+            "開発環境名が空です。"
         case let .duplicateProjectName(name):
-            "プロジェクト名「\(name)」は既に登録されています。"
+            "開発環境名「\(name)」は既に登録されています。"
         case let .duplicateProjectID(id):
-            "プロジェクト ID が重複しています（\(id.uuidString)）。"
-        case .projectDirectoryEmpty:
-            "プロジェクトのディレクトリが指定されていません。"
-        case let .projectDirectoryNotAbsolute(path):
-            "プロジェクトのディレクトリは絶対パスで指定してください（\(path)）。"
-        case let .projectDirectoryMissing(url):
-            "プロジェクトのディレクトリが存在しません（\(url.path)）。"
-        case let .projectDirectoryNotADirectory(url):
-            "プロジェクトのパスがディレクトリではありません（\(url.path)）。"
+            "開発環境 ID が重複しています（\(id.uuidString)）。"
+        case .noWorkingDirectories:
+            "作業ディレクトリが1件も登録されていません。"
+        case let .workingDirectoryNameEmpty(index):
+            "\(index + 1) 番目の作業ディレクトリ名が空です。"
+        case let .duplicateWorkingDirectoryName(name):
+            "作業ディレクトリ名「\(name)」が開発環境内で重複しています。"
+        case let .duplicateWorkingDirectoryID(id):
+            "作業ディレクトリ ID が重複しています（\(id.uuidString)）。"
+        case let .workingDirectoryPathEmpty(name):
+            "作業ディレクトリ「\(name)」の場所が指定されていません。"
+        case let .workingDirectoryPathNotAbsolute(name, path):
+            "作業ディレクトリ「\(name)」は絶対パスで指定してください（\(path)）。"
+        case let .duplicateWorkingDirectoryPath(url):
+            "同じ作業ディレクトリが複数登録されています（\(url.path)）。"
+        case let .workingDirectoryHasNoServices(name):
+            "作業ディレクトリ「\(name)」にプロセスが1件も登録されていません。"
+        case let .workingDirectoryUnknownService(name, id):
+            "作業ディレクトリ「\(name)」に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
+        case let .serviceInMultipleWorkingDirectories(service):
+            "プロセス「\(service)」が複数の作業ディレクトリに登録されています。"
+        case let .serviceWithoutWorkingDirectory(service):
+            "プロセス「\(service)」に作業ディレクトリが割り当てられていません。"
+        case let .serviceWorkingDirectoryMismatch(service, expected, actual):
+            "プロセス「\(service)」の実行場所が所属ディレクトリと一致しません（所属: \(expected.path)、実行場所: \(actual.path)）。"
+        case let .namedWorkingDirectoryMissing(name, url):
+            "作業ディレクトリ「\(name)」が存在しません（\(url.path)）。"
+        case let .namedWorkingDirectoryNotADirectory(name, url):
+            "作業ディレクトリ「\(name)」のパスがディレクトリではありません（\(url.path)）。"
         case .noServices:
-            "サービスが1つも登録されていません。"
+            "プロセスが1つも登録されていません。"
         case let .serviceNameEmpty(index):
-            "\(index + 1) 番目のサービス名が空です。"
+            "\(index + 1) 番目のプロセス名が空です。"
         case let .duplicateServiceName(name):
-            "サービス名「\(name)」がプロジェクト内で重複しています。"
+            "プロセス名「\(name)」が開発環境内で重複しています。"
         case let .duplicateServiceID(id):
-            "サービス ID が重複しています（\(id.uuidString)）。"
+            "プロセス ID が重複しています（\(id.uuidString)）。"
         case let .duplicateServiceIDAcrossProjects(id):
-            "サービス ID が別のプロジェクトと重複しています（\(id.uuidString)）。"
+            "プロセス ID が別の開発環境と重複しています（\(id.uuidString)）。"
         case let .executableEmpty(service):
-            "サービス「\(service)」の実行ファイルが空です。"
+            "プロセス「\(service)」の実行ファイルが空です。"
         case let .emptyArgument(service, index):
-            "サービス「\(service)」の \(index + 1) 番目の引数が空文字です。"
+            "プロセス「\(service)」の \(index + 1) 番目の引数が空文字です。"
         case let .workingDirectoryMissing(service, url):
-            "サービス「\(service)」の作業ディレクトリが存在しません（\(url.path)）。"
+            "プロセス「\(service)」の作業ディレクトリが存在しません（\(url.path)）。"
         case let .portNotANumber(service, value):
-            "サービス「\(service)」のポート「\(value)」は数値として解釈できません。"
+            "プロセス「\(service)」のポート「\(value)」は数値として解釈できません。"
         case let .portOutOfRange(service, port):
-            "サービス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。"
+            "プロセス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。"
         case let .duplicatePortInService(service, port):
-            "サービス「\(service)」でポート \(port) が重複しています。"
+            "プロセス「\(service)」でポート \(port) が重複しています。"
         case let .missingPrimaryPort(service):
-            "サービス「\(service)」に代表ポートが指定されていません。"
+            "プロセス「\(service)」に代表ポートが指定されていません。"
         case let .multiplePrimaryPorts(service):
-            "サービス「\(service)」に代表ポートが複数指定されています。1つだけ指定してください。"
+            "プロセス「\(service)」に代表ポートが複数指定されています。1つだけ指定してください。"
         case let .portLabelEmpty(service, port):
-            "サービス「\(service)」のポート \(port) のラベルが空文字です。ラベルを入力するか未設定にしてください。"
+            "プロセス「\(service)」のポート \(port) のラベルが空文字です。ラベルを入力するか未設定にしてください。"
         case let .invalidOpenURL(service, value):
-            "サービス「\(service)」の開く URL「\(value)」は http / https の URL として解釈できません。"
+            "プロセス「\(service)」の開く URL「\(value)」は http / https の URL として解釈できません。"
         case let .stopOrderMissingService(service):
-            "終了順にサービス「\(service)」が含まれていません。終了順を指定する場合は全サービスを並べてください。"
+            "終了順にプロセス「\(service)」が含まれていません。終了順を指定する場合は全プロセスを並べてください。"
         case let .stopOrderUnknownService(id):
-            "終了順に、このプロジェクトに存在しないサービス ID が含まれています（\(id.uuidString)）。"
+            "終了順に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
         case let .stopOrderDuplicate(service):
-            "終了順でサービス「\(service)」が重複しています。"
+            "終了順でプロセス「\(service)」が重複しています。"
         case let .enabledNowUnknownService(id):
-            "起動対象の指定に、このプロジェクトに存在しないサービス ID が含まれています（\(id.uuidString)）。"
+            "起動対象の指定に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
         case let .stopExecutableEmpty(service):
-            "サービス「\(service)」の終了コマンドの実行ファイルが空です。"
+            "プロセス「\(service)」の終了コマンドの実行ファイルが空です。"
         case let .stopEmptyArgument(service, index):
-            "サービス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。"
+            "プロセス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。"
         }
     }
 }

@@ -82,7 +82,75 @@ struct ProjectSchemaMigrationTests {
 
         try store.save(try store.load())
         let json = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(json.contains("\"schemaVersion\" : 2"))
+        #expect(json.contains("\"schemaVersion\" : 3"))
+    }
+
+    @Test("version 2 を作業パスごとの名前付きディレクトリへ変換する")
+    func migratesVersionTwoIntoNamedWorkingDirectories() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let webDirectory = directory.appendingPathComponent("web", isDirectory: true)
+        let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
+        try FileManager.default.createDirectory(at: webDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nativeDirectory, withIntermediateDirectories: true)
+
+        let webID = UUID()
+        let nativeID = UUID()
+        let workerID = UUID()
+        let projectID = UUID()
+        let store = ProjectStore(directory: directory)
+        let json = """
+        {
+          "schemaVersion" : 2,
+          "projects" : [
+            {
+              "id" : "\(projectID.uuidString)",
+              "name" : "Bell",
+              "color" : "blue",
+              "directory" : "\(directory.absoluteString)",
+              "enabledNow" : { "\(nativeID.uuidString)" : false },
+              "services" : [
+                \(legacyServiceJSON(id: webID, name: "Web", kind: "web", directory: webDirectory)),
+                \(legacyServiceJSON(id: nativeID, name: "Native", kind: "expo", directory: nativeDirectory)),
+                \(legacyServiceJSON(id: workerID, name: "Worker", kind: "worker", directory: webDirectory))
+              ]
+            }
+          ]
+        }
+        """
+        try Data(json.utf8).write(to: store.fileURL)
+
+        let project = try #require(try store.load().first)
+        #expect(project.id == projectID)
+        #expect(project.services.map(\.id) == [webID, nativeID, workerID])
+        #expect(project.workingDirectories.map(\.name) == ["web", "native"])
+        #expect(project.workingDirectories.map(\.directory) == [webDirectory, nativeDirectory])
+        #expect(project.workingDirectories[0].serviceIDs == [webID, workerID])
+        #expect(project.workingDirectories[1].serviceIDs == [nativeID])
+        #expect(project.enabledNow == [nativeID: false])
+    }
+
+    private func legacyServiceJSON(
+        id: UUID,
+        name: String,
+        kind: String,
+        directory: URL
+    ) -> String {
+        """
+        {
+          "id" : "\(id.uuidString)",
+          "name" : "\(name)",
+          "kind" : "\(kind)",
+          "ports" : [],
+          "start" : {
+            "executable" : "/bin/echo",
+            "arguments" : ["hello"],
+            "workingDirectory" : "\(directory.absoluteString)"
+          },
+          "enabledByDefault" : true,
+          "failurePolicy" : "block"
+        }
+        """
     }
 
     @Test("現行バージョンでは終了順と起動対象を往復できる")
@@ -119,6 +187,13 @@ struct ProjectSchemaMigrationTests {
         #expect(loaded.isEnabledNow(web.id))
         #expect(loaded.enabledStartupOrder.map(\.name) == ["Web"])
         #expect(loaded.excludedServices.map(\.name) == ["Expo"])
+
+        let data = try Data(contentsOf: store.fileURL)
+        let document = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let projects = try #require(document["projects"] as? [[String: Any]])
+        let storedProject = try #require(projects.first)
+        #expect(storedProject["directory"] == nil)
+        #expect(storedProject["workingDirectories"] != nil)
     }
 
     @Test("起動対象の指定は人が読める形で保存する")

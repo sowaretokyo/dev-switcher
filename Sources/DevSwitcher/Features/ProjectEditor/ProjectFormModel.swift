@@ -4,7 +4,8 @@ import Observation
 
 /// 解釈できない入力を空文字や0へ補完せず、入力元を示すエラーとして返す。
 ///
-/// 追加と編集で同じモデルを使う。ウィザードへ分割しないので、段階ごとの状態を持たない。
+/// 開発環境の下に名前付き作業ディレクトリを置き、その中へプロセスをまとめる。
+/// 同じ場所から起動するプロセスごとにディレクトリを繰り返し入力させない。
 @MainActor
 @Observable
 final class ProjectFormModel {
@@ -34,24 +35,17 @@ final class ProjectFormModel {
         }
     }
 
-    /// 1サービス分の入力。
-    ///
-    /// `id` は編集・並べ替え・削除を通して維持し、新規追加のときだけ発行する。
-    /// Milestone 3 で編集しない `stop` もここへ持たせる。配列位置ではなくサービスへ
-    /// 結び付けておかないと、並べ替えた瞬間に別サービスの終了コマンドになる。
+    /// 起動・停止・状態・ログを個別に持つ1プロセス分の入力。
     struct ServiceDraft: Identifiable, Equatable {
         let id: UUID
         var name: String
         var kind: ServiceKind
         var executable: String
         var argumentsText: String
-        /// nil は「プロジェクトディレクトリに従う」という指定。
-        /// 保存時にプロジェクトディレクトリを埋めるので、空文字で補完することはない。
-        var workingDirectory: URL?
         var ports: [PortDraft]
         var enabledByDefault: Bool
         var failurePolicy: FailurePolicy
-        /// Milestone 3 の編集対象外。保存時に欠落させないためだけに持ち回る。
+        /// 編集対象外。保存時に欠落させないためだけに持ち回る。
         let preservedStop: CommandSpec?
 
         init(
@@ -60,7 +54,6 @@ final class ProjectFormModel {
             kind: ServiceKind = .web,
             executable: String = "",
             argumentsText: String = "",
-            workingDirectory: URL? = nil,
             ports: [PortDraft] = [PortDraft(isPrimary: true)],
             enabledByDefault: Bool = true,
             failurePolicy: FailurePolicy = .block,
@@ -71,23 +64,13 @@ final class ProjectFormModel {
             self.kind = kind
             self.executable = executable
             self.argumentsText = argumentsText
-            self.workingDirectory = workingDirectory
             self.ports = ports
             self.enabledByDefault = enabledByDefault
             self.failurePolicy = failurePolicy
             self.preservedStop = preservedStop
         }
 
-        /// 保存済みの定義を読み込む。
-        ///
-        /// 作業ディレクトリがプロジェクトと同じなら「プロジェクトに従う」として持つ。
-        /// 具体値のまま抱えると、プロジェクトディレクトリを移したときに古い場所が残る。
-        init(service: ServiceDefinition, projectDirectory: URL) {
-            let workingDirectory = service.start.workingDirectory
-            let followsProject = workingDirectory.standardizedFileURL
-                == projectDirectory.standardizedFileURL
-            // ポートは全サービスで任意。種別から既定値を自動入力しない。
-            // 入力された番号は表示と「開く」URL の補助情報であり、起動可否の根拠にしない。
+        init(service: ServiceDefinition) {
             let existingPorts = service.ports.map { port in
                 PortDraft(
                     id: port.id,
@@ -103,9 +86,6 @@ final class ProjectFormModel {
                 kind: service.kind,
                 executable: service.start.executable,
                 argumentsText: service.start.arguments.joined(separator: "\n"),
-                workingDirectory: followsProject ? nil : workingDirectory,
-                // 空の行を1つ置くのは入力欄を出すためで、既定値ではない。
-                // 空欄のまま保存すれば、ポートを持たないサービスとして保存する。
                 ports: existingPorts.isEmpty ? [PortDraft(isPrimary: true)] : existingPorts,
                 enabledByDefault: service.enabledByDefault,
                 failurePolicy: service.failurePolicy,
@@ -121,18 +101,49 @@ final class ProjectFormModel {
         }
     }
 
+    /// 同じ場所から起動するプロセスをまとめる、名前付き作業ディレクトリ。
+    struct WorkingDirectoryDraft: Identifiable, Equatable {
+        let id: UUID
+        var name: String
+        var directory: URL?
+        var services: [ServiceDraft]
+
+        init(
+            id: UUID = UUID(),
+            name: String = "",
+            directory: URL? = nil,
+            services: [ServiceDraft] = [ServiceDraft()]
+        ) {
+            self.id = id
+            self.name = name
+            self.directory = directory
+            self.services = services
+        }
+
+        init(definition: WorkingDirectoryDefinition, project: ProjectDefinition) {
+            self.init(
+                id: definition.id,
+                name: definition.name,
+                directory: definition.directory,
+                services: definition.serviceIDs.map { serviceID in
+                    guard let service = project.service(id: serviceID) else {
+                        preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
+                    }
+                    return ServiceDraft(service: service)
+                }
+            )
+        }
+    }
+
     private let projectID: UUID
-    /// 編集画面が扱わない値。保存時に落とすと利用者の指定が黙って消える。
-    /// サービスの増減で参照先が変わる場合だけ、決められた規則で更新する。
     private let preservedStopOrder: [UUID]?
     private let preservedEnabledNow: [UUID: Bool]
+    /// schema v1/v2 からの移行時も、作業ディレクトリをまたぐ既存の起動順を保つ。
+    private var serviceOrder: [UUID]
 
     var name: String
     var color: ProjectColor
-    var directory: URL?
-    /// 配列順が起動順。終了順は既定でこの逆。
-    var services: [ServiceDraft]
-
+    var workingDirectories: [WorkingDirectoryDraft]
     var errorMessages: [String] = []
 
     init(project: ProjectDefinition? = nil) {
@@ -141,110 +152,299 @@ final class ProjectFormModel {
         preservedEnabledNow = project?.enabledNow ?? [:]
         name = project?.name ?? ""
         color = project?.color ?? .blue
-        directory = project?.directory
         if let project {
-            services = project.services.map {
-                ServiceDraft(service: $0, projectDirectory: project.directory)
+            workingDirectories = project.workingDirectories.map {
+                WorkingDirectoryDraft(definition: $0, project: project)
             }
+            serviceOrder = project.services.map(\.id)
         } else {
-            services = [ServiceDraft()]
+            let workingDirectory = WorkingDirectoryDraft()
+            workingDirectories = [workingDirectory]
+            serviceOrder = workingDirectory.services.map(\.id)
         }
     }
 
-    /// 終了順を明示的に指定しているか。編集画面では変えないので、表示のためだけに使う。
     var hasExplicitStopOrder: Bool { preservedStopOrder != nil }
 
-    // MARK: - サービスの追加・削除・並べ替え
+    /// 旧設定の起動順が、作業ディレクトリ単位の表示順と一致しないか。
+    var hasCrossDirectoryServiceOrder: Bool {
+        serviceOrder != workingDirectories.flatMap(\.services).map(\.id)
+    }
 
+    /// 起動順。新規設定はカードの並びに従い、旧設定の既存順は編集だけで変えない。
+    var services: [ServiceDraft] {
+        get {
+            let groupedServices = workingDirectories.flatMap(\.services)
+            let groupedIDs = groupedServices.map(\.id)
+            precondition(
+                Set(groupedIDs).count == groupedIDs.count
+                    && groupedIDs.count == serviceOrder.count
+                    && Set(groupedIDs) == Set(serviceOrder),
+                "作業ディレクトリのプロセスと起動順が一致していません。"
+            )
+            let drafts = Dictionary(uniqueKeysWithValues: groupedServices.map { ($0.id, $0) })
+            return serviceOrder.map { serviceID in
+                guard let service = drafts[serviceID] else {
+                    preconditionFailure("起動順に存在しないプロセス ID が含まれています。")
+                }
+                return service
+            }
+        }
+        set {
+            let currentIDs = workingDirectories.flatMap(\.services).map(\.id)
+            let newIDs = newValue.map(\.id)
+            precondition(
+                Set(currentIDs).count == currentIDs.count
+                    && Set(newIDs).count == newIDs.count
+                    && currentIDs.count == newIDs.count
+                    && Set(currentIDs) == Set(newIDs),
+                "プロセスの追加・削除は専用の操作を使用してください。"
+            )
+            var updatedByID = Dictionary(uniqueKeysWithValues: newValue.map { ($0.id, $0) })
+            for directoryIndex in workingDirectories.indices {
+                for serviceIndex in workingDirectories[directoryIndex].services.indices {
+                    let serviceID = workingDirectories[directoryIndex].services[serviceIndex].id
+                    if let updated = updatedByID.removeValue(forKey: serviceID) {
+                        workingDirectories[directoryIndex].services[serviceIndex] = updated
+                    }
+                }
+            }
+            precondition(updatedByID.isEmpty, "更新したプロセスを作業ディレクトリへ反映できませんでした。")
+            serviceOrder = newValue.map(\.id)
+        }
+    }
+
+    // MARK: - 作業ディレクトリ
+
+    func addWorkingDirectory() {
+        let workingDirectory = WorkingDirectoryDraft()
+        workingDirectories.append(workingDirectory)
+        serviceOrder.append(contentsOf: workingDirectory.services.map(\.id))
+    }
+
+    func removeWorkingDirectory(_ id: UUID) {
+        guard let workingDirectory = workingDirectories.first(where: { $0.id == id }) else {
+            preconditionFailure("存在しない作業ディレクトリを削除できません。")
+        }
+        let removedServiceIDs = Set(workingDirectory.services.map(\.id))
+        workingDirectories.removeAll { $0.id == id }
+        serviceOrder.removeAll { removedServiceIDs.contains($0) }
+    }
+
+    func moveWorkingDirectory(_ id: UUID, by offset: Int) {
+        guard let index = workingDirectories.firstIndex(where: { $0.id == id }) else { return }
+        let destination = index + offset
+        guard workingDirectories.indices.contains(destination) else { return }
+        workingDirectories.swapAt(index, destination)
+        serviceOrder = workingDirectories.flatMap(\.services).map(\.id)
+    }
+
+    func canMoveWorkingDirectory(_ id: UUID, by offset: Int) -> Bool {
+        guard let index = workingDirectories.firstIndex(where: { $0.id == id }) else { return false }
+        return workingDirectories.indices.contains(index + offset)
+    }
+
+    // MARK: - プロセス
+
+    func addService(to workingDirectoryID: UUID) {
+        guard let index = workingDirectories.firstIndex(where: { $0.id == workingDirectoryID }) else {
+            preconditionFailure("存在しない作業ディレクトリへプロセスを追加できません。")
+        }
+        let service = ServiceDraft()
+        let existingIDs = workingDirectories[index].services.map(\.id)
+        workingDirectories[index].services.append(service)
+
+        if let lastID = existingIDs.last {
+            guard let lastIndex = serviceOrder.firstIndex(of: lastID) else {
+                preconditionFailure("作業ディレクトリ内のプロセスが起動順に含まれていません。")
+            }
+            serviceOrder.insert(service.id, at: lastIndex + 1)
+        } else {
+            let followingServiceIDs = Set(
+                workingDirectories
+                    .dropFirst(index + 1)
+                    .flatMap(\.services)
+                    .map(\.id)
+            )
+            let insertionIndex = serviceOrder.firstIndex {
+                followingServiceIDs.contains($0)
+            } ?? serviceOrder.endIndex
+            serviceOrder.insert(service.id, at: insertionIndex)
+        }
+    }
+
+    /// 先頭の作業ディレクトリへ追加する簡便API。
     func addService() {
-        services.append(ServiceDraft())
+        guard let firstID = workingDirectories.first?.id else {
+            preconditionFailure("作業ディレクトリが無い状態でプロセスを追加できません。")
+        }
+        addService(to: firstID)
     }
 
     func removeService(_ id: UUID) {
-        services.removeAll { $0.id == id }
+        guard serviceOrder.contains(id), workingDirectories.contains(where: {
+            $0.services.contains { $0.id == id }
+        }) else {
+            preconditionFailure("存在しないプロセスを削除できません。")
+        }
+        for index in workingDirectories.indices {
+            workingDirectories[index].services.removeAll { $0.id == id }
+        }
+        serviceOrder.removeAll { $0 == id }
     }
 
     func moveService(_ id: UUID, by offset: Int) {
-        guard let index = services.firstIndex(where: { $0.id == id }) else { return }
-        let destination = index + offset
-        guard services.indices.contains(destination) else { return }
-        services.swapAt(index, destination)
+        guard let directoryIndex = workingDirectories.firstIndex(where: {
+            $0.services.contains { $0.id == id }
+        }), let serviceIndex = workingDirectories[directoryIndex].services.firstIndex(where: {
+            $0.id == id
+        }) else { return }
+        let destination = serviceIndex + offset
+        guard workingDirectories[directoryIndex].services.indices.contains(destination) else { return }
+        let otherID = workingDirectories[directoryIndex].services[destination].id
+        workingDirectories[directoryIndex].services.swapAt(serviceIndex, destination)
+        guard let orderIndex = serviceOrder.firstIndex(of: id),
+              let otherOrderIndex = serviceOrder.firstIndex(of: otherID) else {
+            preconditionFailure("プロセスの起動順が破損しています。")
+        }
+        serviceOrder.swapAt(orderIndex, otherOrderIndex)
     }
 
     func canMoveService(_ id: UUID, by offset: Int) -> Bool {
-        guard let index = services.firstIndex(where: { $0.id == id }) else { return false }
-        return services.indices.contains(index + offset)
+        guard let directory = workingDirectories.first(where: {
+            $0.services.contains { $0.id == id }
+        }), let index = directory.services.firstIndex(where: { $0.id == id }) else { return false }
+        return directory.services.indices.contains(index + offset)
+    }
+
+    /// SwiftUI が削除アニメーション中の行を再評価する間は、削除済み ID なら nil を返す。
+    /// 保存時のデータ整合性は `services` の precondition で別途保証する。
+    func positionIfPresent(of serviceID: UUID) -> Int? {
+        serviceOrder.firstIndex(of: serviceID).map { $0 + 1 }
     }
 
     // MARK: - ポート
 
     func addPort(to serviceID: UUID) {
-        guard let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
-        services[index].ports.append(PortDraft(isPrimary: services[index].ports.isEmpty))
+        updateService(serviceID) { service in
+            service.ports.append(PortDraft(isPrimary: service.ports.isEmpty))
+        }
     }
 
     func removePort(_ portID: UUID, from serviceID: UUID) {
-        guard let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
-        services[index].ports.removeAll { $0.id == portID }
+        updateService(serviceID) { service in
+            guard service.ports.contains(where: { $0.id == portID }) else {
+                preconditionFailure("存在しないポートを削除できません。")
+            }
+            service.ports.removeAll { $0.id == portID }
+        }
     }
 
-    /// 代表ポートは同じサービス内で1つだけ。別サービスの指定には触れない。
     func makePrimary(_ portID: UUID, in serviceID: UUID) {
-        guard let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
-        for portIndex in services[index].ports.indices {
-            services[index].ports[portIndex].isPrimary =
-                services[index].ports[portIndex].id == portID
+        updateService(serviceID) { service in
+            guard service.ports.contains(where: { $0.id == portID }) else {
+                preconditionFailure("存在しないポートを代表に設定できません。")
+            }
+            for portIndex in service.ports.indices {
+                service.ports[portIndex].isPrimary = service.ports[portIndex].id == portID
+            }
         }
+    }
+
+    private func updateService(_ id: UUID, _ update: (inout ServiceDraft) -> Void) {
+        for directoryIndex in workingDirectories.indices {
+            guard let serviceIndex = workingDirectories[directoryIndex].services.firstIndex(where: {
+                $0.id == id
+            }) else { continue }
+            update(&workingDirectories[directoryIndex].services[serviceIndex])
+            return
+        }
+        preconditionFailure("存在しないプロセスを更新できません。")
     }
 
     // MARK: - 保存
 
-    /// 不正値をドメイン型へ持ち込まないよう、フォームとの境界で検証する。
     func build() throws -> ProjectDefinition {
+        var parsedPorts: [UUID: [PortSpec]] = [:]
         var portErrors: [ValidationError] = []
-        var parsedPorts: [[PortSpec]] = []
         for (index, draft) in services.enumerated() {
-            let (ports, errors) = parsePorts(of: draft, serviceLabel: label(at: index))
-            parsedPorts.append(ports)
+            let (ports, errors) = parsePorts(of: draft, serviceLabel: label(for: draft, at: index))
+            parsedPorts[draft.id] = ports
             portErrors += errors
         }
 
-        guard let directory else {
-            throw ValidationFailure(errors: missingRequiredFieldErrors() + portErrors)
+        let requiredErrors = missingRequiredFieldErrors()
+        guard requiredErrors.isEmpty else {
+            let structuralPortErrors = services.enumerated().flatMap { index, draft in
+                guard let ports = parsedPorts[draft.id] else {
+                    preconditionFailure("解析済みのポートが見つかりません。")
+                }
+                return ProjectValidator.portErrors(
+                    for: ports,
+                    serviceLabel: label(for: draft, at: index)
+                )
+            }
+            throw ValidationFailure(errors: requiredErrors + portErrors + structuralPortErrors)
         }
 
-        let serviceDefinitions = services.enumerated().map { index, draft in
-            ServiceDefinition(
-                id: draft.id,
-                name: draft.name.trimmed,
-                kind: draft.kind,
-                ports: parsedPorts[index],
-                start: CommandSpec(
-                    executable: draft.executable.trimmed,
-                    arguments: draft.parsedArguments,
-                    // 未指定はプロジェクトディレクトリに従うという指定。
-                    // 空文字やカレントディレクトリへは倒さない。
-                    workingDirectory: draft.workingDirectory ?? directory
-                ),
-                stop: draft.preservedStop,
-                enabledByDefault: draft.enabledByDefault,
-                failurePolicy: draft.failurePolicy
+        var definitionsByID: [UUID: ServiceDefinition] = [:]
+        var directoryDefinitions: [WorkingDirectoryDefinition] = []
+
+        for directoryDraft in workingDirectories {
+            guard let directory = directoryDraft.directory else {
+                preconditionFailure("必須項目の検証後に作業ディレクトリが欠落しています。")
+            }
+            var serviceIDs: [UUID] = []
+            for draft in directoryDraft.services {
+                guard let ports = parsedPorts[draft.id] else {
+                    preconditionFailure("解析済みのポートが見つかりません。")
+                }
+                let service = ServiceDefinition(
+                    id: draft.id,
+                    name: draft.name.trimmed,
+                    kind: draft.kind,
+                    ports: ports,
+                    start: CommandSpec(
+                        executable: draft.executable.trimmed,
+                        arguments: draft.parsedArguments,
+                        workingDirectory: directory
+                    ),
+                    stop: draft.preservedStop,
+                    enabledByDefault: draft.enabledByDefault,
+                    failurePolicy: draft.failurePolicy
+                )
+                definitionsByID[service.id] = service
+                serviceIDs.append(service.id)
+            }
+            directoryDefinitions.append(
+                WorkingDirectoryDefinition(
+                    id: directoryDraft.id,
+                    name: directoryDraft.name.trimmed,
+                    directory: directory,
+                    serviceIDs: serviceIDs
+                )
             )
         }
 
-        let serviceIDs = serviceDefinitions.map(\.id)
+        let definitions = serviceOrder.map { serviceID in
+            guard let service = definitionsByID[serviceID] else {
+                preconditionFailure("起動順に存在しないプロセス ID が含まれています。")
+            }
+            return service
+        }
+
+        let serviceIDs = definitions.map(\.id)
         let remaining = Set(serviceIDs)
         let project = ProjectDefinition(
             id: projectID,
             name: name.trimmed,
             color: color,
-            directory: directory,
-            services: serviceDefinitions,
+            workingDirectories: directoryDefinitions,
+            services: definitions,
             stopOrder: ProjectFormModel.stopOrder(
                 preserving: preservedStopOrder,
                 for: serviceIDs
             ),
-            // 消えたサービスの指定だけを外す。残ったサービスの指定はそのまま持ち越す。
             enabledNow: preservedEnabledNow.filter { remaining.contains($0.key) }
         )
 
@@ -253,21 +453,12 @@ final class ProjectFormModel {
         return project
     }
 
-    /// 明示的な終了順を、サービスの増減に合わせて更新する。
-    ///
-    /// 既定（起動順の逆）を使う nil はそのまま nil。指定がある場合は、
-    /// 削除されたサービスを外し、追加されたサービスを「起動順の逆」の位置へ入れる。
-    /// 全サービスを過不足なく含めないと `ProjectValidator` が拒否するため、
-    /// 黙って nil や空配列へ落とさずに作り直す。
-    /// 終了順そのものを編集する UI は Milestone 3 の対象外。
     static func stopOrder(preserving preserved: [UUID]?, for services: [UUID]) -> [UUID]? {
         guard let preserved else { return nil }
         let remaining = Set(services)
         var updated = preserved.filter { remaining.contains($0) }
 
         let known = Set(preserved)
-        // 起動順インデックス k のサービスは、既定なら終了順の (n-1-k) 番目に来る。
-        // 挿入位置の小さいものから入れると、後続の目標位置がずれない。
         let added = services.enumerated()
             .filter { !known.contains($0.element) }
             .map { (destination: services.count - 1 - $0.offset, id: $0.element) }
@@ -278,28 +469,38 @@ final class ProjectFormModel {
         return updated
     }
 
-    private func label(at index: Int) -> String {
-        let trimmed = services[index].name.trimmed
+    private func label(for draft: ServiceDraft, at index: Int) -> String {
+        let trimmed = draft.name.trimmed
         return trimmed.isEmpty ? "#\(index + 1)" : trimmed
     }
 
-    /// ディレクトリ未選択で `ProjectDefinition` を組み立てられないときに、
-    /// 欠けている必須値をまとめて返す。1件ずつ直させないための併記。
     private func missingRequiredFieldErrors() -> [ValidationError] {
         var errors: [ValidationError] = []
-        if name.trimmed.isEmpty {
-            errors.append(.projectNameEmpty)
-        }
-        errors.append(.projectDirectoryEmpty)
-        if services.isEmpty {
-            errors.append(.noServices)
-        }
-        for (index, draft) in services.enumerated() {
-            if draft.name.trimmed.isEmpty {
-                errors.append(.serviceNameEmpty(serviceIndex: index))
+        if name.trimmed.isEmpty { errors.append(.projectNameEmpty) }
+        if workingDirectories.isEmpty { errors.append(.noWorkingDirectories) }
+        if services.isEmpty { errors.append(.noServices) }
+
+        var serviceIndex = 0
+        for (directoryIndex, directory) in workingDirectories.enumerated() {
+            let directoryName = directory.name.trimmed
+            let directoryLabel = directoryName.isEmpty ? "#\(directoryIndex + 1)" : directoryName
+            if directoryName.isEmpty {
+                errors.append(.workingDirectoryNameEmpty(directoryIndex: directoryIndex))
             }
-            if draft.executable.trimmed.isEmpty {
-                errors.append(.executableEmpty(service: label(at: index)))
+            if directory.directory == nil {
+                errors.append(.workingDirectoryPathEmpty(name: directoryLabel))
+            }
+            if directory.services.isEmpty {
+                errors.append(.workingDirectoryHasNoServices(name: directoryLabel))
+            }
+            for service in directory.services {
+                if service.name.trimmed.isEmpty {
+                    errors.append(.serviceNameEmpty(serviceIndex: serviceIndex))
+                }
+                if service.executable.trimmed.isEmpty {
+                    errors.append(.executableEmpty(service: label(for: service, at: serviceIndex)))
+                }
+                serviceIndex += 1
             }
         }
         return errors

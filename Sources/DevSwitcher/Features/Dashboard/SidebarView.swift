@@ -29,7 +29,7 @@ struct SidebarView: View {
                     projectRows(project)
                 }
             } header: {
-                SectionLabel("プロジェクト")
+                SectionLabel("開発環境")
             }
         }
         .listStyle(.sidebar)
@@ -39,7 +39,7 @@ struct SidebarView: View {
                 Button {
                     state.presentProjectForm()
                 } label: {
-                    Label("プロジェクトを追加…", systemImage: "plus")
+                    Label("開発環境を追加…", systemImage: "plus")
                         .font(Typography.row)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -113,7 +113,7 @@ private struct ProjectRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isExpanded ? "サービスを隠す" : "サービスを表示")
+            .accessibilityLabel(isExpanded ? "プロセスを隠す" : "プロセスを表示")
 
             ProjectChip(project: project)
 

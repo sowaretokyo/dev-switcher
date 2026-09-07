@@ -18,7 +18,7 @@ struct ToolbarIdentity: View {
                 ProjectStatusLabel(phase: state.phase(of: project))
             }
         } else {
-            Text("起動中のプロジェクトはありません")
+            Text("起動中の開発環境はありません")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -46,7 +46,7 @@ struct ToolbarActions: View {
                     Label("開く", systemImage: "arrow.up.forward.app")
                 }
                 .disabled(state.isOperationInFlight)
-                .help("起動中のサービスの URL を開きます")
+                .help("起動中のプロセスの URL を開きます")
             }
 
             if let operation = state.inlineOperation, operation.projectID == project.id {
@@ -64,7 +64,7 @@ struct ToolbarActions: View {
                     Label("停止", systemImage: "stop.fill")
                 }
                 .disabled(!state.canStop)
-                .help(state.stopBlockedReason ?? "\(project.name) のサービスをすべて停止します")
+                .help(state.stopBlockedReason ?? "\(project.name) のプロセスをすべて停止します")
             }
         }
     }

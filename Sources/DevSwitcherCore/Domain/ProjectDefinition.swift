@@ -31,7 +31,8 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
     public var name: String
     public var color: ProjectColor
-    public var directory: URL
+    /// 利用者が名前を付けた作業ディレクトリ。Git リポジトリとは限らない。
+    public var workingDirectories: [WorkingDirectoryDefinition]
     /// 配列順が起動順。
     public var services: [ServiceDefinition]
     /// 既定の終了順（起動順の逆）を上書きするときだけ設定する。
@@ -44,7 +45,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         id: UUID = UUID(),
         name: String,
         color: ProjectColor,
-        directory: URL,
+        workingDirectories: [WorkingDirectoryDefinition],
         services: [ServiceDefinition],
         stopOrder: [UUID]? = nil,
         enabledNow: [UUID: Bool] = [:]
@@ -52,10 +53,35 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.name = name
         self.color = color
-        self.directory = directory
+        self.workingDirectories = workingDirectories
         self.services = services
         self.stopOrder = stopOrder
         self.enabledNow = enabledNow
+    }
+
+    /// schema v1/v2 と既存のコードから、サービスの作業パスごとに明示的なグループを作る。
+    /// サービスの配列順は起動順なので、グループ化しても並べ替えない。
+    init(
+        id: UUID = UUID(),
+        name: String,
+        color: ProjectColor,
+        directory: URL,
+        services: [ServiceDefinition],
+        stopOrder: [UUID]? = nil,
+        enabledNow: [UUID: Bool] = [:]
+    ) {
+        self.init(
+            id: id,
+            name: name,
+            color: color,
+            workingDirectories: Self.groupedWorkingDirectories(
+                services: services,
+                fallbackDirectory: directory
+            ),
+            services: services,
+            stopOrder: stopOrder,
+            enabledNow: enabledNow
+        )
     }
 
     /// 名前から再現できる表示値なので保存しない。
@@ -77,13 +103,20 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     /// 未知のIDや欠落は検証で拒否済みのため、ここでは補完しない。
     public var shutdownOrder: [ServiceDefinition] {
         guard let stopOrder else { return services.reversed() }
-        return stopOrder.compactMap { service(id: $0) }
+        return stopOrder.map { serviceID in
+            guard let service = service(id: serviceID) else {
+                preconditionFailure("終了順に存在しないプロセス ID が含まれています。")
+            }
+            return service
+        }
     }
 
     /// 今回そのサービスを起動するか。`enabledNow`が未設定なら`enabledByDefault`に従う。
     public func isEnabledNow(_ serviceID: UUID) -> Bool {
-        if let explicit = enabledNow[serviceID] { return explicit }
-        return service(id: serviceID)?.enabledByDefault ?? false
+        guard let service = service(id: serviceID) else {
+            preconditionFailure("存在しないプロセスの起動対象は取得できません。")
+        }
+        return enabledNow[serviceID] ?? service.enabledByDefault
     }
 
     /// 今回起動するサービスを起動順で返す。
@@ -116,7 +149,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         case id
         case name
         case color
-        case directory
+        case workingDirectories
         case services
         case stopOrder
         case enabledNow
@@ -129,7 +162,10 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         color = try container.decode(ProjectColor.self, forKey: .color)
-        directory = try container.decode(URL.self, forKey: .directory)
+        workingDirectories = try container.decode(
+            [WorkingDirectoryDefinition].self,
+            forKey: .workingDirectories
+        )
         services = try container.decode([ServiceDefinition].self, forKey: .services)
         stopOrder = try container.decodeIfPresent([UUID].self, forKey: .stopOrder)
 
@@ -156,12 +192,66 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(color, forKey: .color)
-        try container.encode(directory, forKey: .directory)
+        try container.encode(workingDirectories, forKey: .workingDirectories)
         try container.encode(services, forKey: .services)
         try container.encodeIfPresent(stopOrder, forKey: .stopOrder)
         let rawEnabledNow = Dictionary(
             uniqueKeysWithValues: enabledNow.map { ($0.key.uuidString, $0.value) }
         )
         try container.encode(rawEnabledNow, forKey: .enabledNow)
+    }
+
+    /// 旧形式では作業ディレクトリ名が無いため、パス末尾を移行後の表示名にする。
+    /// 同じ末尾名が複数ある場合だけ番号を付け、名前重複による読み込み失敗を避ける。
+    private static func groupedWorkingDirectories(
+        services: [ServiceDefinition],
+        fallbackDirectory: URL
+    ) -> [WorkingDirectoryDefinition] {
+        guard !services.isEmpty else {
+            return [
+                WorkingDirectoryDefinition(
+                    name: suggestedDirectoryName(fallbackDirectory),
+                    directory: fallbackDirectory,
+                    serviceIDs: []
+                )
+            ]
+        }
+
+        var groups: [WorkingDirectoryDefinition] = []
+        var indexByPath: [String: Int] = [:]
+        var usedNames: Set<String> = []
+
+        for service in services {
+            let directory = service.start.workingDirectory.standardizedFileURL
+            let path = directory.path
+            if let index = indexByPath[path] {
+                groups[index].serviceIDs.append(service.id)
+                continue
+            }
+
+            let baseName = suggestedDirectoryName(directory)
+            var uniqueName = baseName
+            var suffix = 2
+            while usedNames.contains(uniqueName.lowercased()) {
+                uniqueName = "\(baseName) \(suffix)"
+                suffix += 1
+            }
+            usedNames.insert(uniqueName.lowercased())
+            indexByPath[path] = groups.count
+            groups.append(
+                WorkingDirectoryDefinition(
+                    name: uniqueName,
+                    directory: directory,
+                    serviceIDs: [service.id]
+                )
+            )
+        }
+        return groups
+    }
+
+    private static func suggestedDirectoryName(_ directory: URL) -> String {
+        let lastComponent = directory.standardizedFileURL.lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return lastComponent.isEmpty ? directory.path : lastComponent
     }
 }

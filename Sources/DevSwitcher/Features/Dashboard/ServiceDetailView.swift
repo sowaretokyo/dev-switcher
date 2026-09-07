@@ -34,11 +34,11 @@ struct ServiceDetailView: View {
                 Spacer(minLength: Spacing.s)
                 // 起動・停止はプロジェクト単位でのみ行う。サービス単体の起動経路を残すと、
                 // 起動順・ゲート・failurePolicy を迂回できてしまう。
-                Text("起動と停止はプロジェクト単位")
+                Text("起動と停止は開発環境単位")
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
-                    .help("サービス単体では起動・停止できません。プロジェクト詳細とツールバーから操作します。")
+                    .help("プロセス単体では起動・停止できません。開発環境の詳細とツールバーから操作します。")
             }
 
             // 値の長さは実行時に決まる。固定の横並びにすると狭い幅で切れるので折り返す。

@@ -175,8 +175,62 @@ struct ProjectValidationTests {
         try FileManager.default.removeItem(at: directory)
 
         let project = makeProject(directory: directory)
-        #expect(ProjectValidator.filesystemErrors(project).contains(.projectDirectoryMissing(directory)))
+        #expect(
+            ProjectValidator.filesystemErrors(project).contains(
+                .namedWorkingDirectoryMissing(name: directory.lastPathComponent, url: directory)
+            )
+        )
         #expect(ProjectValidator.structuralErrors(project).isEmpty)
+    }
+
+    @Test("名前付き作業ディレクトリの名前とパスの重複を拒否する")
+    func duplicateNamedWorkingDirectoryRejected() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let web = makeService(name: "Web", workingDirectory: directory)
+        let worker = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
+        let project = ProjectDefinition(
+            name: "Bell",
+            color: .blue,
+            workingDirectories: [
+                WorkingDirectoryDefinition(name: "App", directory: directory, serviceIDs: [web.id]),
+                WorkingDirectoryDefinition(name: "app", directory: directory, serviceIDs: [worker.id]),
+            ],
+            services: [web, worker]
+        )
+
+        let errors = ProjectValidator.structuralErrors(project)
+        #expect(errors.contains(.duplicateWorkingDirectoryName("app")))
+        #expect(errors.contains(.duplicateWorkingDirectoryPath(directory)))
+    }
+
+    @Test("プロセスの所属先と実行ディレクトリの不一致を拒否する")
+    func processWorkingDirectoryMismatchRejected() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let otherDirectory = directory.appendingPathComponent("other", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherDirectory, withIntermediateDirectories: true)
+
+        let web = makeService(name: "Web", workingDirectory: otherDirectory)
+        let project = ProjectDefinition(
+            name: "Bell",
+            color: .blue,
+            workingDirectories: [
+                WorkingDirectoryDefinition(name: "Web", directory: directory, serviceIDs: [web.id]),
+            ],
+            services: [web]
+        )
+
+        #expect(
+            ProjectValidator.structuralErrors(project).contains(
+                .serviceWorkingDirectoryMismatch(
+                    service: "Web",
+                    expected: directory,
+                    actual: otherDirectory
+                )
+            )
+        )
     }
 
     @Test("プロジェクト名の重複を拒否する")

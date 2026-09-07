@@ -39,11 +39,50 @@ public enum ProjectValidator {
             errors.append(.duplicateProjectID(project.id))
         }
 
-        let directoryPath = project.directory.path
-        if directoryPath.isEmpty {
-            errors.append(.projectDirectoryEmpty)
-        } else if !directoryPath.hasPrefix("/") {
-            errors.append(.projectDirectoryNotAbsolute(directoryPath))
+        if project.workingDirectories.isEmpty {
+            errors.append(.noWorkingDirectories)
+        }
+
+        var seenWorkingDirectoryIDs: Set<UUID> = []
+        var seenWorkingDirectoryNames: Set<String> = []
+        var seenWorkingDirectoryPaths: Set<String> = []
+        var serviceMembership: [UUID: WorkingDirectoryDefinition] = [:]
+
+        for (index, workingDirectory) in project.workingDirectories.enumerated() {
+            let directoryName = workingDirectory.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = directoryName.isEmpty ? "#\(index + 1)" : directoryName
+            if directoryName.isEmpty {
+                errors.append(.workingDirectoryNameEmpty(directoryIndex: index))
+            } else if !seenWorkingDirectoryNames.insert(directoryName.lowercased()).inserted {
+                errors.append(.duplicateWorkingDirectoryName(directoryName))
+            }
+            if !seenWorkingDirectoryIDs.insert(workingDirectory.id).inserted {
+                errors.append(.duplicateWorkingDirectoryID(workingDirectory.id))
+            }
+
+            let directoryPath = workingDirectory.directory.path
+            if directoryPath.isEmpty {
+                errors.append(.workingDirectoryPathEmpty(name: label))
+            } else if !directoryPath.hasPrefix("/") {
+                errors.append(.workingDirectoryPathNotAbsolute(name: label, path: directoryPath))
+            } else if !seenWorkingDirectoryPaths.insert(
+                workingDirectory.directory.standardizedFileURL.path
+            ).inserted {
+                errors.append(.duplicateWorkingDirectoryPath(workingDirectory.directory))
+            }
+
+            if workingDirectory.serviceIDs.isEmpty {
+                errors.append(.workingDirectoryHasNoServices(name: label))
+            }
+            for serviceID in workingDirectory.serviceIDs {
+                guard let service = project.service(id: serviceID) else {
+                    errors.append(.workingDirectoryUnknownService(name: label, id: serviceID))
+                    continue
+                }
+                if serviceMembership.updateValue(workingDirectory, forKey: serviceID) != nil {
+                    errors.append(.serviceInMultipleWorkingDirectories(service: service.name))
+                }
+            }
         }
 
         if project.services.isEmpty {
@@ -70,6 +109,21 @@ public enum ProjectValidator {
 
             let label = serviceName.isEmpty ? "#\(index + 1)" : serviceName
 
+            if let workingDirectory = serviceMembership[service.id] {
+                if service.start.workingDirectory.standardizedFileURL.path
+                    != workingDirectory.directory.standardizedFileURL.path {
+                    errors.append(
+                        .serviceWorkingDirectoryMismatch(
+                            service: label,
+                            expected: workingDirectory.directory,
+                            actual: service.start.workingDirectory
+                        )
+                    )
+                }
+            } else {
+                errors.append(.serviceWithoutWorkingDirectory(service: label))
+            }
+
             if service.start.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errors.append(.executableEmpty(service: label))
             }
@@ -91,7 +145,7 @@ public enum ProjectValidator {
             // サービス間で同じポートを設定していても拒否しない。
             // どちらがポートを取るかは OS が決める（先に bind したプロセスが取る）。
             // 取れなかった側は起動失敗として `failurePolicy` に従って扱う。
-            errors.append(contentsOf: portErrors(for: service, label: label))
+            errors.append(contentsOf: portErrors(for: service.ports, serviceLabel: label))
         }
 
         errors.append(contentsOf: orderErrors(project))
@@ -132,69 +186,91 @@ public enum ProjectValidator {
     public static func filesystemErrors(_ project: ProjectDefinition) -> [ValidationError] {
         var errors: [ValidationError] = []
         let fileManager = FileManager.default
+        let namedDirectoryPaths = Set(
+            project.workingDirectories.map { $0.directory.standardizedFileURL.path }
+        )
 
-        var isDirectory: ObjCBool = false
-        if fileManager.fileExists(atPath: project.directory.path, isDirectory: &isDirectory) {
-            if !isDirectory.boolValue {
-                errors.append(.projectDirectoryNotADirectory(project.directory))
+        for workingDirectory in project.workingDirectories {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(
+                atPath: workingDirectory.directory.path,
+                isDirectory: &isDirectory
+            ) {
+                if !isDirectory.boolValue {
+                    errors.append(
+                        .namedWorkingDirectoryNotADirectory(
+                            name: workingDirectory.name,
+                            url: workingDirectory.directory
+                        )
+                    )
+                }
+            } else {
+                errors.append(
+                    .namedWorkingDirectoryMissing(
+                        name: workingDirectory.name,
+                        url: workingDirectory.directory
+                    )
+                )
             }
-        } else {
-            errors.append(.projectDirectoryMissing(project.directory))
         }
 
         for service in project.services {
-            // 起動と終了で同じディレクトリを指すことが多いため、同じ指摘を二度出さない。
-            var checked: Set<String> = []
-            let directories = [service.start.workingDirectory, service.stop?.workingDirectory]
-                .compactMap { $0 }
-            for workingDirectory in directories where checked.insert(workingDirectory.path).inserted {
-                var serviceIsDirectory: ObjCBool = false
-                let exists = fileManager.fileExists(
-                    atPath: workingDirectory.path,
-                    isDirectory: &serviceIsDirectory
+            // 起動側は名前付き作業ディレクトリで検証済み。ここでは旧形式から保持する
+            // 終了コマンドが別の場所を使う場合だけ追加で確認する。
+            guard let stopDirectory = service.stop?.workingDirectory,
+                  !namedDirectoryPaths.contains(stopDirectory.standardizedFileURL.path) else {
+                continue
+            }
+            var stopIsDirectory: ObjCBool = false
+            let stopExists = fileManager.fileExists(
+                atPath: stopDirectory.path,
+                isDirectory: &stopIsDirectory
+            )
+            if !stopExists || !stopIsDirectory.boolValue {
+                errors.append(
+                    .workingDirectoryMissing(service: service.name, url: stopDirectory)
                 )
-                if !exists || !serviceIsDirectory.boolValue {
-                    errors.append(
-                        .workingDirectoryMissing(service: service.name, url: workingDirectory)
-                    )
-                }
             }
         }
 
         return errors
     }
 
-    private static func portErrors(for service: ServiceDefinition, label: String) -> [ValidationError] {
+    /// フォームで他の必須値が欠けているときも、入力済みポートの問題を同時に返す。
+    public static func portErrors(
+        for ports: [PortSpec],
+        serviceLabel: String
+    ) -> [ValidationError] {
         var errors: [ValidationError] = []
         var seenPorts: Set<Int> = []
 
-        for port in service.ports {
+        for port in ports {
             if !PortSpec.validRange.contains(port.port) {
-                errors.append(.portOutOfRange(service: label, port: port.port))
+                errors.append(.portOutOfRange(service: serviceLabel, port: port.port))
             }
             if !seenPorts.insert(port.port).inserted {
-                errors.append(.duplicatePortInService(service: label, port: port.port))
+                errors.append(.duplicatePortInService(service: serviceLabel, port: port.port))
             }
             if let portLabel = port.label,
                portLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                errors.append(.portLabelEmpty(service: label, port: port.port))
+                errors.append(.portLabelEmpty(service: serviceLabel, port: port.port))
             }
             if let openURL = port.openURL {
                 let trimmed = openURL.trimmingCharacters(in: .whitespacesAndNewlines)
                 let parsed = URL(string: trimmed)
                 let scheme = parsed?.scheme?.lowercased()
                 if trimmed.isEmpty || parsed == nil || (scheme != "http" && scheme != "https") {
-                    errors.append(.invalidOpenURL(service: label, value: openURL))
+                    errors.append(.invalidOpenURL(service: serviceLabel, value: openURL))
                 }
             }
         }
 
-        if !service.ports.isEmpty {
-            let primaryCount = service.ports.filter(\.isPrimary).count
+        if !ports.isEmpty {
+            let primaryCount = ports.filter(\.isPrimary).count
             if primaryCount == 0 {
-                errors.append(.missingPrimaryPort(service: label))
+                errors.append(.missingPrimaryPort(service: serviceLabel))
             } else if primaryCount > 1 {
-                errors.append(.multiplePrimaryPorts(service: label))
+                errors.append(.multiplePrimaryPorts(service: serviceLabel))
             }
         }
 

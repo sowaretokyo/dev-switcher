@@ -29,7 +29,7 @@ public enum FailurePolicy: String, Codable, Sendable, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .block: "プロジェクト全体を失敗にする"
+        case .block: "開発環境全体を失敗にする"
         case .continue: "一部停止として続行する"
         }
     }

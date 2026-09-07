@@ -3,12 +3,12 @@ import Foundation
 import Testing
 @testable import DevSwitcherApp
 
-/// 単一シートのプロジェクト追加・編集フォームの検証。
+/// 単一シートの開発環境追加・編集フォームの検証。
 ///
 /// ポートは全サービスで任意。種別から既定値を自動入力しない。
 /// 入力された番号は表示と「開く」URL の補助情報であり、起動可否の根拠にしない。
 /// 編集画面が扱わない終了順・今回の起動対象・終了コマンドは保存時に落とさない。
-@Suite("プロジェクトフォーム")
+@Suite("開発環境フォーム")
 @MainActor
 struct ProjectFormModelTests {
     private func makeService(
@@ -112,10 +112,16 @@ struct ProjectFormModelTests {
         #expect(model.services.map(\.argumentsText) == ["supabase\ndev", "dev", "120"])
         #expect(model.services.map(\.enabledByDefault) == [true, true, false])
         #expect(model.services.map(\.failurePolicy) == [.block, .block, .continue])
-        // プロジェクト直下と違うディレクトリだけ具体値として持つ。
-        #expect(model.services[0].workingDirectory?.lastPathComponent == "supabase")
-        #expect(model.services[1].workingDirectory == nil)
-        #expect(model.services[2].workingDirectory == nil)
+        #expect(model.workingDirectories.count == 2)
+        let supabaseDirectory = try #require(
+            model.workingDirectories.first { $0.directory?.lastPathComponent == "supabase" }
+        )
+        #expect(supabaseDirectory.name == "supabase")
+        #expect(supabaseDirectory.services.map(\.name) == ["Supabase"])
+        let rootDirectory = try #require(
+            model.workingDirectories.first { $0.directory == directory }
+        )
+        #expect(rootDirectory.services.map(\.name) == ["Web", "Worker"])
         #expect(model.services.map { $0.ports.map(\.port) } == [[""], ["3000", "3001"], [""]])
 
         let rebuilt = try model.build()
@@ -124,12 +130,91 @@ struct ProjectFormModelTests {
         #expect(rebuilt.services.map { $0.ports.map(\.id) } == project.services.map { $0.ports.map(\.id) })
     }
 
+    @Test("旧設定の起動順が作業ディレクトリをまたいでいても編集だけで変えない")
+    func interleavedLegacyOrderSurvivesAnOrdinaryEdit() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
+        try FileManager.default.createDirectory(at: nativeDirectory, withIntermediateDirectories: true)
+        let web = makeService(name: "Web", workingDirectory: directory)
+        let native = makeService(name: "Native", kind: .expo, workingDirectory: nativeDirectory)
+        let worker = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
+        let project = makeProject(with: [web, native, worker], directory: directory)
+
+        let model = ProjectFormModel(project: project)
+        #expect(model.workingDirectories[0].services.map(\.name) == ["Web", "Worker"])
+        #expect(model.workingDirectories[1].services.map(\.name) == ["Native"])
+        #expect(model.services.map(\.name) == ["Web", "Native", "Worker"])
+        #expect(model.hasCrossDirectoryServiceOrder)
+
+        model.name = "Bell 2"
+        let rebuilt = try model.build()
+        #expect(rebuilt.services.map(\.id) == [web.id, native.id, worker.id])
+        #expect(rebuilt.startupOrder.map(\.name) == ["Web", "Native", "Worker"])
+    }
+
+    @Test("作業ディレクトリを並べ替えるとディレクトリ単位の起動順へ揃える")
+    func movingAWorkingDirectoryNormalizesAnInterleavedOrder() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
+        try FileManager.default.createDirectory(at: nativeDirectory, withIntermediateDirectories: true)
+        let web = makeService(name: "Web", workingDirectory: directory)
+        let native = makeService(name: "Native", kind: .expo, workingDirectory: nativeDirectory)
+        let worker = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
+        let model = ProjectFormModel(
+            project: makeProject(with: [web, native, worker], directory: directory)
+        )
+        let webDirectoryID = model.workingDirectories[0].id
+
+        model.moveWorkingDirectory(webDirectoryID, by: 1)
+
+        #expect(model.workingDirectories.map(\.name) == ["native", directory.lastPathComponent])
+        #expect(model.services.map(\.name) == ["Native", "Web", "Worker"])
+        #expect(!model.hasCrossDirectoryServiceOrder)
+        let rebuilt = try model.build()
+        #expect(rebuilt.startupOrder.map(\.name) == ["Native", "Web", "Worker"])
+    }
+
+    @Test("空にした作業ディレクトリへ追加したプロセスは次のディレクトリより前に起動する")
+    func addingAProcessBackToAnEmptyDirectoryKeepsDirectoryOrder() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
+        try FileManager.default.createDirectory(at: nativeDirectory, withIntermediateDirectories: true)
+        let web = makeService(name: "Web", workingDirectory: directory)
+        let native = makeService(name: "Native", kind: .expo, workingDirectory: nativeDirectory)
+        let model = ProjectFormModel(project: makeProject(with: [web, native], directory: directory))
+        let webDirectoryID = model.workingDirectories[0].id
+
+        model.removeService(web.id)
+        #expect(model.positionIfPresent(of: web.id) == nil)
+        model.addService(to: webDirectoryID)
+        model.workingDirectories[0].services[0].name = "Web 2"
+        model.workingDirectories[0].services[0].executable = "/usr/bin/true"
+
+        #expect(model.services.map(\.name) == ["Web 2", "Native"])
+        #expect(!model.hasCrossDirectoryServiceOrder)
+        let rebuilt = try model.build()
+        #expect(rebuilt.startupOrder.map(\.name) == ["Web 2", "Native"])
+    }
+
     @Test("サービスを追加・削除・並べ替えて保存し、同じ順序で復元できる")
     func servicesCanBeAddedRemovedAndReordered() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let project = try makeThreeServiceProject(directory: directory)
+        let project = makeProject(
+            with: [
+                makeService(name: "Supabase", kind: .supabase, workingDirectory: directory),
+                makeService(name: "Web", kind: .web, workingDirectory: directory),
+                makeService(name: "Worker", kind: .worker, workingDirectory: directory),
+            ],
+            directory: directory
+        )
         let store = ProjectStore(directory: directory)
         try store.save([project])
 
@@ -162,8 +247,8 @@ struct ProjectFormModelTests {
         #expect(loaded[0].shutdownOrder.map(\.name) == ["Inngest", "Supabase", "Web"])
     }
 
-    @Test("サービスごとの作業ディレクトリを別々に保存できる")
-    func servicesKeepIndependentWorkingDirectories() throws {
+    @Test("名前付き作業ディレクトリごとに複数プロセスを保存できる")
+    func processesAreGroupedByNamedWorkingDirectory() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -175,36 +260,41 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
-        model.services[0].name = "API"
-        model.services[0].executable = "/usr/bin/true"
-        model.services[0].workingDirectory = apiDirectory
-        model.addService()
-        model.services[1].name = "Web"
-        model.services[1].executable = "/usr/bin/true"
-        model.services[1].workingDirectory = webDirectory
-        model.addService()
-        model.services[2].name = "Worker"
-        model.services[2].executable = "/usr/bin/true"
+        model.workingDirectories[0].name = "API"
+        model.workingDirectories[0].directory = apiDirectory
+        model.workingDirectories[0].services[0].name = "API Server"
+        model.workingDirectories[0].services[0].executable = "/usr/bin/true"
+        model.addService(to: model.workingDirectories[0].id)
+        model.workingDirectories[0].services[1].name = "Worker"
+        model.workingDirectories[0].services[1].executable = "/usr/bin/true"
+
+        model.addWorkingDirectory()
+        model.workingDirectories[1].name = "Web"
+        model.workingDirectories[1].directory = webDirectory
+        model.workingDirectories[1].services[0].name = "Web"
+        model.workingDirectories[1].services[0].executable = "/usr/bin/true"
 
         let project = try model.build()
+        #expect(project.workingDirectories.map(\.name) == ["API", "Web"])
+        #expect(project.workingDirectories.map(\.directory) == [apiDirectory, webDirectory])
         #expect(project.services[0].start.workingDirectory == apiDirectory)
-        #expect(project.services[1].start.workingDirectory == webDirectory)
-        // 未指定はプロジェクトディレクトリ。空文字やカレントディレクトリへ倒さない。
-        #expect(project.services[2].start.workingDirectory == directory)
+        #expect(project.services[1].start.workingDirectory == apiDirectory)
+        #expect(project.services[2].start.workingDirectory == webDirectory)
+        #expect(project.workingDirectories[0].serviceIDs == project.services[0 ... 1].map(\.id))
+        #expect(project.workingDirectories[1].serviceIDs == [project.services[2].id])
 
         let store = ProjectStore(directory: directory)
         try store.save([project])
         let loaded = try store.load()
         #expect(loaded[0].services.map(\.start.workingDirectory) == [
-            apiDirectory, webDirectory, directory,
+            apiDirectory, apiDirectory, webDirectory,
         ])
 
         // 開き直しても取り違えない。
         let reopened = ProjectFormModel(project: loaded[0])
-        #expect(reopened.services[0].workingDirectory == apiDirectory)
-        #expect(reopened.services[1].workingDirectory == webDirectory)
-        #expect(reopened.services[2].workingDirectory == nil)
+        #expect(reopened.workingDirectories.map(\.name) == ["API", "Web"])
+        #expect(reopened.workingDirectories[0].services.map(\.name) == ["API Server", "Worker"])
+        #expect(reopened.workingDirectories[1].services.map(\.name) == ["Web"])
     }
 
     @Test("編集画面が扱わない stop・enabledNow・stopOrder を通常編集で保持する")
@@ -316,9 +406,15 @@ struct ProjectFormModelTests {
         let model = ProjectFormModel(project: project)
         #expect(!model.hasExplicitStopOrder)
 
-        model.addService()
-        model.services[3].name = "Inngest"
-        model.services[3].executable = "npx"
+        let rootDirectory = try #require(
+            model.workingDirectories.first { $0.directory == directory }
+        )
+        model.addService(to: rootDirectory.id)
+        let rootIndex = try #require(
+            model.workingDirectories.firstIndex { $0.id == rootDirectory.id }
+        )
+        model.workingDirectories[rootIndex].services[2].name = "Inngest"
+        model.workingDirectories[rootIndex].services[2].executable = "npx"
 
         let rebuilt = try model.build()
         #expect(rebuilt.stopOrder == nil)
@@ -367,7 +463,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
         model.services[0].kind = .web
         model.services[0].executable = "pnpm"
@@ -402,7 +499,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.services[0].name = "Inngest"
         model.services[0].kind = .inngest
         model.services[0].executable = "/usr/bin/true"
@@ -461,7 +559,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
         model.services[0].kind = .web
         model.services[0].executable = "/usr/bin/true"
@@ -488,7 +587,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.services[0].name = "Supabase"
         model.services[0].executable = "/usr/bin/true"
         model.services[0].ports = [
@@ -518,7 +618,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         // 1件目: 名前あり、実行ファイルなし、ポートが数値でない。
         model.services[0].name = "Web"
         model.services[0].executable = "  "
@@ -561,7 +662,8 @@ struct ProjectFormModelTests {
         let errors = failure?.errors ?? []
 
         #expect(errors.contains(.projectNameEmpty))
-        #expect(errors.contains(.projectDirectoryEmpty))
+        #expect(errors.contains(.workingDirectoryNameEmpty(directoryIndex: 0)))
+        #expect(errors.contains(.workingDirectoryPathEmpty(name: "#1")))
         #expect(errors.contains(.executableEmpty(service: "Web")))
     }
 
@@ -572,7 +674,8 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel()
         model.name = "Bell"
-        model.directory = directory
+        model.workingDirectories[0].directory = directory
+        model.workingDirectories[0].name = "App"
         model.removeService(model.services[0].id)
 
         let failure = #expect(throws: ValidationFailure.self) { try model.build() }

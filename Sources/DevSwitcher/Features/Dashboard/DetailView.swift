@@ -14,17 +14,17 @@ struct DetailView: View {
                     if let project = state.project(id) {
                         ProjectDetailView(project: project)
                     } else {
-                        PlaceholderView(message: "プロジェクトを選択してください。")
+                        PlaceholderView(message: "開発環境を選択してください。")
                     }
                 case let .service(projectID, serviceID):
                     if let project = state.project(projectID),
                        let service = project.service(id: serviceID) {
                         ServiceDetailView(project: project, service: service)
                     } else {
-                        PlaceholderView(message: "サービスを選択してください。")
+                        PlaceholderView(message: "プロセスを選択してください。")
                     }
                 case .none:
-                    PlaceholderView(message: "サイドバーからプロジェクトまたはサービスを選択してください。")
+                    PlaceholderView(message: "サイドバーから開発環境またはプロセスを選択してください。")
                 }
             }
         }
@@ -40,14 +40,14 @@ struct EmptyStateView: View {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: Metrics.emptyStateIcon, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text("プロジェクトが登録されていません")
+            Text("開発環境が登録されていません")
                 .font(Typography.title)
-            Text("ローカルのリポジトリと起動コマンドを登録すると、ここから起動・停止できます。")
+            Text("名前付きディレクトリと起動コマンドを登録すると、ここから一括で起動・停止できます。")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: Metrics.emptyStateTextWidth)
-            Button("プロジェクトを追加…") {
+            Button("開発環境を追加…") {
                 state.presentProjectForm()
             }
             .controlSize(.large)

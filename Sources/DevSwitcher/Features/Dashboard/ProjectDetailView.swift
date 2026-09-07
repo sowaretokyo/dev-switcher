@@ -38,19 +38,9 @@ struct ProjectDetailView: View {
                 Spacer(minLength: Spacing.s)
                 moreMenu
             }
-            Text(project.directory.path)
-                .font(Typography.mono)
+            Text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件")
+                .font(Typography.support)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .lineLimit(2)
-                .truncationMode(.head)
-                .help(project.directory.path)
-            if !FileManager.default.fileExists(atPath: project.directory.path) {
-                Text("このディレクトリは見つかりません。起動する前に場所を確認してください。")
-                    .font(Typography.support)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 
@@ -61,8 +51,12 @@ struct ProjectDetailView: View {
                 state.presentProjectForm(editing: project)
             }
             .disabled(!state.canEdit(project))
-            Button("Finder で表示") {
-                state.revealInFinder(project)
+            Menu("Finder で表示") {
+                ForEach(project.workingDirectories) { workingDirectory in
+                    Button(workingDirectory.name) {
+                        state.revealInFinder(workingDirectory)
+                    }
+                }
             }
             Divider()
             Button("登録を解除…") {
@@ -78,7 +72,7 @@ struct ProjectDetailView: View {
         // 無効なときに嘘の案内を出すことになる。
         .help(
             state.configurationBlockedReason(for: project)
-                ?? "プロジェクトの編集・Finder 表示・登録解除"
+                ?? "開発環境の編集・Finder 表示・登録解除"
         )
     }
 
@@ -128,7 +122,7 @@ struct ProjectDetailView: View {
                 NoteText(notice, tint: .secondary)
             }
             if isStopped, enabledCount == 0 {
-                NoteText("今回起動するサービスが選ばれていません。1つ以上チェックしてください。", tint: .orange)
+                NoteText("今回起動するプロセスが選ばれていません。1つ以上チェックしてください。", tint: .orange)
             }
             if !isStopped {
                 NoteText("停止はツールバーの「停止」から行います。", tint: .secondary)
@@ -142,7 +136,7 @@ struct ProjectDetailView: View {
 
     private var startSummary: String {
         let excluded = project.excludedServices.count
-        let base = "起動対象 \(enabledCount) / \(project.services.count) サービス"
+        let base = "起動対象 \(enabledCount) / \(project.services.count) プロセス"
         return excluded > 0 ? base + "（対象外 \(excluded)）" : base
     }
 
@@ -151,7 +145,7 @@ struct ProjectDetailView: View {
     private var servicesSection: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack {
-                SectionLabel("サービス")
+                SectionLabel("作業ディレクトリとプロセス")
                 Spacer()
                 if isStopped {
                     Button("既定に戻す") {
@@ -162,7 +156,7 @@ struct ProjectDetailView: View {
                     .disabled(state.configurationBlockedReason(for: project) != nil)
                     .help(
                         state.configurationBlockedReason(for: project)
-                            ?? "今回の起動対象の指定を消し、サービスごとの既定に従わせます。"
+                            ?? "今回の起動対象の指定を消し、プロセスごとの既定に従わせます。"
                     )
                 }
             }
@@ -170,15 +164,21 @@ struct ProjectDetailView: View {
             // 読み切れず、「今回どれを起動するか」という本来の判断が埋もれる。
             Text(
                 isStopped
-                    ? "チェックを外したサービスは今回起動しません。対象外は警告や一部停止として扱いません。コマンドと実測ポートはサービスを選ぶと表示します。"
-                    : "コマンドと実測ポートはサービスを選ぶと表示します。"
+                    ? "チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。"
+                    : "コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。"
             )
             .font(Typography.caption)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
+            Text("左端の番号は起動順です。")
+                .font(Typography.caption)
+                .foregroundStyle(.tertiary)
 
-            ForEach(project.services) { service in
-                ServiceSummaryRow(project: project, service: service)
+            ForEach(project.workingDirectories) { workingDirectory in
+                WorkingDirectorySummary(
+                    project: project,
+                    workingDirectory: workingDirectory
+                )
             }
         }
     }
@@ -198,6 +198,64 @@ struct ProjectDetailView: View {
     }
 }
 
+private struct WorkingDirectorySummary: View {
+    let project: ProjectDefinition
+    let workingDirectory: WorkingDirectoryDefinition
+
+    private var services: [ServiceDefinition] {
+        workingDirectory.serviceIDs.map { serviceID in
+            guard let service = project.service(id: serviceID) else {
+                preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
+            }
+            return service
+        }
+    }
+
+    private var directoryIsAvailable: Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: workingDirectory.directory.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.tight) {
+            HStack(spacing: Spacing.s) {
+                Image(systemName: "folder")
+                    .foregroundStyle(.secondary)
+                Text(workingDirectory.name)
+                    .font(Typography.heading)
+                Spacer(minLength: Spacing.s)
+                Text("\(services.count) プロセス")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Text(workingDirectory.directory.path)
+                .font(Typography.monoSmall)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .lineLimit(2)
+                .truncationMode(.head)
+                .help(workingDirectory.directory.path)
+
+            if !directoryIsAvailable {
+                NoteText("このディレクトリを利用できません。", tint: .red)
+            }
+
+            ForEach(services) { service in
+                ServiceSummaryRow(project: project, service: service)
+                    .padding(.leading, Spacing.m)
+            }
+        }
+        .padding(Spacing.m)
+        .background(
+            .quaternary.opacity(0.2),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
+    }
+}
+
 /// 起動対象のチェックリスト1行。
 ///
 /// ここが答えるのは「今回このサービスを起動するか」だけ。実行時の詳細は
@@ -207,12 +265,22 @@ struct ServiceSummaryRow: View {
     let project: ProjectDefinition
     let service: ServiceDefinition
 
+    private var startupPosition: Int {
+        guard let index = project.services.firstIndex(where: { $0.id == service.id }) else {
+            preconditionFailure("存在しないプロセスの起動順は表示できません。")
+        }
+        return index + 1
+    }
+
     var body: some View {
         let uiState = state.state(of: service.id)
         let isEnabled = project.isEnabledNow(service.id)
 
         VStack(alignment: .leading, spacing: Spacing.tight) {
             HStack(spacing: Spacing.s) {
+                Text("\(startupPosition)")
+                    .font(Typography.monoSmall.weight(.bold))
+                    .foregroundStyle(.tertiary)
                 // 起動対象のチェックは停止中だけ変更できる。
                 Toggle(isOn: Binding(
                     get: { isEnabled },

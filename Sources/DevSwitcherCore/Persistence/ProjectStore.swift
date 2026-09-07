@@ -3,9 +3,10 @@ import Foundation
 /// 古いPIDやポートを復元しないよう、保存形式にはプロジェクト定義だけを含める。
 public struct ProjectsDocument: Codable, Sendable {
     /// version 2 で終了順（`stopOrder`）、今回の起動対象（`enabledNow`）、終了コマンド（`stop`）を追加した。
-    public static let currentSchemaVersion = 2
+    /// version 3 で名前付き作業ディレクトリを追加し、開発環境直下の代表ディレクトリを廃止した。
+    public static let currentSchemaVersion = 3
     /// 明示的な変換を書いてある過去バージョン。ここに無いバージョンは読まない。
-    public static let migratableSchemaVersions = [1]
+    public static let migratableSchemaVersions = [1, 2]
 
     public var schemaVersion: Int
     public var projects: [ProjectDefinition]
@@ -86,7 +87,7 @@ public struct ProjectStore: Sendable {
 
         let projects = try ProjectStore.decode(data, path: fileURL.path)
 
-        // 移動したリポジトリの設定も読めるよう、ここではファイルシステムを検証しない。
+        // 移動した作業ディレクトリの設定も読めるよう、ここではファイルシステムを検証しない。
         // IDで除くと重複相手まで消えるため、自身だけを位置で除外する。
         for (index, project) in projects.enumerated() {
             let others = ProjectStore.projects(projects, excluding: index)
@@ -123,6 +124,13 @@ public struct ProjectStore: Sendable {
             do {
                 let legacy = try decoder.decode(ProjectSchemaV1.Document.self, from: data)
                 return ProjectSchemaV1.migrate(legacy)
+            } catch {
+                throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
+            }
+        case 2:
+            do {
+                let legacy = try decoder.decode(ProjectSchemaV2.Document.self, from: data)
+                return try ProjectSchemaV2.migrate(legacy)
             } catch {
                 throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
             }

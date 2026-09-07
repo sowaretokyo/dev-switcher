@@ -23,15 +23,19 @@ struct UnregisterConfirmationSheet: View {
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                // パスは1度だけ、文ではなくブロックで出す。同じ保証を2回書くと、
-                // 読み飛ばされて肝心の「削除されない」が伝わらなくなる。
-                Text(project.directory.path)
-                    .font(Typography.mono)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(project.workingDirectories) { workingDirectory in
+                    VStack(alignment: .leading, spacing: Spacing.hairline) {
+                        Text(workingDirectory.name)
+                            .font(Typography.support.weight(.semibold))
+                        Text(workingDirectory.directory.path)
+                            .font(Typography.mono)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
-            Text("登録しているサービス \(project.services.count) 件の設定は失われます。")
+            Text("登録しているプロセス \(project.services.count) 件の設定は失われます。")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

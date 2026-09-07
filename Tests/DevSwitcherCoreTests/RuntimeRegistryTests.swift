@@ -191,8 +191,8 @@ struct RuntimeRegistryTests {
         }
     }
 
-    @Test("プロジェクトのディレクトリが無ければ起動しない")
-    func missingProjectDirectoryFails() async throws {
+    @Test("作業ディレクトリが無ければ起動しない")
+    func missingWorkingDirectoryFails() async throws {
         let directory = try makeTemporaryDirectory()
         let service = makeService(workingDirectory: directory)
         let project = makeProject(directory: directory, services: [service])
@@ -203,7 +203,7 @@ struct RuntimeRegistryTests {
             logDirectory: directory,
             environmentLoader: { fixedShellEnvironment }
         )
-        await #expect(throws: RuntimeError.self) {
+        await #expect(throws: ExecutableResolutionError.self) {
             _ = try await registry.start(service: service, in: project)
         }
     }

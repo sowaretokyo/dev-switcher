@@ -689,7 +689,7 @@ struct AppStateHandoffTests {
             id: original.id,
             name: original.name,
             color: original.color,
-            directory: original.directory,
+            directory: original.workingDirectories[0].directory,
             services: [original.services[0]]
         )
         let hint = makeStoredHint(
@@ -1035,7 +1035,7 @@ struct AppStateHandoffTests {
             id: project.id,
             name: "Renamed",
             color: project.color,
-            directory: project.directory,
+            directory: project.workingDirectories[0].directory,
             services: project.services
         )
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
@@ -1086,7 +1086,7 @@ struct AppStateHandoffTests {
             id: fixture.project.id,
             name: "Renamed",
             color: fixture.project.color,
-            directory: fixture.project.directory,
+            directory: fixture.project.workingDirectories[0].directory,
             services: fixture.project.services
         )
 
@@ -1202,7 +1202,7 @@ struct AppStateHandoffTests {
             id: project.id,
             name: "Renamed",
             color: project.color,
-            directory: project.directory,
+            directory: project.workingDirectories[0].directory,
             services: project.services
         )
 

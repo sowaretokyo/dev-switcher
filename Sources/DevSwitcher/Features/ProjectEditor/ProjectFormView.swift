@@ -21,7 +21,7 @@ struct ProjectFormView: View {
         @Bindable var model = model
 
         VStack(spacing: 0) {
-            Text(isEditing ? "プロジェクトを編集" : "プロジェクトを追加")
+            Text(isEditing ? "開発環境を編集" : "開発環境を追加")
                 .font(Typography.title)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.l)
@@ -31,7 +31,7 @@ struct ProjectFormView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
                     projectSection($model)
-                    servicesSection($model)
+                    workingDirectoriesSection($model)
                 }
                 .padding(Spacing.l)
             }
@@ -55,11 +55,11 @@ struct ProjectFormView: View {
         .frame(width: Metrics.editorSheetWidth, height: Metrics.editorSheetHeight)
     }
 
-    // MARK: - プロジェクト
+    // MARK: - 開発環境
 
     private func projectSection(_ model: Bindable<ProjectFormModel>) -> some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            SectionLabel("プロジェクト")
+            SectionLabel("開発環境")
             FormRow("名前（必須）") {
                 TextField("Bell", text: model.name)
                     .textFieldStyle(.roundedBorder)
@@ -73,51 +73,55 @@ struct ProjectFormView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            FormRow("ディレクトリ（必須）") {
-                HStack(spacing: Spacing.s) {
-                    Text(model.wrappedValue.directory?.path ?? "未選択")
-                        .font(Typography.mono)
-                        .foregroundStyle(model.wrappedValue.directory == nil ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .help(model.wrappedValue.directory?.path ?? "未選択")
-                    Spacer(minLength: Spacing.s)
-                    Button("選択…") { chooseProjectDirectory(for: model.wrappedValue) }
-                }
-            }
         }
     }
 
-    // MARK: - サービス
+    // MARK: - 作業ディレクトリ
 
-    private func servicesSection(_ model: Bindable<ProjectFormModel>) -> some View {
+    private func workingDirectoriesSection(_ model: Bindable<ProjectFormModel>) -> some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             HStack {
-                SectionLabel("サービス")
+                SectionLabel("作業ディレクトリ")
                 Spacer()
-                Button("サービスを追加") { model.wrappedValue.addService() }
+                Button("作業ディレクトリを追加") {
+                    model.wrappedValue.addWorkingDirectory()
+                }
                     .controlSize(.small)
             }
-            Text("上から順に起動します。終了順は既定でこの逆です。")
+            Text("名前と場所を1回指定し、その場所から起動するプロセスをまとめます。プロセスは左端の番号順に起動します。")
                 .font(Typography.caption)
                 .foregroundStyle(.tertiary)
+            if model.wrappedValue.hasCrossDirectoryServiceOrder {
+                Text("既存の起動順を保持しているため、番号と作業ディレクトリの表示順が一致していません。ディレクトリをまたぐ順序はプロセス単位では変更できません。作業ディレクトリを並べ替えると、ディレクトリ単位の順序に揃います。")
+                    .font(Typography.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if model.wrappedValue.hasExplicitStopOrder {
                 // 終了順を編集する UI は Milestone 3 の対象外。黙って捨てないことだけを伝える。
-                Text("このプロジェクトは終了順を明示的に指定しています。指定は保存時も保持し、追加したサービスは起動順の逆の位置へ入ります。")
+                Text("この開発環境は終了順を明示的に指定しています。指定は保存時も保持し、追加したプロセスは起動順の逆の位置へ入ります。")
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if model.wrappedValue.services.isEmpty {
-                Text("サービスが1つもありません。「サービスを追加」から1つ以上登録してください。")
+            if model.wrappedValue.workingDirectories.isEmpty {
+                Text("作業ディレクトリが1件もありません。1件以上追加してください。")
                     .font(Typography.support)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            ForEach(model.services) { $service in
-                ServiceCard(model: model.wrappedValue, service: $service)
+            ForEach(model.workingDirectories) { $workingDirectory in
+                if let index = model.wrappedValue.workingDirectories.firstIndex(where: {
+                    $0.id == workingDirectory.id
+                }) {
+                    WorkingDirectoryCard(
+                        model: model.wrappedValue,
+                        workingDirectory: $workingDirectory,
+                        position: index + 1
+                    )
+                }
             }
         }
     }
@@ -159,24 +163,114 @@ struct ProjectFormView: View {
         }
     }
 
-    private func chooseProjectDirectory(for model: ProjectFormModel) {
-        guard let url = chooseDirectory(
-            message: "プロジェクトのローカルディレクトリを選択してください",
-            startingAt: model.directory
-        ) else { return }
-        model.directory = url
+}
+
+/// 1つの名前付き作業ディレクトリと、そこから起動するプロセスをまとめたカード。
+private struct WorkingDirectoryCard: View {
+    let model: ProjectFormModel
+    @Binding var workingDirectory: ProjectFormModel.WorkingDirectoryDraft
+    let position: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            header
+            FormRow("名前（必須）", note: "例: Web、Native。Git リポジトリ名である必要はありません。") {
+                TextField("Web", text: $workingDirectory.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            FormRow("ディレクトリ（必須）") {
+                HStack(spacing: Spacing.s) {
+                    Text(workingDirectory.directory?.path ?? "未選択")
+                        .font(Typography.mono)
+                        .foregroundStyle(workingDirectory.directory == nil ? .secondary : .primary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .help(workingDirectory.directory?.path ?? "未選択")
+                    Spacer(minLength: Spacing.s)
+                    Button("選択…") {
+                        guard let url = chooseDirectory(
+                            message: "このグループのプロセスを起動するディレクトリを選択してください",
+                            startingAt: workingDirectory.directory
+                        ) else { return }
+                        workingDirectory.directory = url
+                        if workingDirectory.name.trimmed.isEmpty {
+                            workingDirectory.name = url.lastPathComponent
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            HStack {
+                SectionLabel("プロセス")
+                Spacer()
+                Button("プロセスを追加") {
+                    model.addService(to: workingDirectory.id)
+                }
+                .controlSize(.small)
+            }
+
+            if workingDirectory.services.isEmpty {
+                Text("プロセスが1件もありません。1件以上追加してください。")
+                    .font(Typography.support)
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach($workingDirectory.services) { $service in
+                if let position = model.positionIfPresent(of: service.id) {
+                    ServiceCard(model: model, service: $service, position: position)
+                }
+            }
+        }
+        .padding(Spacing.m)
+        .background(
+            .quaternary.opacity(0.22),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
+    }
+
+    private var header: some View {
+        HStack(spacing: Spacing.s) {
+            Text("\(position)")
+                .font(Typography.monoSmall.weight(.bold))
+                .foregroundStyle(.tertiary)
+            Text(workingDirectory.name.trimmed.isEmpty ? "新しい作業ディレクトリ" : workingDirectory.name.trimmed)
+                .font(Typography.heading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: Spacing.s)
+            Button {
+                model.moveWorkingDirectory(workingDirectory.id, by: -1)
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!model.canMoveWorkingDirectory(workingDirectory.id, by: -1))
+            .help("作業ディレクトリを前へ")
+            Button {
+                model.moveWorkingDirectory(workingDirectory.id, by: 1)
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!model.canMoveWorkingDirectory(workingDirectory.id, by: 1))
+            .help("作業ディレクトリを後ろへ")
+            Button(role: .destructive) {
+                model.removeWorkingDirectory(workingDirectory.id)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("この作業ディレクトリとプロセス設定を削除")
+        }
     }
 }
 
-/// 1サービス分の入力カード。並べ替えは配列順＝起動順をそのまま動かす。
+/// 1プロセス分の入力カード。並べ替えはカード内の起動順をそのまま動かす。
 private struct ServiceCard: View {
     let model: ProjectFormModel
     @Binding var service: ProjectFormModel.ServiceDraft
-
-    /// 起動順の位置。配列から引き直すので、並べ替えても番号がずれない。
-    private var position: Int {
-        (model.services.firstIndex { $0.id == service.id } ?? 0) + 1
-    }
+    let position: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
@@ -215,7 +309,6 @@ private struct ServiceCard: View {
                         RoundedRectangle(cornerRadius: Radius.control).strokeBorder(.separator)
                     }
             }
-            workingDirectoryRow
             FormRow("起動対象") {
                 Toggle("既定で起動する", isOn: $service.enabledByDefault)
                 Picker("起動に失敗したとき", selection: $service.failurePolicy) {
@@ -240,7 +333,7 @@ private struct ServiceCard: View {
             Text("\(position)")
                 .font(Typography.monoSmall.weight(.bold))
                 .foregroundStyle(.tertiary)
-            Text(service.name.trimmed.isEmpty ? "新しいサービス" : service.name.trimmed)
+            Text(service.name.trimmed.isEmpty ? "新しいプロセス" : service.name.trimmed)
                 .font(Typography.heading)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -267,38 +360,7 @@ private struct ServiceCard: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .help("このサービスを削除")
-        }
-    }
-
-    /// 作業ディレクトリはサービスごとに指定できる。
-    /// 未指定は「プロジェクトディレクトリに従う」という指定で、保存時に実際の値を埋める。
-    private var workingDirectoryRow: some View {
-        FormRow(
-            "作業ディレクトリ",
-            note: "モノレポのサブパッケージなど、プロジェクト直下と違う場所から起動する場合に指定します。"
-        ) {
-            HStack(spacing: Spacing.s) {
-                Text(service.workingDirectory?.path ?? "プロジェクトディレクトリと同じ")
-                    .font(Typography.mono)
-                    .foregroundStyle(service.workingDirectory == nil ? .secondary : .primary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .help(service.workingDirectory?.path ?? "プロジェクトディレクトリと同じ")
-                Spacer(minLength: Spacing.s)
-                if service.workingDirectory != nil {
-                    Button("プロジェクトと同じ") { service.workingDirectory = nil }
-                        .controlSize(.small)
-                }
-                Button("選択…") {
-                    guard let url = chooseDirectory(
-                        message: "このサービスを起動する作業ディレクトリを選択してください",
-                        startingAt: service.workingDirectory ?? model.directory
-                    ) else { return }
-                    service.workingDirectory = url
-                }
-                .controlSize(.small)
-            }
+            .help("このプロセスを削除")
         }
     }
 

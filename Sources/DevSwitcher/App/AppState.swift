@@ -1607,11 +1607,16 @@ final class AppState {
         NSWorkspace.shared.open(url)
     }
 
-    func revealInFinder(_ project: ProjectDefinition) {
-        guard FileManager.default.fileExists(atPath: project.directory.path) else {
-            operationError = "ディレクトリが見つかりません（\(project.directory.path)）。"
+    func revealInFinder(_ workingDirectory: WorkingDirectoryDefinition) {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: workingDirectory.directory.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            operationError = "作業ディレクトリ「\(workingDirectory.name)」を利用できません"
+                + "（\(workingDirectory.directory.path)）。"
             return
         }
-        NSWorkspace.shared.activateFileViewerSelecting([project.directory])
+        NSWorkspace.shared.activateFileViewerSelecting([workingDirectory.directory])
     }
 }
