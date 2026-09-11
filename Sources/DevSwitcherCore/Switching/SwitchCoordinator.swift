@@ -10,22 +10,38 @@ actor ServiceObservation {
 
     private(set) var exit: ExitRecord?
     private var tail: [LogLine] = []
+    private var startupConfirmed = false
     /// 失敗シートに出す行数（DESIGN.md）。stdout と stderr を時系列のまま保つ。
     private static let tailLimit = 6
 
-    func record(_ event: ServiceSupervisor.Event) {
+    /// 起動確認との順序をactor内で確定し、終了イベントへ確認結果を付けて返す。
+    func record(_ event: ServiceSupervisor.Event) -> ServiceSupervisor.Event {
         switch event {
         case let .log(lines):
             tail.append(contentsOf: lines)
             if tail.count > Self.tailLimit {
                 tail.removeFirst(tail.count - Self.tailLimit)
             }
-        case let .exited(status, requestedByUser):
-            guard exit == nil else { return }
-            exit = ExitRecord(status: status, requestedByUser: requestedByUser)
-        case .started, .ports, .warning:
+        case let .exited(status, requestedByUser, _):
+            if exit == nil {
+                exit = ExitRecord(status: status, requestedByUser: requestedByUser)
+            }
+            return .exited(
+                status: status,
+                requestedByUser: requestedByUser,
+                startupConfirmed: startupConfirmed
+            )
+        case .logSessionStarted, .started, .ports, .warning:
             break
         }
+        return event
+    }
+
+    /// 終了記録が無い場合だけ、初期観測を通過した事実を確定する。
+    func confirmStartup() -> Bool {
+        guard exit == nil else { return false }
+        startupConfirmed = true
+        return true
     }
 
     var tailLines: [LogLine] { tail }
@@ -48,6 +64,11 @@ public actor SwitchCoordinator {
     public typealias ProgressSink = @Sendable (SwitchState) -> Void
     /// ポート占有の実測。テストで lsof に依存しないよう差し替え可能にする。
     public typealias PortHolderProbe = @Sendable ([Int]) async throws -> [ObservedPortHolder]
+
+    private struct RestartRecovery: Sendable {
+        let portsToRelease: [Int]
+        var failureReason: String?
+    }
 
     public struct Options: Sendable {
         /// 停止元のポート解放を待つ上限。
@@ -88,6 +109,9 @@ public actor SwitchCoordinator {
     private var startedServiceIDs: Set<UUID> = []
     private var failureReasons: [UUID: String] = [:]
     private var residualGroups: [UUID: pid_t] = [:]
+    /// 単体再起動で対象を停止した後の再開地点。
+    /// ポートと失敗理由を一体で持ち、通常の未起動サービスと区別する。
+    private var restartRecoveries: [UUID: RestartRecovery] = [:]
     private var observations: [UUID: ServiceObservation] = [:]
     private var consumers: [UUID: Task<Void, Never>] = [:]
 
@@ -147,7 +171,180 @@ public actor SwitchCoordinator {
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
     ) async throws -> SwitchOutcome {
-        try await run(stopping: source, starting: target, progress: progress, events: events)
+        try await run(
+            stopping: source,
+            starting: target,
+            progress: progress,
+            events: events
+        )
+    }
+
+    /// 起動済みプロジェクトの通常プロセス1件だけを再起動する。
+    ///
+    /// プロジェクト全体の起動順を再実行せず、対象の停止、実測ポートの解放確認、
+    /// 起動直後の観測だけを同じ排他境界で行う。Supabaseは専用lifecycleを持つため対象外。
+    @discardableResult
+    public func restart(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        progress: @escaping ProgressSink = { _ in },
+        events: @escaping EventSink = { _, _ in }
+    ) async throws -> ProjectFact {
+        guard !inFlight else {
+            throw SwitchFailure(
+                reason: .operationInProgress,
+                facts: await facts(source: project, target: nil)
+            )
+        }
+        inFlight = true
+        defer { inFlight = false }
+
+        guard project.service(id: service.id) != nil else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    "サービス「\(service.name)」はプロジェクト「\(project.name)」に登録されていません。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+        guard project.isEnabledNow(service.id) else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    "サービス「\(service.name)」は現在の起動対象から外れています。起動対象にしてから再起動してください。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+        guard service.kind != .supabase else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    "Supabaseは通常プロセスと停止・状態確認の方法が異なるため、プロセス単体の再起動はできません。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+        guard service.usesProcessGroupStop else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    RuntimeError.stopCommandUnsupported(service: service.name).description
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+        guard await registry.occupyingServiceIDs(projectID: project.id).isEmpty == false else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    "プロジェクト「\(project.name)」は停止中です。プロジェクト単位で起動してください。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
+        let spec: StartupObservationSpec
+        do {
+            spec = try StartupObservationPolicy.spec(
+                for: service,
+                observationWindow: options.startupObservationWindow,
+                pollInterval: options.startupPollInterval
+            )
+        } catch {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration("\(error)"),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
+        let restartRecovery: RestartRecovery?
+        if await registry.occupiedProcessGroup(serviceID: service.id) != nil {
+            let ports = try await stopForRestart(service, in: project, progress: progress)
+            let recovery = RestartRecovery(portsToRelease: ports, failureReason: nil)
+            restartRecoveries[service.id] = recovery
+            restartRecovery = recovery
+        } else {
+            restartRecovery = restartRecoveries[service.id]
+        }
+
+        if var restartRecovery {
+            do {
+                try await releaseGate(
+                    ports: restartRecovery.portsToRelease,
+                    source: project,
+                    target: nil,
+                    progress: progress
+                )
+            } catch let failure as SwitchFailure {
+                // 対象は停止済みでも、通常の未起動ではない。失敗として表示し、
+                // 同じサービスの再起動を再試行できる状態を維持する。
+                restartRecovery.failureReason = failure.reason.detail
+                restartRecoveries[service.id] = restartRecovery
+                throw SwitchFailure(
+                    reason: failure.reason,
+                    facts: await facts(source: project, target: nil)
+                )
+            }
+            restartRecoveries[service.id] = nil
+        }
+
+        progress(.starting(service: service.name, index: 1, total: 1))
+        consumers[service.id]?.cancel()
+        events(service.id, .logSessionStarted)
+
+        let observation = ServiceObservation()
+        do {
+            let stream = try await registry.start(service: service, in: project)
+            observations[service.id] = observation
+            consumers[service.id] = Task {
+                for await event in stream {
+                    let observedEvent = await observation.record(event)
+                    events(service.id, observedEvent)
+                }
+            }
+            failureReasons[service.id] = nil
+            residualGroups[service.id] = nil
+        } catch {
+            throw await restartStartFailure(error, service: service, project: project)
+        }
+
+        progress(.observingStartup(service: service.name))
+        switch await awaitStartupObservation(service: service, spec: spec) {
+        case .passed:
+            startedServiceIDs.insert(service.id)
+            failureReasons[service.id] = nil
+            progress(.completed)
+            return await projectFact(project)
+        case let .failed(reason):
+            await stopAfterFailedStart(service)
+            failureReasons[service.id] = reason
+            startedServiceIDs.remove(service.id)
+            throw SwitchFailure(
+                reason: .startFailed(service: service.name, reason: reason),
+                facts: await facts(source: nil, target: project)
+            )
+        }
+    }
+
+    /// 再起動後の手掛かりを保存できなかった場合に、今回起動した1件だけを戻す。
+    /// UIから通常の単体停止としては公開しない。
+    public func stopAfterUnsavedRestart(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        progress: @escaping ProgressSink = { _ in }
+    ) async throws {
+        guard !inFlight else { throw RuntimeError.operationInProgress }
+        inFlight = true
+        defer { inFlight = false }
+
+        guard project.service(id: service.id) != nil else {
+            throw RuntimeError.notRunning(service: service.name)
+        }
+        guard await registry.occupiedProcessGroup(serviceID: service.id) != nil else {
+            clearState(of: service.id)
+            return
+        }
+
+        progress(.stopping(service: service.name, index: 1, total: 1))
+        try await stopOne(service, in: project)
+        await clearProjectStateIfFullyStopped(project)
     }
 
     // MARK: - 本体
@@ -271,6 +468,102 @@ public actor SwitchCoordinator {
     }
 
     // MARK: - 停止フェーズ
+
+    /// 単体再起動で、対象が実際に握っていたポートだけをゲートへ渡す。
+    /// 再起動では直後に新しいプロセスを起こすため、観測不能なら停止前に中断する。
+    private func stopForRestart(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        progress: @escaping ProgressSink
+    ) async throws -> [Int] {
+        do {
+            try await registry.refreshPorts(serviceID: service.id)
+        } catch {
+            throw SwitchFailure(
+                reason: .portObservationFailed(
+                    context: "サービス「\(service.name)」の実測ポート",
+                    reason: "\(error)"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
+        guard let record = await registry.runtimeSnapshot(serviceID: service.id)?.observedPortRecord,
+              let observed = record.observed else {
+            throw SwitchFailure(
+                reason: .portObservationFailed(
+                    context: "サービス「\(service.name)」の実測ポート",
+                    reason: "プロセスのlistenポートを取得できませんでした。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
+        progress(.stopping(service: service.name, index: 1, total: 1))
+        try await stopOne(service, in: project)
+        return Array(Set(observed)).sorted()
+    }
+
+    /// 1件だけを停止し、失敗時は既存の強制終了導線に必要な事実を返す。
+    private func stopOne(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition
+    ) async throws {
+        let outcome: ServiceStopOutcome
+        do {
+            outcome = try await registry.stop(service: service, grace: options.stopGrace)
+        } catch {
+            if await registry.occupiedProcessGroup(serviceID: service.id) == nil {
+                clearState(of: service.id)
+                return
+            }
+            let detail = StopFailureDetail(
+                serviceID: service.id,
+                serviceName: service.name,
+                processGroupID: await registry.occupiedProcessGroup(serviceID: service.id),
+                reason: "\(error)"
+            )
+            failureReasons[service.id] = "\(error)"
+            throw SwitchFailure(
+                reason: .stopFailed(services: [detail]),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
+        switch outcome {
+        case .stopped:
+            clearState(of: service.id)
+        case let .residual(processGroupID, reason):
+            residualGroups[service.id] = processGroupID
+            failureReasons[service.id] = reason
+            startedServiceIDs.remove(service.id)
+            throw SwitchFailure(
+                reason: .stopFailed(services: [
+                    StopFailureDetail(
+                        serviceID: service.id,
+                        serviceName: service.name,
+                        processGroupID: processGroupID,
+                        reason: reason
+                    ),
+                ]),
+                facts: await facts(source: project, target: nil)
+            )
+        case let .ownershipLost(reason):
+            failureReasons[service.id] = reason
+            startedServiceIDs.remove(service.id)
+            throw SwitchFailure(
+                reason: .stopFailed(services: [
+                    StopFailureDetail(
+                        serviceID: service.id,
+                        serviceName: service.name,
+                        processGroupID: nil,
+                        reason: reason
+                    ),
+                ]),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+    }
 
     /// 停止対象は、設定上ポートを持つサービスではなく、実際に起動または引き継いだサービスから決める。
     /// 返すのはゲート1で解放を確認すべき実測ポート。
@@ -478,6 +771,8 @@ public actor SwitchCoordinator {
             }
 
             do {
+                // 前回停止時のログは原因調査のため残し、新しい起動を試す時点で区切る。
+                events(service.id, .logSessionStarted)
                 let observation = ServiceObservation()
                 let stream = try await registry.start(service: service, in: target)
                 observations[service.id] = observation
@@ -486,8 +781,8 @@ public actor SwitchCoordinator {
                     for await event in stream {
                         // 先に観測へ記録してからUIへ流す。逆にすると、UI が終了を受けて
                         // 状態を問い合わせた時点でこちらがまだ終了を知らないことがある。
-                        await observation.record(event)
-                        events(service.id, event)
+                        let observedEvent = await observation.record(event)
+                        events(service.id, observedEvent)
                     }
                 }
                 startedInThisRun.append(service)
@@ -529,6 +824,30 @@ public actor SwitchCoordinator {
         }
 
         return degraded
+    }
+
+    /// 単体再起動の開始失敗では、再起動前から動いていた他サービスを巻き戻さない。
+    private func restartStartFailure(
+        _ error: Error,
+        service: ServiceDefinition,
+        project: ProjectDefinition
+    ) async -> SwitchFailure {
+        let startReason = "\(error)"
+        if await registry.occupiedProcessGroup(serviceID: service.id) != nil {
+            await stopAfterFailedStart(service)
+        }
+        let reason = failureReasons[service.id].map {
+            startReason + "\n" + $0
+        } ?? startReason
+        failureReasons[service.id] = reason
+        startedServiceIDs.remove(service.id)
+        if let processGroupID = await registry.occupiedProcessGroup(serviceID: service.id) {
+            residualGroups[service.id] = processGroupID
+        }
+        return SwitchFailure(
+            reason: .startFailed(service: service.name, reason: reason),
+            facts: await facts(source: nil, target: project)
+        )
     }
 
     /// `block` なら今回起動したサービスを安全に停止して中断、`continue` なら一部停止として続行。
@@ -619,6 +938,12 @@ public actor SwitchCoordinator {
         }
         guard await registry.isRunning(serviceID: service.id) else {
             return .failed(reason: "起動直後にプロセスが終了しました。")
+        }
+        if let observation, !(await observation.confirmStartup()) {
+            guard let exit = await observation.exit else {
+                return .failed(reason: "起動直後のプロセス状態を確定できませんでした。")
+            }
+            return .failed(reason: await exitReason(exit, observation: observation))
         }
         return .passed
     }
@@ -790,6 +1115,9 @@ public actor SwitchCoordinator {
         in project: ProjectDefinition
     ) async -> ServicePhase {
         if residualGroups[service.id] != nil { return .residual }
+        if let reason = restartRecoveries[service.id]?.failureReason {
+            return .failed(reason: reason)
+        }
         if let reason = failureReasons[service.id] { return .failed(reason: reason) }
         if await registry.isRunning(serviceID: service.id) {
             return startedServiceIDs.contains(service.id) ? .healthy : .running
@@ -905,6 +1233,7 @@ public actor SwitchCoordinator {
         startedServiceIDs.remove(serviceID)
         failureReasons[serviceID] = nil
         residualGroups[serviceID] = nil
+        restartRecoveries[serviceID] = nil
         observations[serviceID] = nil
     }
 

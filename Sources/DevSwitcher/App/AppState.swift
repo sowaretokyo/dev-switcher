@@ -68,7 +68,7 @@ final class AppState {
         case review
         /// 読み込み・保存の再試行。
         case retry
-        /// 引き継ぎシートの決着（引き継ぐ／すべて停止／無視）。
+        /// 起動時に検出したプロセスの決着（そのまま使う／停止する／停止しない）。
         case handoffDecision
         /// 起動・停止・切替・強制終了。
         case operation
@@ -115,7 +115,9 @@ final class AppState {
     /// 単純な起動・停止では出さないので、切替元と切替先は必ず存在する。
     struct SwitchPresentation: Identifiable {
         let id = UUID()
+        let sourceID: UUID
         let sourceName: String
+        let targetID: UUID
         let targetName: String
         var state: SwitchState = .idle
         var cancelRequested = false
@@ -147,6 +149,25 @@ final class AppState {
         var state: SwitchState = .idle
     }
 
+    /// 通常プロセス1件だけを再起動している間の進捗。
+    /// プロジェクト全体の起動・停止とは表示先が違うため、別の型で持つ。
+    struct ServiceRestartOperation: Equatable {
+        let projectID: UUID
+        let serviceID: UUID
+        let serviceName: String
+        var state: SwitchState = .idle
+    }
+
+    /// 正常起動後に、停止操作なしで終了したプロセスの通知。
+    /// 起動失敗は `FailurePresentation` が扱うため、ここでは稼働中の異常終了だけを扱う。
+    struct RuntimeIncident: Identifiable, Equatable {
+        let id = UUID()
+        let projectID: UUID
+        let serviceID: UUID
+        let serviceName: String
+        let status: String
+    }
+
     struct FailurePresentation: Identifiable {
         let id = UUID()
         let failure: SwitchFailure
@@ -163,7 +184,7 @@ final class AppState {
 
         var progressDescription: String {
             switch self {
-            case .adopt: "検出したプロセスを引き継いでいます…"
+            case .adopt: "そのまま使う準備をしています…"
             case .stopAll: "検出したプロセスを停止しています…"
             case .ignore: "手掛かりを破棄しています…"
             }
@@ -227,6 +248,8 @@ final class AppState {
     private(set) var projects: [ProjectDefinition] = []
     private(set) var serviceStates: [UUID: ServiceUIState] = [:]
     private(set) var projectPhases: [UUID: ProjectPhase] = [:]
+    /// 表示上の成功・失敗とは分けて、停止対象が1件でも残っているプロジェクトを持つ。
+    private var projectIDsWithManagedResources: Set<UUID> = []
     private(set) var logBuffers: [UUID: LogBuffer] = [:]
     private(set) var environmentState: EnvironmentState = .loading
     private(set) var storeError: String?
@@ -243,6 +266,10 @@ final class AppState {
     private(set) var switchPresentation: SwitchPresentation?
     /// 単純な起動・停止の進捗。対象プロジェクトの行にだけ出す。
     private(set) var inlineOperation: InlineOperation?
+    /// サービス詳細に出す単体再起動の進捗。
+    private(set) var serviceRestartOperation: ServiceRestartOperation?
+    /// 利用者がまだ閉じていない、直近の予期しないプロセス終了。
+    private(set) var runtimeIncident: RuntimeIncident?
 
     var selection: SidebarItem?
     var expandedProjectIDs: Set<UUID> = []
@@ -359,7 +386,13 @@ final class AppState {
 
     /// 同時に稼働できるプロジェクトは1つ。実際に資源を握っているものを稼働中とみなす。
     var activeProject: ProjectDefinition? {
-        projects.first { phase(of: $0).isActive }
+        projects.first { hasManagedResources(in: $0) }
+    }
+
+    /// Dev Switcherが停止できるプロセスまたは残存グループがあるか。
+    /// 成功・失敗などの表示状態を、停止導線や設定変更権限の判定へ流用しない。
+    func hasManagedResources(in project: ProjectDefinition) -> Bool {
+        projectIDsWithManagedResources.contains(project.id)
     }
 
     // MARK: - 起動時
@@ -513,6 +546,7 @@ final class AppState {
                     // 進捗の出し先は、切替シートかインライン表示のどちらか一方だけ。
                     self.switchPresentation?.state = state
                     self.inlineOperation?.state = state
+                    self.serviceRestartOperation?.state = state
                     await self.refreshPhases()
                 }
             }
@@ -761,7 +795,7 @@ final class AppState {
         }
 
         if !failures.isEmpty {
-            operationError = "引き継げなかったサービスがあります。\n"
+            operationError = "そのまま使えないサービスがあります。\n"
                 + failures.joined(separator: "\n")
         }
         await refreshPhases()
@@ -933,6 +967,7 @@ final class AppState {
         // 消えたプロジェクトを指す画面状態を残さない。
         expandedProjectIDs.remove(removed.id)
         projectPhases[removed.id] = nil
+        projectIDsWithManagedResources.remove(removed.id)
         for service in removed.services {
             serviceStates[service.id] = nil
             logBuffers[service.id] = nil
@@ -1008,8 +1043,44 @@ final class AppState {
         return buffer
     }
 
+    func markLogAsRead(serviceID: UUID) {
+        logBuffer(of: serviceID).markStderrAsRead()
+    }
+
     func phase(of project: ProjectDefinition) -> ProjectPhase {
-        projectPhases[project.id] ?? .stopped
+        // 実測だけでは、順番に停止している途中と一部の異常終了を区別できない。
+        // 操作中だけ意図した遷移を優先し、完了後は再びCoordinatorの実測へ戻す。
+        if let inlineOperation, inlineOperation.projectID == project.id {
+            switch inlineOperation.state {
+            case .rollingBack:
+                return .stopping
+            case .completed:
+                break
+            default:
+                return inlineOperation.kind == .starting ? .starting : .stopping
+            }
+        }
+        if let switchPresentation {
+            if switchPresentation.sourceID == project.id {
+                switch switchPresentation.state {
+                case .stopping, .verifyingRelease:
+                    return .stopping
+                default:
+                    break
+                }
+            }
+            if switchPresentation.targetID == project.id {
+                switch switchPresentation.state {
+                case .starting, .observingStartup:
+                    return .starting
+                case .rollingBack:
+                    return .stopping
+                default:
+                    break
+                }
+            }
+        }
+        return projectPhases[project.id] ?? .stopped
     }
 
     // MARK: - 受け付けられない理由
@@ -1081,8 +1152,8 @@ final class AppState {
     /// Milestone 2 ではフィールド単位の差分を検証できないため、稼働中は全編集を拒否する。
     func configurationBlockedReason(for project: ProjectDefinition) -> String? {
         if let reason = configurationBlockedReason { return reason }
-        if phase(of: project).isActive {
-            return "「\(project.name)」は起動済みです。"
+        if hasManagedResources(in: project) {
+            return "「\(project.name)」には動作中のプロセスがあります。"
                 + "設定値と実測がずれるため、停止してから変更してください。"
         }
         return nil
@@ -1119,13 +1190,13 @@ final class AppState {
     /// 停止できない理由。
     ///
     /// 停止は復旧手段なので、手掛かりの保存失敗を理由に禁止しない。
-    /// 引き継ぎの判断待ち中だけは、シートの「すべて停止」へ導線を一本化する。
+    /// 起動時の確認中だけは、シートの「停止する」へ導線を一本化する。
     var stopBlockedReason: String? {
         if isTerminating { return "アプリの終了処理を実行中です。" }
         if let activityKind { return activityKind.blockingDescription }
         if handoffPresentation != nil {
             return "検出した既存プロセスの扱いが決まっていません。"
-                + "停止はシートの「すべて停止」から行ってください。"
+                + "停止はシートの「停止する」から行ってください。"
         }
         return nil
     }
@@ -1133,6 +1204,90 @@ final class AppState {
     /// 停止はプロセスグループへのシグナル送出だけで完結し、PATH を必要としない。
     /// 環境の取得に失敗している間も停止できないと、引き継いだプロセスを画面から止められなくなる。
     var canStop: Bool { stopBlockedReason == nil }
+
+    /// 単体再起動は、起動済みプロジェクトの通常プロセスを復旧するときだけ提供する。
+    /// 停止中プロジェクトのサービス1件だけを起動すると、設定した起動順を迂回するため許可しない。
+    func restartBlockedReason(
+        for service: ServiceDefinition,
+        in project: ProjectDefinition
+    ) -> String? {
+        guard self.project(project.id)?.service(id: service.id) != nil else {
+            return "対象のプロセス設定が見つかりません。"
+        }
+        guard service.kind != .supabase else {
+            return "Supabaseは専用の停止・状態確認を使うため、プロセス単体では再起動できません。"
+        }
+        guard service.usesProcessGroupStop else {
+            return RuntimeError.stopCommandUnsupported(service: service.name).description
+        }
+        if let reason = startBlockedReason { return reason }
+
+        guard hasManagedResources(in: project) else {
+            return "停止中の開発環境は、開発環境単位で起動してください。"
+        }
+
+        switch state(of: service.id).phase {
+        case .running, .healthy, .failed, .residual:
+            return nil
+        case .starting, .stopping:
+            return "プロセスの起動・停止が完了してから再起動してください。"
+        case .excluded, .stopped:
+            return "このプロセスは現在の起動対象として動作していません。"
+        }
+    }
+
+    func canRestart(_ service: ServiceDefinition, in project: ProjectDefinition) -> Bool {
+        restartBlockedReason(for: service, in: project) == nil
+    }
+
+    func restart(_ service: ServiceDefinition, in project: ProjectDefinition) {
+        if let reason = restartBlockedReason(for: service, in: project) {
+            operationError = "\(service.name) を再起動できません。\n\(reason)"
+            return
+        }
+        guard let token = beginActivity(.operation) else {
+            operationError = (activityKind?.blockingDescription ?? "ほかの処理を実行中です。")
+                + "\n完了してからもう一度再起動してください。"
+            return
+        }
+        serviceRestartOperation = ServiceRestartOperation(
+            projectID: project.id,
+            serviceID: service.id,
+            serviceName: service.name
+        )
+
+        runActivity(token) { [self] in
+            defer { serviceRestartOperation = nil }
+
+            // PIDが変わる前の完全な手掛かりを残す。保存不能なら何も停止しない。
+            guard await persistRuntimeHints() else {
+                operationError = "再検証の手掛かりを保存できないため、\(service.name) の再起動を中止しました。"
+                    + "プロセスは停止していません。\n"
+                    + (hintStorageFailure ?? "")
+                return
+            }
+
+            var restarted = false
+            do {
+                _ = try await coordinator.restart(
+                    service,
+                    in: project,
+                    progress: progressSink(for: token),
+                    events: eventSink
+                )
+                restarted = true
+            } catch let failure as SwitchFailure {
+                present(failure)
+            } catch {
+                operationError = "\(error)"
+            }
+            await refreshPhases()
+
+            if await persistRuntimeHints() == false, restarted {
+                await compensateUnsavedRestart(of: service, in: project, token: token)
+            }
+        }
+    }
 
     /// 停止中のプロジェクトを起動する。稼働中の別プロジェクトがあれば切替として実行する。
     func startOrSwitch(to target: ProjectDefinition) {
@@ -1144,7 +1299,9 @@ final class AppState {
         // 利用者が見ているプロジェクトのボタン内で進捗を示す。
         if let source {
             switchPresentation = SwitchPresentation(
+                sourceID: source.id,
                 sourceName: source.name,
+                targetID: target.id,
                 targetName: target.name
             )
         } else {
@@ -1258,6 +1415,45 @@ final class AppState {
         if let stopFailure { present(stopFailure) }
     }
 
+    /// 単体再起動後の手掛かりを保存できない場合、今回起動した1件だけを停止する。
+    /// 先に動いていた他サービスまで巻き込むと、単体再起動という操作の範囲を超える。
+    private func compensateUnsavedRestart(
+        of service: ServiceDefinition,
+        in project: ProjectDefinition,
+        token: ActivityToken
+    ) async {
+        var messages = [
+            "再起動した \(service.name) の手掛かりを保存できませんでした。",
+            "記録に無いプロセスを残さないため、\(service.name) だけを停止します。",
+            hintStorageFailure ?? "",
+        ].filter { !$0.isEmpty }
+
+        var stopFailure: SwitchFailure?
+        do {
+            _ = try await coordinator.stopAfterUnsavedRestart(
+                service,
+                in: project,
+                progress: progressSink(for: token)
+            )
+        } catch let failure as SwitchFailure {
+            stopFailure = failure
+            messages.append("補償のための停止に失敗しました。\n\(failure.reason.detail)")
+        } catch {
+            messages.append("補償のための停止に失敗しました。\n\(error)")
+        }
+        await refreshPhases()
+
+        if stopFailure == nil, await persistRuntimeHints(refreshingPorts: false) {
+            messages.append("停止後の手掛かりを保存しました。")
+        } else if stopFailure == nil {
+            messages.append("停止後の手掛かりも保存できませんでした。")
+        } else {
+            messages.append("停止できなかったプロセスが残っています。")
+        }
+        operationError = messages.joined(separator: "\n")
+        if let stopFailure { present(stopFailure) }
+    }
+
     func stopProject(_ project: ProjectDefinition) {
         guard canStop else { return }
         guard let token = beginActivity(.operation) else { return }
@@ -1361,6 +1557,11 @@ final class AppState {
         return { serviceID, event in continuation.yield(.service(serviceID, event)) }
     }
 
+    /// 実運用と同じ直列イベント経路へ、テストから終了競合を再現するための入口。
+    func serviceEventSinkForTesting() -> SwitchCoordinator.EventSink {
+        eventSink
+    }
+
     /// 実行中の操作が終わるまで待つ。テストから完了を待ち合わせるために使う。
     func waitForPendingOperation() async {
         await operationTask?.value
@@ -1433,6 +1634,16 @@ final class AppState {
     func openLogTarget(_ item: SidebarItem) {
         expandedProjectIDs.insert(item.projectID)
         selection = item
+        if case let .service(_, serviceID) = item {
+            markLogAsRead(serviceID: serviceID)
+            if runtimeIncident?.serviceID == serviceID {
+                runtimeIncident = nil
+            }
+        }
+    }
+
+    func dismissRuntimeIncident() {
+        runtimeIncident = nil
     }
 
     // MARK: - 状態の反映
@@ -1445,9 +1656,14 @@ final class AppState {
     /// 引き継いだサービスは起動イベントを出さないため、状態だけを同期すると
     /// 稼働中なのに PID もポートも空欄のままになる。`ObservedRuntime` まで反映する。
     private func refreshPhases() async {
+        var managedProjectIDs = Set<UUID>()
         for project in projects {
             let fact = await coordinator.projectFact(project)
             projectPhases[project.id] = fact.phase
+            let occupyingServiceIDs = await registry.occupyingServiceIDs(projectID: project.id)
+            if !occupyingServiceIDs.isEmpty {
+                managedProjectIDs.insert(project.id)
+            }
             for serviceFact in fact.services {
                 // `ObservedRuntime` は本体の同一性を前提にしており、再起動後に登録した
                 // 残存グループでは作れない。表示できる情報を落とさないよう snapshot を使う。
@@ -1480,6 +1696,8 @@ final class AppState {
                 }
             }
         }
+        // まとめて置き換え、定義から消えたプロジェクトIDも残さない。
+        projectIDsWithManagedResources = managedProjectIDs
     }
 
     /// 次回起動時の再検証に使う手掛かりを書き出す。稼働状態の保存ではない。
@@ -1554,6 +1772,13 @@ final class AppState {
 
     private func apply(_ event: ServiceSupervisor.Event, to serviceID: UUID) {
         switch event {
+        case .logSessionStarted:
+            // 停止中は直前の原因を読めるよう残し、次の起動試行で新しいログだけにする。
+            logBuffer(of: serviceID).clear()
+            update(serviceID) {
+                $0.lastMessage = nil
+                $0.warning = nil
+            }
         case let .started(runtime):
             update(serviceID) {
                 // 初期観測が終わっていないので「起動中」。起動済みにはしない。
@@ -1566,7 +1791,12 @@ final class AppState {
                 $0.warning = nil
             }
         case let .log(lines):
-            logBuffer(of: serviceID).append(lines)
+            let buffer = logBuffer(of: serviceID)
+            buffer.append(lines)
+            if case let .service(_, selectedServiceID) = selection,
+               selectedServiceID == serviceID {
+                buffer.markStderrAsRead()
+            }
         case let .ports(ports):
             update(serviceID) {
                 $0.observedPortRecord = .observed(ports.map(\.port))
@@ -1574,7 +1804,7 @@ final class AppState {
             }
         case let .warning(message):
             update(serviceID) { $0.warning = message }
-        case let .exited(status, requestedByUser):
+        case let .exited(status, requestedByUser, startupConfirmed):
             update(serviceID) { current in
                 // 本体は終了したが、孫がポートを握ったままのことがある。
                 // ここで実測ポートを消すと「残存あり」なのに listen なしと表示される。
@@ -1589,6 +1819,16 @@ final class AppState {
                         reason: "停止操作なしに終了しました（\(status.description)）"
                     )
                 }
+            }
+            if !requestedByUser, startupConfirmed,
+               let project = projects.first(where: { $0.service(id: serviceID) != nil }),
+               let service = project.service(id: serviceID) {
+                runtimeIncident = RuntimeIncident(
+                    projectID: project.id,
+                    serviceID: serviceID,
+                    serviceName: service.name,
+                    status: status.description
+                )
             }
         }
     }

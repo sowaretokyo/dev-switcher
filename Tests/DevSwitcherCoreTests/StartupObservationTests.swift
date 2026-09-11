@@ -2,6 +2,49 @@ import Foundation
 import Testing
 @testable import DevSwitcherCore
 
+@Suite("起動確認と終了イベント")
+struct StartupConfirmationEventTests {
+    @Test("起動確認後の終了には確認済みの事実を付ける")
+    func confirmedStartupIsAttachedToExitEvent() async {
+        let observation = ServiceObservation()
+
+        #expect(await observation.confirmStartup())
+        let event = await observation.record(
+            .exited(
+                status: .exited(code: 7),
+                requestedByUser: false,
+                startupConfirmed: false
+            )
+        )
+
+        guard case let .exited(_, _, startupConfirmed) = event else {
+            Issue.record("終了イベントではありません")
+            return
+        }
+        #expect(startupConfirmed)
+    }
+
+    @Test("起動確認前の終了は起動失敗として区別する")
+    func exitBeforeConfirmationIsNotConfirmed() async {
+        let observation = ServiceObservation()
+
+        let event = await observation.record(
+            .exited(
+                status: .exited(code: 7),
+                requestedByUser: false,
+                startupConfirmed: false
+            )
+        )
+
+        guard case let .exited(_, _, startupConfirmed) = event else {
+            Issue.record("終了イベントではありません")
+            return
+        }
+        #expect(startupConfirmed == false)
+        #expect(await observation.confirmStartup() == false)
+    }
+}
+
 @Suite("起動確認")
 struct StartupObservationTests {
     private func service(

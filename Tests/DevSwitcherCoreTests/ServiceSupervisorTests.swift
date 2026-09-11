@@ -230,6 +230,78 @@ struct ServiceSupervisorTests {
         #expect(FileManager.default.fileExists(atPath: files.standardError.path))
     }
 
+    @Test("新しい起動では前回セッションのログを再読込しない")
+    func newStartReplacesPreviousSessionLogs() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let world = ControlledProcessWorld()
+        let registry = RuntimeRegistry(
+            portPollInterval: .seconds(60),
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { _ in [] },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        var service = makeService(
+            name: "Web",
+            ports: [],
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                "echo old-output; echo old-error >&2; while true; do sleep 1; done",
+            ],
+            workingDirectory: directory
+        )
+        var project = makeProject(directory: directory, services: [service])
+
+        let firstLog = EventLog()
+        let firstStream = try await registry.start(service: service, in: project)
+        let firstConsumer = Task { await firstLog.consume(firstStream) }
+        #expect(await waitUntil {
+            let output = await firstLog.text(of: .stdout)
+            let error = await firstLog.text(of: .stderr)
+            return output.contains("old-output") && error.contains("old-error")
+        })
+        _ = try await registry.stop(service: service, grace: .seconds(2))
+        await firstConsumer.value
+
+        service.start.arguments = [
+            "-c",
+            "echo new-output; echo new-error >&2; while true; do sleep 1; done",
+        ]
+        project.services = [service]
+
+        let secondLog = EventLog()
+        let secondStream = try await registry.start(service: service, in: project)
+        let secondConsumer = Task { await secondLog.consume(secondStream) }
+        defer { secondConsumer.cancel() }
+        #expect(await waitUntil {
+            let output = await secondLog.text(of: .stdout)
+            let error = await secondLog.text(of: .stderr)
+            return output.contains("new-output") && error.contains("new-error")
+        })
+
+        let secondStandardOutput = await secondLog.text(of: .stdout)
+        let secondStandardError = await secondLog.text(of: .stderr)
+        #expect(secondStandardOutput.contains("old-output") == false)
+        #expect(secondStandardError.contains("old-error") == false)
+
+        let files = ServiceLogFiles(directory: directory, serviceID: service.id)
+        let outputFile = try String(contentsOf: files.standardOutput, encoding: .utf8)
+        let errorFile = try String(contentsOf: files.standardError, encoding: .utf8)
+        #expect(outputFile.contains("new-output"))
+        #expect(outputFile.contains("old-output") == false)
+        #expect(errorFile.contains("new-error"))
+        #expect(errorFile.contains("old-error") == false)
+
+        _ = try await registry.stop(service: service, grace: .seconds(2))
+    }
+
     @Test("停止操作なしの終了は、終了コード 0 でも停止操作と区別する")
     func reportsUnrequestedExit() async throws {
         let directory = try makeTemporaryDirectory()

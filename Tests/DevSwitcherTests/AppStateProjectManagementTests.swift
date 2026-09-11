@@ -11,6 +11,52 @@ import Testing
 @Suite("プロジェクトの追加・編集・登録解除")
 @MainActor
 struct AppStateProjectManagementTests {
+    @Test("失敗表示でも管理中プロセスが残っていれば停止導線と編集ガードを保つ")
+    func failedProjectWithManagedProcessRemainsStoppableAndLocked() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Webは停止中のblockサービス、Workerだけを引き継ぐ。
+        // 表示は失敗になるが、Workerは停止対象として残っている状態を作る。
+        let fixture = makeSyntheticFixture(
+            directory: directory,
+            serviceNames: ["Web", "Worker"],
+            managedServiceIndex: 1
+        )
+        try ProjectStore(directory: directory).save([fixture.project])
+        try RuntimeHintStore(directory: directory).save([fixture.hint])
+
+        let state = makeAppState(
+            directory: directory,
+            registry: fixture.registry,
+            handoffInspector: fixture.inspector
+        )
+        state.loadProjects()
+        await state.loadEnvironment()
+        await state.reviewHandoffCandidates()
+        let presentation = try #require(state.handoffPresentation)
+        state.performHandoffAction(.adopt, presentationID: presentation.id)
+        await state.waitForPendingOperation()
+
+        guard case .failed = state.phase(of: fixture.project) else {
+            Issue.record("blockサービス停止時に失敗表示になっていません")
+            return
+        }
+        #expect(state.hasManagedResources(in: fixture.project))
+        #expect(state.activeProject?.id == fixture.project.id)
+        #expect(state.canEdit(fixture.project) == false)
+        #expect(state.canUnregister(fixture.project) == false)
+        #expect(state.canStop)
+
+        state.stopProject(fixture.project)
+        await state.waitForPendingOperation()
+
+        #expect(state.hasManagedResources(in: fixture.project) == false)
+        #expect(state.activeProject == nil)
+        #expect(state.canEdit(fixture.project))
+        #expect(state.canUnregister(fixture.project))
+    }
+
     private func makeProject(
         name: String,
         directory: URL,
@@ -149,7 +195,7 @@ struct AppStateProjectManagementTests {
         // 確認 UI も開かない。理由は黙らせず画面へ出す。
         state.presentUnregisterConfirmation(for: fixture.project)
         #expect(state.unregisterPresentation == nil)
-        #expect(state.operationError?.contains("起動済み") == true)
+        #expect(state.operationError?.contains("動作中のプロセス") == true)
         state.operationError = nil
 
         #expect(state.projects.map(\.name) == ["Bell"])

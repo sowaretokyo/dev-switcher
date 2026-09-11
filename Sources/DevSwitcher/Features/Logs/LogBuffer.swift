@@ -10,9 +10,11 @@ final class LogBuffer {
 
     private(set) var lines: [LogLine] = []
     private(set) var droppedCount = 0
+    private(set) var unreadStderrCount = 0
 
     func append(_ batch: [LogLine]) {
         guard !batch.isEmpty else { return }
+        unreadStderrCount += batch.lazy.filter { $0.stream == .stderr }.count
         lines.append(contentsOf: batch)
         if lines.count > LogBuffer.capacity {
             let overflow = lines.count - LogBuffer.capacity
@@ -24,6 +26,11 @@ final class LogBuffer {
     func clear() {
         lines.removeAll()
         droppedCount = 0
+        unreadStderrCount = 0
+    }
+
+    func markStderrAsRead() {
+        unreadStderrCount = 0
     }
 
     var stderrCount: Int {

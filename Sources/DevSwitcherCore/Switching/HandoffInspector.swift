@@ -159,7 +159,7 @@ public enum HandoffRejectionRecord: Equatable, Sendable {
     }
 
     /// この記録をもう捨ててよいか。
-    /// 観測できなかった・変換できなかったものは、利用者が「無視」を選ぶまで残す。
+    /// 観測できなかった・変換できなかったものは、利用者が「停止しない」を選ぶまで残す。
     public var isConclusive: Bool { reason.isConclusive }
 }
 

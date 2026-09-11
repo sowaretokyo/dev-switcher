@@ -89,6 +89,7 @@ public actor RuntimeRegistry {
     private let portPollInterval: Duration
     private let logDirectoryOverride: URL?
     private let environmentLoader: ShellEnvironmentLoader
+    private let identityProbe: ServiceSupervisor.ProcessIdentityProbe
     private let portProbe: ServiceSupervisor.PortProbe
     private let signalSender: ServiceSupervisor.SignalSender
     private let groupStateProbe: ServiceSupervisor.ProcessGroupStateProbe
@@ -102,6 +103,9 @@ public actor RuntimeRegistry {
         portPollInterval: Duration = .seconds(2),
         logDirectory: URL? = nil,
         environmentLoader: @escaping ShellEnvironmentLoader = { try await LoginShellEnvironment.load() },
+        identityProbe: @escaping ServiceSupervisor.ProcessIdentityProbe = { pid, workingDirectory in
+            ProcessInspector.identity(pid: pid, workingDirectory: workingDirectory)
+        },
         portProbe: @escaping ServiceSupervisor.PortProbe = { processGroupID in
             try await PortInspector.listeningPorts(processGroupID: processGroupID)
         },
@@ -119,6 +123,7 @@ public actor RuntimeRegistry {
         self.portPollInterval = portPollInterval
         self.logDirectoryOverride = logDirectory
         self.environmentLoader = environmentLoader
+        self.identityProbe = identityProbe
         self.portProbe = portProbe
         self.signalSender = signalSender
         self.groupStateProbe = groupStateProbe
@@ -188,6 +193,7 @@ public actor RuntimeRegistry {
             command: resolved,
             logDirectory: try logDirectoryOverride ?? ApplicationPaths.logDirectory(),
             portPollInterval: portPollInterval,
+            identityProbe: identityProbe,
             groupStateProbe: groupStateProbe,
             signalSender: signalSender,
             portProbe: portProbe,

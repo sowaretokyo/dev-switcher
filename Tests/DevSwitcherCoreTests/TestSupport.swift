@@ -334,6 +334,66 @@ func waitUntil(
     return await condition()
 }
 
+/// 実プロセスの生死だけをテスト側で追跡し、macOSのprocess情報取得権限に依存させない。
+final class ControlledProcessWorld: @unchecked Sendable {
+    struct SentSignal: Equatable {
+        let processGroupID: pid_t
+        let signal: Int32
+    }
+
+    private let lock = NSLock()
+    private var liveProcessGroups: Set<pid_t> = []
+    private var recordedSignals: [SentSignal] = []
+
+    func identity(pid: pid_t, workingDirectory: URL) -> ProcessIdentity? {
+        lock.lock()
+        liveProcessGroups.insert(pid)
+        lock.unlock()
+        return ProcessIdentity(
+            pid: pid,
+            startAbstime: UInt64(pid),
+            startedAt: Date(timeIntervalSince1970: TimeInterval(pid)),
+            executablePath: "/bin/sleep",
+            workingDirectory: workingDirectory
+        )
+    }
+
+    func startObservation(pid: pid_t) -> ProcessInspector.StartAbstimeObservation {
+        lock.lock()
+        defer { lock.unlock() }
+        return liveProcessGroups.contains(pid) ? .present(UInt64(pid)) : .notPresent
+    }
+
+    func groupState(processGroupID: pid_t) -> ProcessInspector.ProcessGroupState {
+        lock.lock()
+        defer { lock.unlock() }
+        guard liveProcessGroups.contains(processGroupID) else { return .members([]) }
+        return .members([
+            ProcessInspector.ProcessGroupMember(pid: processGroupID, isZombie: false),
+        ])
+    }
+
+    func send(processGroupID: pid_t, signal: Int32) -> Int32 {
+        lock.lock()
+        recordedSignals.append(SentSignal(processGroupID: processGroupID, signal: signal))
+        liveProcessGroups.remove(processGroupID)
+        lock.unlock()
+        return kill(-processGroupID, signal)
+    }
+
+    var signals: [SentSignal] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedSignals
+    }
+
+    func clearSignals() {
+        lock.lock()
+        recordedSignals.removeAll()
+        lock.unlock()
+    }
+}
+
 /// 値が取れるまで待つ。取れなければ nil。
 func waitForValue<Value: Sendable>(
     timeout: Duration = .seconds(15),
@@ -381,14 +441,14 @@ actor EventLog {
 
     var exitStatus: ExitStatus? {
         for event in events {
-            if case let .exited(status, _) = event { return status }
+            if case let .exited(status, _, _) = event { return status }
         }
         return nil
     }
 
     var exitWasRequested: Bool? {
         for event in events {
-            if case let .exited(_, requested) = event { return requested }
+            if case let .exited(_, requested, _) = event { return requested }
         }
         return nil
     }

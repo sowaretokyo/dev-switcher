@@ -21,7 +21,7 @@ struct ProjectDetailView: View {
     }
 
     private var isStopped: Bool {
-        !state.phase(of: project).isActive
+        !state.hasManagedResources(in: project)
     }
 
     // MARK: - ヘッダー

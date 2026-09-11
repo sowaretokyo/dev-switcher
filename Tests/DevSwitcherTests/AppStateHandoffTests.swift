@@ -77,15 +77,35 @@ struct AppStateHandoffTests {
         state: AppState,
         project: ProjectDefinition,
         directory: URL
-    ) async throws -> (presentationID: UUID, hint: RuntimeHint, processGroupID: pid_t) {
+    ) async throws -> (
+        presentationID: UUID,
+        hint: RuntimeHint,
+        processGroupID: pid_t,
+        cleanup: TestProcessGroupCleanup
+    ) {
         let quitFile = directory.appendingPathComponent("leader.quit")
+        let testProcessID = getpid()
         let spawned = try ProcessRunner.spawn(
             ResolvedCommand(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
                 // 孫を残したまま、合図を受けてから本体だけが終了する。
                 arguments: [
                     "-c",
-                    "sleep 120 & while [ ! -f \"\(quitFile.path)\" ]; do sleep 0.05; done; exit 0",
+                    """
+                    /bin/sh -c 'remaining=600; while kill -0 \(testProcessID) 2>/dev/null && [ -d "\(directory.path)" ] && [ "$remaining" -gt 0 ]; do remaining=$((remaining - 1)); sleep 0.2; done' &
+                    child=$!
+                    trap 'kill "$child" 2>/dev/null; wait "$child" 2>/dev/null' 0
+                    remaining=2400
+                    while kill -0 \(testProcessID) 2>/dev/null && [ -d "\(directory.path)" ] && [ ! -f "\(quitFile.path)" ] && [ "$remaining" -gt 0 ]; do
+                      remaining=$((remaining - 1))
+                      sleep 0.05
+                    done
+                    if [ -f "\(quitFile.path)" ]; then
+                      trap - 0
+                      exit 0
+                    fi
+                    exit 124
+                    """,
                 ],
                 workingDirectory: directory
             ),
@@ -95,6 +115,8 @@ struct AppStateHandoffTests {
                 standardError: directory.appendingPathComponent("err.log")
             )
         )
+        // spawn 直後に所有する。以降の #require や保存が失敗してもリークさせない。
+        let cleanup = TestProcessGroupCleanup(spawned)
 
         _ = try #require(
             await waitForValue {
@@ -134,7 +156,7 @@ struct AppStateHandoffTests {
         }
         #expect(ProcessInspector.startAbstime(pid: spawned.pid) == nil)
 
-        return (presentation.id, hint, spawned.processGroupID)
+        return (presentation.id, hint, spawned.processGroupID, cleanup)
     }
 
     // MARK: - 失敗した候補の手掛かり
@@ -154,8 +176,7 @@ struct AppStateHandoffTests {
             project: project,
             directory: directory
         )
-        defer { kill(-race.processGroupID, SIGKILL) }
-
+        defer { #expect(race.cleanup.cleanUp()) }
         state.performHandoffAction(.adopt, presentationID: race.presentationID)
         await state.waitForPendingOperation()
 
@@ -187,8 +208,7 @@ struct AppStateHandoffTests {
             project: project,
             directory: directory
         )
-        defer { kill(-race.processGroupID, SIGKILL) }
-
+        defer { #expect(race.cleanup.cleanUp()) }
         state.performHandoffAction(.stopAll, presentationID: race.presentationID)
         await state.waitForPendingOperation()
 
@@ -215,8 +235,7 @@ struct AppStateHandoffTests {
             project: project,
             directory: directory
         )
-        defer { kill(-race.processGroupID, SIGKILL) }
-
+        defer { #expect(race.cleanup.cleanUp()) }
         state.performHandoffAction(.adopt, presentationID: race.presentationID)
         await state.waitForPendingOperation()
 
@@ -241,8 +260,7 @@ struct AppStateHandoffTests {
             project: project,
             directory: directory
         )
-        defer { kill(-race.processGroupID, SIGKILL) }
-
+        defer { #expect(race.cleanup.cleanUp()) }
         state.performHandoffAction(.adopt, presentationID: race.presentationID)
         await state.waitForPendingOperation()
 
@@ -844,9 +862,9 @@ struct AppStateHandoffTests {
 
         #expect(state.canStart == false)
         #expect(state.startBlockedReason?.contains("既存プロセス") == true)
-        // 停止はシートの「すべて停止」へ導線を一本化する。
+        // 停止は起動時確認の「停止する」へ導線を一本化する。
         #expect(state.canStop == false)
-        #expect(state.stopBlockedReason?.contains("すべて停止") == true)
+        #expect(state.stopBlockedReason?.contains("停止する") == true)
         #expect(state.canEdit(project) == false)
 
         state.startOrSwitch(to: project)
@@ -1093,7 +1111,7 @@ struct AppStateHandoffTests {
         // UI の無効化だけでは、ゲートが見る設定ポートと実測のずれを防げない。
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
         state.setEnabledNow(false, for: fixture.service, in: fixture.project)
-        #expect(state.operationError?.contains("起動済み") == true)
+        #expect(state.operationError?.contains("動作中のプロセス") == true)
         state.resetEnabledNow(in: fixture.project)
         state.presentProjectForm(editing: fixture.project)
         #expect(state.projectFormPresentation == nil)
@@ -1209,7 +1227,7 @@ struct AppStateHandoffTests {
         // UI の無効化だけでは、ゲートが見る設定ポートと実測のずれを防げない。
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
         state.setEnabledNow(false, for: service, in: project)
-        #expect(state.operationError?.contains("起動済み") == true)
+        #expect(state.operationError?.contains("動作中のプロセス") == true)
         state.resetEnabledNow(in: project)
         state.presentProjectForm(editing: project)
         #expect(state.projectFormPresentation == nil)
@@ -1620,10 +1638,21 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // SIGTERM を無視するので、補償のための停止は失敗する。
+        let testProcessID = getpid()
         let project = makeWorkerProject(
             directory: directory,
             serviceNames: ["Stubborn"],
-            arguments: ["-c", "trap \"\" TERM; while true; do sleep 0.2; done"],
+            arguments: [
+                "-c",
+                """
+                trap "" TERM
+                remaining=300
+                while kill -0 \(testProcessID) 2>/dev/null && [ -d "\(directory.path)" ] && [ "$remaining" -gt 0 ]; do
+                  remaining=$((remaining - 1))
+                  sleep 0.2
+                done
+                """,
+            ],
             executable: "/bin/sh"
         )
         try ProjectStore(directory: directory).save([project])
@@ -2163,14 +2192,21 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let readyFile = directory.appendingPathComponent("late.ready")
+        let testProcessID = getpid()
         // 起動してしばらくしてから子を作るサービス。
         let project = makeWorkerProject(
             directory: directory,
             serviceNames: ["Late"],
             arguments: [
                 "-c",
-                "sleep 0.4; /bin/sh -c 'while true; do sleep 0.2; done' &"
-                    + " echo late > \"\(readyFile.path)\"; sleep 120",
+                "sleep 0.4; /bin/sh -c 'remaining=600; while kill -0 \(testProcessID)"
+                    + " 2>/dev/null && [ -d \"\(directory.path)\" ]"
+                    + " && [ \"$remaining\" -gt 0 ];"
+                    + " do remaining=$((remaining - 1)); sleep 0.2; done' &"
+                    + " echo late > \"\(readyFile.path)\"; remaining=600;"
+                    + " while kill -0 \(testProcessID) 2>/dev/null"
+                    + " && [ -d \"\(directory.path)\" ] && [ \"$remaining\" -gt 0 ];"
+                    + " do remaining=$((remaining - 1)); sleep 0.2; done",
             ],
             executable: "/bin/sh"
         )

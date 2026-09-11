@@ -114,7 +114,12 @@ struct SyntheticFixture {
     let registry: RuntimeRegistry
     let inspector: HandoffInspector
 
-    var service: ServiceDefinition { project.services[0] }
+    var service: ServiceDefinition {
+        guard let service = project.service(id: hint.serviceID) else {
+            preconditionFailure("手掛かりに対応するプロセス定義がありません。")
+        }
+        return service
+    }
 }
 
 func makeSyntheticFixture(
@@ -122,13 +127,23 @@ func makeSyntheticFixture(
     projectName: String = "Bell",
     pid: pid_t = 45_001,
     startAbstime: UInt64 = 501,
+    serviceNames: [String] = ["Worker"],
+    managedServiceIndex: Int = 0,
     portProbe: @escaping ServiceSupervisor.PortProbe = { _ in [] }
 ) -> SyntheticFixture {
-    let project = makeWorkerProject(name: projectName, directory: directory)
+    let project = makeWorkerProject(
+        name: projectName,
+        directory: directory,
+        serviceNames: serviceNames
+    )
+    guard project.services.indices.contains(managedServiceIndex) else {
+        preconditionFailure("管理対象のプロセス番号が範囲外です。")
+    }
+    let managedService = project.services[managedServiceIndex]
     let hint = makeStoredHint(
         projectID: project.id,
-        serviceID: project.services[0].id,
-        serviceName: project.services[0].name,
+        serviceID: managedService.id,
+        serviceName: managedService.name,
         pid: pid,
         startAbstime: startAbstime,
         directory: directory

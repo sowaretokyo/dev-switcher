@@ -88,13 +88,22 @@ public enum ProcessRunner {
             posix_spawn_file_actions_adddup2(&fileActions, stderrPipe[1], STDERR_FILENO)
         case let .files(standardOutput, standardError):
             // pipeだとアプリ終了後の書き込みでSIGPIPEになるため、子自身にファイルを開かせる。
+            // 起動単位でログを分け、前回セッションを新しいtailが再読込しないようtruncateする。
             try prepareLogFile(at: standardOutput)
             try prepareLogFile(at: standardError)
             posix_spawn_file_actions_addopen(
-                &fileActions, STDOUT_FILENO, standardOutput.path, O_WRONLY | O_APPEND, 0o644
+                &fileActions,
+                STDOUT_FILENO,
+                standardOutput.path,
+                O_WRONLY | O_APPEND | O_TRUNC,
+                0o644
             )
             posix_spawn_file_actions_addopen(
-                &fileActions, STDERR_FILENO, standardError.path, O_WRONLY | O_APPEND, 0o644
+                &fileActions,
+                STDERR_FILENO,
+                standardError.path,
+                O_WRONLY | O_APPEND | O_TRUNC,
+                0o644
             )
         }
 

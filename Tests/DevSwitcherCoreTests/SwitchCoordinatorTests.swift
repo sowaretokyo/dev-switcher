@@ -1364,6 +1364,370 @@ struct SwitchCoordinatorTests {
     }
 }
 
+@Suite("プロセス単体の再起動")
+struct ServiceRestartTests {
+    @Test("対象だけを停止して再起動し、同じプロジェクトの他プロセスは残す")
+    func restartsOnlyTheSelectedService() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let world = ControlledProcessWorld()
+        let registry = RuntimeRegistry(
+            portPollInterval: .seconds(60),
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { _ in [] },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        let coordinator = SwitchCoordinator(
+            registry: registry,
+            portHolderProbe: { _ in [] },
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(1),
+                stopGrace: .seconds(2),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
+                gatePollInterval: .milliseconds(20)
+            ),
+            currentUserName: "test-user"
+        )
+        let web = makeService(
+            name: "Web",
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let worker = makeService(
+            name: "Worker",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(directory: directory, services: [web, worker])
+
+        let events = ServiceEventRecorder()
+        _ = try await coordinator.start(
+            project,
+            events: { events.record(serviceID: $0, event: $1) }
+        )
+        defer { Task { _ = try? await coordinator.stop(project) } }
+        let originalWeb = try #require(
+            await registry.runtimeSnapshot(serviceID: web.id)?.processID
+        )
+        let originalWorker = try #require(
+            await registry.runtimeSnapshot(serviceID: worker.id)?.processID
+        )
+        #expect(events.logSessionServiceIDs == [web.id, worker.id])
+        events.clear()
+        world.clearSignals()
+
+        let fact = try await coordinator.restart(
+            web,
+            in: project,
+            events: { events.record(serviceID: $0, event: $1) }
+        )
+
+        let restartedWeb = try #require(
+            await registry.runtimeSnapshot(serviceID: web.id)?.processID
+        )
+        let unchangedWorker = try #require(
+            await registry.runtimeSnapshot(serviceID: worker.id)?.processID
+        )
+        #expect(restartedWeb != originalWeb)
+        #expect(unchangedWorker == originalWorker)
+        #expect(await registry.isRunning(serviceID: worker.id))
+        #expect(fact.phase == .running)
+        #expect(world.signals == [
+            ControlledProcessWorld.SentSignal(
+                processGroupID: originalWeb,
+                signal: SIGTERM
+            ),
+        ])
+        #expect(events.logSessionServiceIDs == [web.id])
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("対象の再起動に失敗しても、同じプロジェクトの他プロセスは停止しない")
+    func restartFailureKeepsSiblingRunning() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let world = ControlledProcessWorld()
+        let registry = RuntimeRegistry(
+            portPollInterval: .seconds(60),
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { _ in [] },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        let coordinator = SwitchCoordinator(
+            registry: registry,
+            portHolderProbe: { _ in [] },
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(1),
+                stopGrace: .seconds(2),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
+                gatePollInterval: .milliseconds(20)
+            ),
+            currentUserName: "test-user"
+        )
+        let web = makeService(
+            name: "Web",
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let worker = makeService(
+            name: "Worker",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let runningProject = makeProject(directory: directory, services: [web, worker])
+
+        _ = try await coordinator.start(runningProject)
+        defer { Task { _ = try? await coordinator.stop(runningProject) } }
+        let originalWeb = try #require(
+            await registry.runtimeSnapshot(serviceID: web.id)?.processID
+        )
+        let originalWorker = try #require(
+            await registry.runtimeSnapshot(serviceID: worker.id)?.processID
+        )
+        var failingWeb = web
+        failingWeb.start.executable = "/path/that/does/not/exist"
+        var currentProject = runningProject
+        currentProject.services = [failingWeb, worker]
+        world.clearSignals()
+
+        await #expect(throws: SwitchFailure.self) {
+            _ = try await coordinator.restart(failingWeb, in: currentProject)
+        }
+
+        #expect(await registry.occupiedProcessGroup(serviceID: web.id) == nil)
+        #expect(await registry.runtimeSnapshot(serviceID: worker.id)?.processID == originalWorker)
+        #expect(await registry.isRunning(serviceID: worker.id))
+        #expect(world.signals == [
+            ControlledProcessWorld.SentSignal(
+                processGroupID: originalWeb,
+                signal: SIGTERM
+            ),
+        ])
+
+        _ = try await coordinator.stop(currentProject)
+    }
+
+    @Test("ポート解放失敗後も、対象だけの再起動を再試行できる")
+    func retriesSelectedServiceAfterPortReleaseFailure() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let world = ControlledProcessWorld()
+        let ports = FakePortWorld()
+        await ports.occupy(port: 3000, pid: 9000, command: "external", loginName: "other-user")
+        let registry = RuntimeRegistry(
+            portPollInterval: .seconds(60),
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { processGroupID in
+                [ObservedPort(port: 3000, pid: processGroupID, address: "127.0.0.1")]
+            },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        let coordinator = SwitchCoordinator(
+            registry: registry,
+            portHolderProbe: { try await ports.probe($0) },
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .milliseconds(20),
+                stopGrace: .seconds(2),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
+                gatePollInterval: .milliseconds(10)
+            ),
+            currentUserName: "test-user"
+        )
+        let web = makeService(
+            name: "Web",
+            ports: [PortSpec(port: 3000, isPrimary: true)],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let worker = makeService(
+            name: "Worker",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(directory: directory, services: [web, worker])
+
+        _ = try await coordinator.start(project)
+        defer { Task { _ = try? await coordinator.stop(project) } }
+        let originalWeb = try #require(
+            await registry.runtimeSnapshot(serviceID: web.id)?.processID
+        )
+        let originalWorker = try #require(
+            await registry.runtimeSnapshot(serviceID: worker.id)?.processID
+        )
+        world.clearSignals()
+
+        let failure = await #expect(throws: SwitchFailure.self) {
+            _ = try await coordinator.restart(web, in: project)
+        }
+        if let failure {
+            guard case .portsNotReleased = failure.reason else {
+                Issue.record("ポート解放失敗ではない: \(failure.reason)")
+                return
+            }
+        }
+        guard case .failed = await coordinator.servicePhase(web, in: project) else {
+            Issue.record("再起動失敗後の対象が失敗状態ではない")
+            return
+        }
+        #expect(await registry.occupiedProcessGroup(serviceID: web.id) == nil)
+        #expect(await registry.runtimeSnapshot(serviceID: worker.id)?.processID == originalWorker)
+        #expect(world.signals == [
+            ControlledProcessWorld.SentSignal(
+                processGroupID: originalWeb,
+                signal: SIGTERM
+            ),
+        ])
+
+        await ports.release(port: 3000)
+        let fact = try await coordinator.restart(web, in: project)
+
+        let restartedWeb = try #require(
+            await registry.runtimeSnapshot(serviceID: web.id)?.processID
+        )
+        #expect(restartedWeb != originalWeb)
+        #expect(await registry.runtimeSnapshot(serviceID: worker.id)?.processID == originalWorker)
+        #expect(fact.phase == .running)
+        #expect(world.signals.count == 1)
+
+        _ = try await coordinator.stop(project)
+    }
+
+    @Test("起動対象外のサービスはCore APIからも再起動できない")
+    func disabledServiceCannotBeRestartedThroughCoreAPI() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let world = ControlledProcessWorld()
+        let registry = RuntimeRegistry(
+            portPollInterval: .seconds(60),
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { _ in [] },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        let coordinator = SwitchCoordinator(
+            registry: registry,
+            portHolderProbe: { _ in [] },
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(1),
+                stopGrace: .seconds(2),
+                startupObservationWindow: .milliseconds(100),
+                startupPollInterval: .milliseconds(20),
+                gatePollInterval: .milliseconds(20)
+            ),
+            currentUserName: "test-user"
+        )
+        let web = makeService(
+            name: "Web",
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let worker = makeService(
+            name: "Worker",
+            kind: .worker,
+            ports: [],
+            executable: "/bin/sleep",
+            arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(
+            directory: directory,
+            services: [web, worker],
+            enabledNow: [web.id: false, worker.id: true]
+        )
+
+        _ = try await coordinator.start(project)
+        defer { Task { _ = try? await coordinator.stop(project) } }
+        let workerPID = try #require(
+            await registry.runtimeSnapshot(serviceID: worker.id)?.processID
+        )
+        world.clearSignals()
+
+        let failure = await #expect(throws: SwitchFailure.self) {
+            _ = try await coordinator.restart(web, in: project)
+        }
+
+        if let failure {
+            guard case let .unsupportedConfiguration(reason) = failure.reason else {
+                Issue.record("設定エラーではない: \(failure.reason)")
+                return
+            }
+            #expect(reason.contains("起動対象から外れています"))
+        }
+        #expect(await registry.occupiedProcessGroup(serviceID: web.id) == nil)
+        #expect(await registry.runtimeSnapshot(serviceID: worker.id)?.processID == workerPID)
+        #expect(world.signals.isEmpty)
+
+        _ = try await coordinator.stop(project)
+    }
+}
+
+private final class ServiceEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedLogSessionServiceIDs: [UUID] = []
+
+    func record(serviceID: UUID, event: ServiceSupervisor.Event) {
+        guard case .logSessionStarted = event else { return }
+        lock.lock()
+        recordedLogSessionServiceIDs.append(serviceID)
+        lock.unlock()
+    }
+
+    var logSessionServiceIDs: [UUID] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedLogSessionServiceIDs
+    }
+
+    func clear() {
+        lock.lock()
+        recordedLogSessionServiceIDs.removeAll()
+        lock.unlock()
+    }
+}
+
 /// 進行状態の記録。順序の検証にだけ使う。
 final class ProgressRecorder: @unchecked Sendable {
     private let lock = NSLock()

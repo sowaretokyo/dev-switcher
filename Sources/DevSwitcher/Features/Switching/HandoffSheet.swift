@@ -3,8 +3,8 @@ import SwiftUI
 
 /// アプリ再起動時に既存プロセスを検出したときのシート。
 ///
-/// 選べるのは「引き継ぐ」「すべて停止」「無視」。無視してもポートは埋まったままなので、
-/// 次の切替はゲートが止める（DESIGN.md 決定 e）。
+/// 通常の選択肢は「停止する」「そのまま使う」の2つだけ。
+/// 安全に再利用できない残存では「そのまま使う」の代わりに「停止しない」を出す。
 /// 一致しなかった候補も理由つきで出す。黙って捨てると、なぜ引き継がれないのか分からない。
 struct HandoffSheet: View {
     @Environment(AppState.self) private var state
@@ -18,14 +18,12 @@ struct HandoffSheet: View {
 
     private var review: HandoffReview { live.review }
 
-    @State private var isConfirmingStopAll = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            Text("既存のプロセスを検出しました")
+            Text("プロセスが動いています")
                 .font(Typography.title)
 
-            Text("前回 Dev Switcher が起動したプロセスの手掛かりを、実際のプロセスと照合しました。開始時刻・実行ファイル・作業ディレクトリ・listen ポートがすべて一致したものだけを引き継ぎ候補にしています。")
+            Text("前回 Dev Switcher が起動したプロセスを確認しました。停止するか、そのまま使うか選んでください。")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -33,7 +31,7 @@ struct HandoffSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.m) {
                     if !review.candidates.isEmpty {
-                        section("引き継げる候補") {
+                        section("そのまま使えるプロセス") {
                             ForEach(review.candidates) { candidate in
                                 CandidateRow(candidate: candidate)
                             }
@@ -43,7 +41,7 @@ struct HandoffSheet: View {
                     // 引き継げないが資源を握っているものを黙って捨てない。
                     // 停止手段を出さないと、GUI から復旧できないプロセスが残る。
                     if !review.stoppable.isEmpty {
-                        section("引き継げないが停止できるもの") {
+                        section("停止が必要なプロセス") {
                             ForEach(review.stoppable) { finding in
                                 StoppableRow(finding: finding)
                             }
@@ -51,7 +49,7 @@ struct HandoffSheet: View {
                     }
 
                     if !review.rejected.isEmpty {
-                        section("対象にしないもの") {
+                        section("操作できないプロセス") {
                             ForEach(Array(review.rejected.enumerated()), id: \.offset) { _, record in
                                 VStack(alignment: .leading, spacing: Spacing.hairline) {
                                     Text("\(record.serviceName)（PID \(record.processID)）")
@@ -68,20 +66,14 @@ struct HandoffSheet: View {
             }
             .frame(maxHeight: Metrics.handoffListMaxHeight)
 
-            Text("「無視」を選んでもプロセスやポートが残る可能性があります。残っている場合、次の切替はゲートが止めます。")
-                .font(Typography.support)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-
             Divider()
 
             HStack {
                 if hasStoppable {
-                    // 破壊的な選択肢は既定ボタンにしない（I-6）。
-                    Button("すべて停止") {
-                        isConfirmingStopAll = true
+                    // このシート自体が停止前の確認。確認を二重に重ねない。
+                    Button("停止する", role: .destructive) {
+                        state.performHandoffAction(.stopAll, presentationID: live.id)
                     }
-                    .foregroundStyle(.red)
                 }
                 if let description = live.resolvingDescription {
                     // 実行中であることを黙らせない。二重操作は AppState が拒否するが、
@@ -92,15 +84,14 @@ struct HandoffSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("無視") {
-                    // 破棄できたときだけ AppState がシートを閉じる。失敗したまま閉じると、
-                    // 無視したはずの手掛かりが次回も出てくる理由が分からなくなる。
-                    state.performHandoffAction(.ignore, presentationID: live.id)
-                }
-                // 引き継げるものが無い場合、既定は安全側の「無視」に倒す。
-                .keyboardShortcut(review.candidates.isEmpty ? .defaultAction : .cancelAction)
-                if !review.candidates.isEmpty {
-                    Button("引き継ぐ") {
+                if review.candidates.isEmpty {
+                    Button("停止しない") {
+                        // 破棄できたときだけ AppState がシートを閉じる。
+                        state.performHandoffAction(.ignore, presentationID: live.id)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("そのまま使う") {
                         state.performHandoffAction(.adopt, presentationID: live.id)
                     }
                     .keyboardShortcut(.defaultAction)
@@ -113,37 +104,10 @@ struct HandoffSheet: View {
         .frame(width: Metrics.sheetWidth)
         // 選択せずに閉じられると、引き継ぎも停止もしないまま再表示する導線が無くなる。
         .interactiveDismissDisabled()
-        .confirmationDialog(
-            "検出したプロセスを停止しますか？",
-            isPresented: $isConfirmingStopAll,
-            titleVisibility: .visible
-        ) {
-            // シートの開閉は AppState が決める。ここで閉じると、
-            // 失敗したときの再提示と競合して、やり直せなくなる。
-            Button("停止する", role: .destructive) {
-                state.performHandoffAction(.stopAll, presentationID: live.id)
-            }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text(stopConfirmationMessage)
-        }
     }
 
     private var hasStoppable: Bool {
         !review.candidates.isEmpty || !review.stoppable.isEmpty
-    }
-
-    private var stopConfirmationMessage: String {
-        let names = (review.candidates.map(\.hint.serviceName)
-            + review.stoppable.map(\.hint.serviceName))
-            .joined(separator: " / ")
-        return """
-            次のサービスへ通常終了（SIGTERM）を送ります。
-
-            \(names)
-
-            送信の直前に、記録したプロセスと同一かを再検証します。一致しない場合は送信しません。
-            """
     }
 
     @ViewBuilder

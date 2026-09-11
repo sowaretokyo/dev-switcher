@@ -7,12 +7,15 @@ import Foundation
 /// 回収せずPGIDの再利用を防ぐ。所有権を手放したPGIDへは二度とシグナルを送らない。
 public actor ServiceSupervisor {
     public enum Event: Sendable {
+        /// 新しい起動試行の境界。UIはここで前回セッションのログを消す。
+        case logSessionStarted
         case started(ObservedRuntime)
         case log([LogLine])
         case ports([ObservedPort])
         case warning(String)
         /// 終了コード0でも、停止要求なしの終了を成功扱いしないため操作意図を伴う。
-        case exited(status: ExitStatus, requestedByUser: Bool)
+        /// `startupConfirmed` はCoordinatorが初期観測を通過させた場合だけtrueにする。
+        case exited(status: ExitStatus, requestedByUser: Bool, startupConfirmed: Bool)
     }
 
     public enum StopOutcome: Equatable, Sendable {
@@ -279,7 +282,7 @@ public actor ServiceSupervisor {
 
         // runtimeがない経路では、未回収のリーダーがPIDとPGIDの再利用を防いでいる。
         if let runtime {
-            guard ProcessInspector.matchesRunningProcess(runtime.identity) else {
+            guard startAbstimeProbe(runtime.identity.pid).value == runtime.identity.startAbstime else {
                 throw RuntimeError.identityMismatch(
                     service: serviceName,
                     pid: runtime.identity.pid
@@ -393,7 +396,7 @@ public actor ServiceSupervisor {
         }
 
         if child.currentStatus == nil, let runtime {
-            guard ProcessInspector.matchesRunningProcess(runtime.identity) else {
+            guard startAbstimeProbe(runtime.identity.pid).value == runtime.identity.startAbstime else {
                 throw RuntimeError.identityMismatch(
                     service: serviceName,
                     pid: runtime.identity.pid
@@ -501,7 +504,13 @@ public actor ServiceSupervisor {
         portTask?.cancel()
         portTask = nil
         tail?.drain()
-        continuation?.yield(.exited(status: status, requestedByUser: stopRequested))
+        continuation?.yield(
+            .exited(
+                status: status,
+                requestedByUser: stopRequested,
+                startupConfirmed: false
+            )
+        )
 
         // 終了直前に書き出された分を取りこぼさないよう、少し待ってから読み切って閉じる。
         Task { [weak self] in

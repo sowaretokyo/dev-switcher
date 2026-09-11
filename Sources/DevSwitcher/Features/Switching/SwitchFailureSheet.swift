@@ -59,6 +59,13 @@ struct SwitchFailureSheet: View {
                     }
                     .foregroundStyle(.red)
                     .disabled(!state.canStop)
+                } else if let activeProject = state.activeProject {
+                    Button("残っているプロセスを停止") {
+                        dismiss()
+                        state.stopProject(activeProject)
+                    }
+                    .foregroundStyle(.red)
+                    .disabled(!state.canStop)
                 }
                 if let logTarget = presentation.logTarget {
                     Button("ログを開く") {

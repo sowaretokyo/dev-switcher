@@ -65,6 +65,26 @@ private struct BannerArea: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let incident = state.runtimeIncident {
+                Banner(
+                    title: "プロセスが予期せず終了しました",
+                    message: "\(incident.serviceName): \(incident.status)",
+                    tint: .red,
+                    messageLineLimit: 3
+                ) {
+                    HStack(spacing: Spacing.s) {
+                        Button("ログを開く") {
+                            state.openLogTarget(
+                                .service(
+                                    projectID: incident.projectID,
+                                    serviceID: incident.serviceID
+                                )
+                            )
+                        }
+                        Button("閉じる") { state.dismissRuntimeIncident() }
+                    }
+                }
+            }
             if let operationError = state.operationError {
                 Banner(
                     title: "操作に失敗しました",

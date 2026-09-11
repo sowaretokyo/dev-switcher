@@ -673,6 +673,7 @@ struct HandoffTests {
             environmentLoader: { fixedShellEnvironment }
         )
         let readyFile = directory.appendingPathComponent("late.ready")
+        let testProcessID = getpid()
         // 起動してしばらくしてから子を作るサービス。
         let service = makeService(
             name: "Late",
@@ -681,8 +682,14 @@ struct HandoffTests {
             executable: "/bin/sh",
             arguments: [
                 "-c",
-                "sleep 0.4; /bin/sh -c 'while true; do sleep 0.2; done' &"
-                    + " echo late > \"\(readyFile.path)\"; sleep 120",
+                "sleep 0.4; /bin/sh -c 'remaining=600; while kill -0 \(testProcessID)"
+                    + " 2>/dev/null && [ -d \"\(directory.path)\" ]"
+                    + " && [ \"$remaining\" -gt 0 ];"
+                    + " do remaining=$((remaining - 1)); sleep 0.2; done' &"
+                    + " echo late > \"\(readyFile.path)\"; remaining=600;"
+                    + " while kill -0 \(testProcessID) 2>/dev/null"
+                    + " && [ -d \"\(directory.path)\" ] && [ \"$remaining\" -gt 0 ];"
+                    + " do remaining=$((remaining - 1)); sleep 0.2; done",
             ],
             workingDirectory: directory
         )

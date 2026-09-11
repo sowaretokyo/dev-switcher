@@ -15,7 +15,7 @@ struct SidebarView: View {
                         projectRows(project)
                     }
                 } header: {
-                    SectionLabel("起動済み")
+                    SectionLabel("動作中")
                 }
             }
             Section {
@@ -53,11 +53,11 @@ struct SidebarView: View {
     }
 
     private var activeProjects: [ProjectDefinition] {
-        state.projects.filter { state.phase(of: $0).isActive }
+        state.projects.filter { state.hasManagedResources(in: $0) }
     }
 
     private var inactiveProjects: [ProjectDefinition] {
-        state.projects.filter { !state.phase(of: $0).isActive }
+        state.projects.filter { !state.hasManagedResources(in: $0) }
     }
 
     @ViewBuilder
@@ -136,6 +136,7 @@ private struct ServiceRow: View {
 
     var body: some View {
         let phase = state.state(of: service.id).phase
+        let unreadStderrCount = state.logBuffer(of: service.id).unreadStderrCount
 
         HStack(spacing: Spacing.tight) {
             StatusDot(phase: phase)
@@ -143,6 +144,16 @@ private struct ServiceRow: View {
                 .font(Typography.row)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if unreadStderrCount > 0 {
+                Text(unreadStderrCount > 99 ? "99+" : "\(unreadStderrCount)")
+                    .font(Typography.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, 1)
+                    .background(.red, in: Capsule())
+                    .help("未読の stderr が \(unreadStderrCount) 行あります。選択するとログを確認できます。")
+                    .accessibilityLabel("未読エラーログ \(unreadStderrCount) 行")
+            }
             Spacer(minLength: Spacing.xs)
             Text(portSummary)
                 .font(Typography.monoSmall)

@@ -74,6 +74,7 @@ struct AppStateOperationTests {
         #expect(state.switchPresentation == nil)
         #expect(state.inlineOperation?.projectID == fixture.project.id)
         #expect(state.inlineOperation?.kind == .stopping)
+        #expect(state.phase(of: fixture.project) == .stopping)
 
         await state.waitForPendingOperation()
 
@@ -104,6 +105,7 @@ struct AppStateOperationTests {
         #expect(state.switchPresentation == nil)
         #expect(state.inlineOperation?.projectID == project.id)
         #expect(state.inlineOperation?.kind == .starting)
+        #expect(state.phase(of: project) == .starting)
 
         await state.waitForPendingOperation()
 
@@ -270,6 +272,7 @@ struct AppStateOperationTests {
         currentSink(current)
         #expect(await waitForCondition { state.switchPresentation?.state == current })
         #expect(state.switchPresentation?.canCancel == true)
+        #expect(state.phase(of: fixture.project) == .stopping)
 
         await gate.release()
         await state.waitForPendingOperation()
@@ -311,5 +314,45 @@ struct AppStateOperationTests {
         #expect(state.switchPresentation == nil)
         #expect(state.inlineOperation == nil)
         #expect(state.phase(of: project) == .stopped)
+    }
+
+    @Test("起動確認後の終了はhealthyの画面反映前でも通知する")
+    func confirmedExitIsReportedBeforeHealthyUIState() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let project = makeWorkerProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let state = makeAppState(directory: directory)
+        state.loadProjects()
+        let service = try #require(state.project(project.id)?.services.first)
+        let events = state.serviceEventSinkForTesting()
+
+        events(
+            service.id,
+            .exited(
+                status: .exited(code: 2),
+                requestedByUser: false,
+                startupConfirmed: false
+            )
+        )
+        #expect(await waitForCondition {
+            state.state(of: service.id).lastMessage == "終了コード 2"
+        })
+        #expect(state.runtimeIncident == nil)
+
+        events(service.id, .logSessionStarted)
+        events(
+            service.id,
+            .exited(
+                status: .exited(code: 7),
+                requestedByUser: false,
+                startupConfirmed: true
+            )
+        )
+        #expect(await waitForCondition {
+            state.runtimeIncident?.serviceID == service.id
+        })
+        #expect(state.runtimeIncident?.status == "終了コード 7")
     }
 }

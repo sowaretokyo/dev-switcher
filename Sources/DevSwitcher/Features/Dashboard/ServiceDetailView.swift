@@ -19,6 +19,19 @@ struct ServiceDetailView: View {
             Divider()
             footer(buffer)
         }
+        .onAppear {
+            state.markLogAsRead(serviceID: service.id)
+        }
+        .onChange(of: service.id) { _, serviceID in
+            state.markLogAsRead(serviceID: serviceID)
+        }
+    }
+
+    private var restartOperation: AppState.ServiceRestartOperation? {
+        guard let operation = state.serviceRestartOperation,
+              operation.projectID == project.id,
+              operation.serviceID == service.id else { return nil }
+        return operation
     }
 
     private func header(_ uiState: AppState.ServiceUIState) -> some View {
@@ -32,13 +45,34 @@ struct ServiceDetailView: View {
                     .foregroundStyle(.secondary)
                 StatusLabel(phase: uiState.phase)
                 Spacer(minLength: Spacing.s)
-                // 起動・停止はプロジェクト単位でのみ行う。サービス単体の起動経路を残すと、
-                // 起動順・ゲート・failurePolicy を迂回できてしまう。
-                Text("起動と停止は開発環境単位")
+                if restartOperation != nil {
+                    HStack(spacing: Spacing.tight) {
+                        ProgressView().controlSize(.small)
+                        Text("再起動中")
+                    }
+                    .font(Typography.support)
+                    .foregroundStyle(.secondary)
+                } else if service.kind != .supabase {
+                    Button {
+                        state.restart(service, in: project)
+                    } label: {
+                        Label("再起動", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!state.canRestart(service, in: project))
+                    .help(
+                        state.restartBlockedReason(for: service, in: project)
+                            ?? "\(service.name) だけを停止し、ポートの解放確認後に起動します"
+                    )
+                }
+                Text("起動・停止は開発環境単位")
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
-                    .help("プロセス単体では起動・停止できません。開発環境の詳細とツールバーから操作します。")
+                    .help("通常の起動・停止は開発環境単位です。起動済み環境の通常プロセスだけ個別に再起動できます。")
+            }
+
+            if let restartOperation {
+                NoteText(restartOperation.state.label, tint: .secondary)
             }
 
             // 値の長さは実行時に決まる。固定の横並びにすると狭い幅で切れるので折り返す。
