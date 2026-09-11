@@ -13,6 +13,13 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
     case ownershipLost(service: String)
     case residualProcessesRemain(service: String, processGroupID: pid_t)
     case stopCommandUnsupported(service: String)
+    case managedCommandInvalid(service: String, reason: String)
+    case managedStartOwnershipUnconfirmed(
+        service: String,
+        projectID: SupabaseProjectID,
+        state: SupabaseStackState,
+        reason: String
+    )
 
     public var description: String {
         switch self {
@@ -42,6 +49,12 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
             "サービス「\(service)」の前回のプロセスが残っています（プロセスグループ \(processGroupID)）。残りを停止してから起動してください。"
         case let .stopCommandUnsupported(service):
             "サービス「\(service)」には終了コマンドが設定されています。終了コマンドで管理するサービス（managed command）の実行は Post-MVP で対応します。プロセスグループの停止で代用すると停止できたか確認できないため、起動を中止しました。"
+        case let .managedCommandInvalid(service, reason):
+            "サービス「\(service)」の管理コマンドを構成できません。\n\(reason)"
+        case let .managedStartOwnershipUnconfirmed(service, projectID, state, reason):
+            "サービス「\(service)」のSupabase「\(projectID)」は起動処理の前後で"
+                + "\(state.label)と観測されましたが、Dev Switcherが起動したスタックか確定できません。"
+                + "停止権限を持たないため自動停止していません。再度起動操作を行い、現在のスタックの扱いを確認してください。\n\(reason)"
         }
     }
 }

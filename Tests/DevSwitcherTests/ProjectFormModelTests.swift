@@ -5,7 +5,7 @@ import Testing
 
 /// 単一シートの開発環境追加・編集フォームの検証。
 ///
-/// ポートは全サービスで任意。種別から既定値を自動入力しない。
+/// ポートは全サービスで任意。Supabaseの空コマンドだけはCLIの既定値を補助入力する。
 /// 入力された番号は表示と「開く」URL の補助情報であり、起動可否の根拠にしない。
 /// 編集画面が扱わない終了順・今回の起動対象・終了コマンドは保存時に落とさない。
 @Suite("開発環境フォーム")
@@ -55,17 +55,19 @@ struct ProjectFormModelTests {
 
     /// 3件のサービスを持つプロジェクト。全フィールドを別々の値にして取り違えを検出する。
     private func makeThreeServiceProject(directory: URL) throws -> ProjectDefinition {
-        let supabaseDirectory = directory.appendingPathComponent("supabase", isDirectory: true)
+        let supabaseDirectory = directory.appendingPathComponent("stack", isDirectory: true)
         try FileManager.default.createDirectory(
             at: supabaseDirectory,
             withIntermediateDirectories: true
         )
+        // `project_id`は設定ファイルから解決する。保存前に用意しておく。
+        try writeSupabaseConfig(projectID: "bell", in: supabaseDirectory)
 
         let supabase = makeService(
             name: "Supabase",
             kind: .supabase,
-            executable: "/usr/bin/env",
-            arguments: ["supabase", "dev"],
+            executable: "supabase",
+            arguments: ["start"],
             workingDirectory: supabaseDirectory,
             enabledByDefault: true,
             failurePolicy: .block
@@ -108,15 +110,15 @@ struct ProjectFormModelTests {
         #expect(model.services.map(\.id) == project.services.map(\.id))
         #expect(model.services.map(\.name) == ["Supabase", "Web", "Worker"])
         #expect(model.services.map(\.kind) == [.supabase, .web, .worker])
-        #expect(model.services.map(\.executable) == ["/usr/bin/env", "pnpm", "/bin/sleep"])
-        #expect(model.services.map(\.argumentsText) == ["supabase\ndev", "dev", "120"])
+        #expect(model.services.map(\.executable) == ["supabase", "pnpm", "/bin/sleep"])
+        #expect(model.services.map(\.argumentsText) == ["start", "dev", "120"])
         #expect(model.services.map(\.enabledByDefault) == [true, true, false])
         #expect(model.services.map(\.failurePolicy) == [.block, .block, .continue])
         #expect(model.workingDirectories.count == 2)
         let supabaseDirectory = try #require(
-            model.workingDirectories.first { $0.directory?.lastPathComponent == "supabase" }
+            model.workingDirectories.first { $0.directory?.lastPathComponent == "stack" }
         )
-        #expect(supabaseDirectory.name == "supabase")
+        #expect(supabaseDirectory.name == "stack")
         #expect(supabaseDirectory.services.map(\.name) == ["Supabase"])
         let rootDirectory = try #require(
             model.workingDirectories.first { $0.directory == directory }
@@ -206,10 +208,17 @@ struct ProjectFormModelTests {
     func servicesCanBeAddedRemovedAndReordered() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        try writeSupabaseConfig(projectID: "bell", in: directory)
 
         let project = makeProject(
             with: [
-                makeService(name: "Supabase", kind: .supabase, workingDirectory: directory),
+                makeService(
+                    name: "Supabase",
+                    kind: .supabase,
+                    executable: "supabase",
+                    arguments: ["start"],
+                    workingDirectory: directory
+                ),
                 makeService(name: "Web", kind: .web, workingDirectory: directory),
                 makeService(name: "Worker", kind: .worker, workingDirectory: directory),
             ],
@@ -307,7 +316,12 @@ struct ProjectFormModelTests {
             arguments: ["stop"],
             workingDirectory: directory
         )
-        let first = makeService(name: "Supabase", kind: .supabase, workingDirectory: directory, stop: stop)
+        let first = makeService(
+            name: "Custom",
+            kind: .other,
+            workingDirectory: directory,
+            stop: stop
+        )
         let second = makeService(name: "Web", kind: .web, workingDirectory: directory)
         let third = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
         // 既定（起動順の逆）ではない終了順を明示している。
@@ -347,15 +361,20 @@ struct ProjectFormModelTests {
             arguments: ["supabase", "stop"],
             workingDirectory: directory
         )
-        let supabase = makeService(name: "Supabase", kind: .supabase, workingDirectory: directory, stop: stop)
+        let custom = makeService(
+            name: "Custom",
+            kind: .other,
+            workingDirectory: directory,
+            stop: stop
+        )
         let web = makeService(name: "Web", kind: .web, workingDirectory: directory)
-        let project = makeProject(with: [supabase, web], directory: directory)
+        let project = makeProject(with: [custom, web], directory: directory)
 
         let model = ProjectFormModel(project: project)
-        model.moveService(supabase.id, by: 1)
+        model.moveService(custom.id, by: 1)
 
         let rebuilt = try model.build()
-        #expect(rebuilt.services.map(\.name) == ["Web", "Supabase"])
+        #expect(rebuilt.services.map(\.name) == ["Web", "Custom"])
         #expect(rebuilt.services[0].stop == nil)
         #expect(rebuilt.services[1].stop == stop)
     }
@@ -364,8 +383,15 @@ struct ProjectFormModelTests {
     func stopOrderAndEnabledNowFollowServiceChanges() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        try writeSupabaseConfig(projectID: "bell", in: directory)
 
-        let first = makeService(name: "Supabase", kind: .supabase, workingDirectory: directory)
+        let first = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start"],
+            workingDirectory: directory
+        )
         let second = makeService(name: "Web", kind: .web, workingDirectory: directory)
         let third = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
         let project = makeProject(
@@ -454,6 +480,23 @@ struct ProjectFormModelTests {
         model.services[0].kind = .web
 
         #expect(model.services[0].ports.map(\.port) == ["9999"])
+    }
+
+    @Test("空のプロセスをSupabaseへ変えるとCLIコマンドを補助入力し、入力済みなら上書きしない")
+    func supabaseKindProvidesCommandDefaultsOnlyForBlankInput() {
+        let model = ProjectFormModel()
+        let serviceID = model.services[0].id
+
+        model.setKind(.supabase, for: serviceID)
+        #expect(model.services[0].executable == "supabase")
+        #expect(model.services[0].argumentsText == "start")
+
+        model.services[0].executable = "pnpm"
+        model.services[0].argumentsText = "exec\nsupabase\nstart"
+        model.setKind(.web, for: serviceID)
+        model.setKind(.supabase, for: serviceID)
+        #expect(model.services[0].executable == "pnpm")
+        #expect(model.services[0].argumentsText == "exec\nsupabase\nstart")
     }
 
     @Test("ポート未入力の Web・Inngest・worker を1つのプロジェクトへ保存できる")

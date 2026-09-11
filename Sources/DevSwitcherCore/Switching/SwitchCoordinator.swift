@@ -112,6 +112,10 @@ public actor SwitchCoordinator {
     /// 単体再起動で対象を停止した後の再開地点。
     /// ポートと失敗理由を一体で持ち、通常の未起動サービスと区別する。
     private var restartRecoveries: [UUID: RestartRecovery] = [:]
+    /// 今回引き継いだSupabase。今回起動した分と違い、巻き戻しの対象にしない。
+    private var adoptedServiceIDs: Set<UUID> = []
+    /// 巻き戻し後も稼働したまま残った引き継ぎ分。停止導線を残すため残存として表示する。
+    private var residualManagedServiceIDs: Set<UUID> = []
     private var observations: [UUID: ServiceObservation] = [:]
     private var consumers: [UUID: Task<Void, Never>] = [:]
 
@@ -147,33 +151,57 @@ public actor SwitchCoordinator {
     // MARK: - 入口
 
     /// プロジェクトを起動する（切替元なし）。
+    ///
+    /// `registeredProjects`は`project_id`の一意性確認と、既存スタックの登録有無の表示に使う。
+    /// `supabaseApproval`は利用者が確認シートで承認した内容。承認前は既存スタックを変更しない。
     public func start(
         _ project: ProjectDefinition,
+        registeredProjects: [ProjectDefinition] = [],
+        supabaseApproval: SupabaseApproval? = nil,
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
     ) async throws -> SwitchOutcome {
-        try await run(stopping: nil, starting: project, progress: progress, events: events)
+        try await run(
+            stopping: nil,
+            starting: project,
+            registeredProjects: registeredProjects,
+            supabaseApproval: supabaseApproval,
+            progress: progress,
+            events: events
+        )
     }
 
     /// プロジェクトを停止する（切替先なし）。
     public func stop(
         _ project: ProjectDefinition,
+        registeredProjects: [ProjectDefinition] = [],
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
     ) async throws -> SwitchOutcome {
-        try await run(stopping: project, starting: nil, progress: progress, events: events)
+        try await run(
+            stopping: project,
+            starting: nil,
+            registeredProjects: registeredProjects,
+            supabaseApproval: nil,
+            progress: progress,
+            events: events
+        )
     }
 
     /// 切替。停止 → ポート解放の確認 → 起動の順を崩さない。
     public func switchProject(
         from source: ProjectDefinition,
         to target: ProjectDefinition,
+        registeredProjects: [ProjectDefinition] = [],
+        supabaseApproval: SupabaseApproval? = nil,
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
     ) async throws -> SwitchOutcome {
         try await run(
             stopping: source,
             starting: target,
+            registeredProjects: registeredProjects,
+            supabaseApproval: supabaseApproval,
             progress: progress,
             events: events
         )
@@ -347,11 +375,38 @@ public actor SwitchCoordinator {
         await clearProjectStateIfFullyStopped(project)
     }
 
+    /// 起動後の保存失敗では、今回起動したサービスだけを補償停止する。
+    /// 引き継いだSupabaseと操作前から管理していた対象は、明示停止のために残す。
+    public func stopAfterUnsavedStart(
+        _ project: ProjectDefinition,
+        preserving previouslyManagedIDs: Set<UUID>,
+        progress: @escaping ProgressSink = { _ in }
+    ) async throws {
+        guard !inFlight else { throw RuntimeError.operationInProgress }
+        inFlight = true
+        defer { inFlight = false }
+
+        var preserved = previouslyManagedIDs
+        for serviceID in await registry.occupyingServiceIDs(projectID: project.id) {
+            let relationship = await registry.managedRelationship(serviceID: serviceID)
+            if relationship == .adopted || relationship == .restored {
+                preserved.insert(serviceID)
+                residualManagedServiceIDs.insert(serviceID)
+            }
+        }
+        let ports = try await stopPhase(
+            project, target: nil, excluding: preserved, progress: progress
+        )
+        try await releaseGate(ports: ports, source: project, target: nil, progress: progress)
+    }
+
     // MARK: - 本体
 
     private func run(
         stopping source: ProjectDefinition?,
         starting target: ProjectDefinition?,
+        registeredProjects: [ProjectDefinition],
+        supabaseApproval: SupabaseApproval?,
         progress: @escaping ProgressSink,
         events: @escaping EventSink
     ) async throws -> SwitchOutcome {
@@ -383,10 +438,42 @@ public actor SwitchCoordinator {
             cancelRequested = false
         }
 
+        // 登録済みSupabaseの`project_id`を毎回解決し直す。観測の基準もここで入れ替える。
+        let supabaseResolution = resolveSupabaseConfigurations(
+            registeredProjects: registeredProjects,
+            source: source,
+            target: target
+        )
+        await registry.setKnownSupabaseConfigurations(supabaseResolution.configurations)
+        // 起動・停止・切替の直前に実測し直す。保存済みの表示値のまま停止判断をしない。
+        await refreshManagedObservations()
+        // 解決できない、または重複する`project_id`があれば新しい起動・切替はしない。
+        // 単独停止は復旧手段なので、この理由では止めない。
+        if target != nil, !supabaseResolution.errors.isEmpty {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    "Supabaseの`project_id`を確認できません。\n"
+                        + supabaseResolution.errors.joined(separator: "\n")
+                ),
+                facts: await facts(source: source, target: target)
+            )
+        }
+
         // 起動前の検証。実行できない設定は、停止を始める前に落とす。
         // 停止してから「起動できません」と言うと、どちらも動いていない状態を作る。
         if let target, let failure = await preflight(target, source: source) {
             throw failure
+        }
+
+        // 既存スタックの実測と確認は、切替元・切替先のどちらも変更する前に行う。
+        var supabasePlan: SupabaseExecutionPlan?
+        if let target {
+            supabasePlan = try await resolveSupabasePlan(
+                target: target,
+                source: source,
+                resolution: supabaseResolution,
+                approval: supabaseApproval
+            )
         }
 
         var portsToRelease: [Int] = []
@@ -415,9 +502,19 @@ public actor SwitchCoordinator {
 
         // ここから先は中止を受け付けない。
         enteredStartPhase = true
+        if let supabasePlan {
+            try await executeSupabaseStops(
+                supabasePlan,
+                source: source,
+                target: target,
+                resolution: supabaseResolution,
+                progress: progress
+            )
+        }
         let degraded = try await startPhase(
             target,
             source: source,
+            supabasePlan: supabasePlan,
             progress: progress,
             events: events
         )
@@ -427,6 +524,420 @@ public actor SwitchCoordinator {
             facts: await facts(source: source, target: target),
             degradedServices: degraded
         )
+    }
+
+    // MARK: - Supabaseスタック
+
+    /// 今回の起動対象に対して確定した処理内容。
+    /// 確認が必要な場合は、この値を作る前に`SwitchFailure`で中断している。
+    private struct SupabaseExecutionPlan {
+        let service: ServiceDefinition
+        let configuration: SupabaseServiceConfiguration
+        let projectID: SupabaseProjectID
+        /// `adopt`は`supabase start`を実行しない。`restart`は対象を停止してから起動する。
+        let action: SupabaseConfirmationTarget.Action
+        /// 起動前に停止する`project_id`。`restart`では対象自身も含む。
+        let stopProjectIDs: [SupabaseProjectID]
+    }
+
+    /// 登録済みSupabaseの設定解決結果。
+    private struct SupabaseConfigurationResolution {
+        var configurations: [SupabaseProjectID: SupabaseServiceConfiguration] = [:]
+        var projectIDsByService: [UUID: SupabaseProjectID] = [:]
+        var owners: [SupabaseProjectID: SupabaseConfirmationTarget.Registration] = [:]
+        var errors: [String] = []
+    }
+
+    /// 全登録済みSupabaseの`project_id`を設定ファイルから解決し、重複を検出する。
+    /// 解決できないものは既定値で補わず、理由を残す。
+    private func resolveSupabaseConfigurations(
+        registeredProjects: [ProjectDefinition],
+        source: ProjectDefinition?,
+        target: ProjectDefinition?
+    ) -> SupabaseConfigurationResolution {
+        var seenProjectIDs: Set<UUID> = []
+        var projects: [ProjectDefinition] = []
+        for project in registeredProjects + [source, target].compactMap({ $0 })
+        where seenProjectIDs.insert(project.id).inserted {
+            projects.append(project)
+        }
+
+        var result = SupabaseConfigurationResolution()
+        for project in projects {
+            for service in project.services where service.kind == .supabase {
+                guard let configuration = service.supabaseConfiguration else {
+                    result.errors.append(
+                        "「\(project.name)」の \(service.name): \(service.supabaseConfigurationFailureReason)"
+                    )
+                    continue
+                }
+                do {
+                    let projectID = try configuration.resolveProjectID()
+                    if let owner = result.owners[projectID] {
+                        result.errors.append(
+                            ValidationError.duplicateSupabaseProjectID(
+                                projectID: projectID.rawValue,
+                                otherProject: owner.projectName
+                            ).description
+                        )
+                        continue
+                    }
+                    result.configurations[projectID] = configuration
+                    result.projectIDsByService[service.id] = projectID
+                    result.owners[projectID] = SupabaseConfirmationTarget.Registration(
+                        projectName: project.name,
+                        serviceName: service.name,
+                        configDirectory: configuration.configDirectory
+                    )
+                } catch {
+                    result.errors.append("「\(project.name)」の \(service.name): \(error)")
+                }
+            }
+        }
+        return result
+    }
+
+    /// 既存スタックを実測し、確認が要るかどうかも含めて今回の処理内容を決める。
+    ///
+    /// ここは変更操作の前に呼ぶ。承認済みの場合も、実行直前のこの観測結果と
+    /// 承認内容（IDの集合・状態・対象設定）が一致しなければ何も変更しない。
+    private func resolveSupabasePlan(
+        target: ProjectDefinition,
+        source: ProjectDefinition?,
+        resolution: SupabaseConfigurationResolution,
+        approval: SupabaseApproval?
+    ) async throws -> SupabaseExecutionPlan? {
+        guard let service = target.enabledStartupOrder.first(where: { $0.kind == .supabase })
+        else { return nil }
+        guard let configuration = service.supabaseConfiguration,
+              let projectID = resolution.projectIDsByService[service.id] else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    RuntimeError.managedCommandInvalid(
+                        service: service.name,
+                        reason: service.supabaseConfigurationFailureReason
+                    ).description
+                ),
+                facts: await facts(source: source, target: target)
+            )
+        }
+
+        let snapshot = await registry.observeSupabaseStacks()
+        try await throwIfUnknown(snapshot, source: source, target: target)
+
+        let plan = makeSupabasePlan(
+            service: service,
+            configuration: configuration,
+            projectID: projectID,
+            projectName: target.name,
+            snapshot: snapshot,
+            skippingStopFor: await managedProjectIDsStoppedWith(source),
+            resolution: resolution
+        )
+
+        if plan.requiresConfirmation, approval != plan.approval {
+            // 未承認、または承認後に対象・状態・設定が変わった。何も変更せず確認し直す。
+            throw SwitchFailure(
+                reason: .supabaseConfirmationRequired(plan: plan),
+                facts: await facts(source: source, target: target)
+            )
+        }
+
+        var stopProjectIDs = plan.stopTargets.map(\.projectID)
+        if plan.target.action == .restart {
+            // 対象を含む承認済み全件を停止してから、対象だけを起動する。
+            stopProjectIDs.append(projectID)
+        }
+        return SupabaseExecutionPlan(
+            service: service,
+            configuration: configuration,
+            projectID: projectID,
+            action: plan.target.action,
+            stopProjectIDs: stopProjectIDs
+        )
+    }
+
+    private func makeSupabasePlan(
+        service: ServiceDefinition,
+        configuration: SupabaseServiceConfiguration,
+        projectID: SupabaseProjectID,
+        projectName: String,
+        snapshot: SupabaseStackSnapshot,
+        skippingStopFor skipped: Set<SupabaseProjectID>,
+        resolution: SupabaseConfigurationResolution
+    ) -> SupabaseConfirmationPlan {
+        let targetState = snapshot.state(of: projectID)
+        let action: SupabaseConfirmationTarget.Action
+        switch targetState {
+        case .running: action = .adopt
+        case .degraded: action = .restart
+        case .notRunning, .unknown: action = .start
+        }
+
+        // 切替元の管理下スタックは通常の停止処理で止まる。確認を重ねて出さない。
+        let stopTargets = snapshot.observations
+            .filter { $0.projectID != projectID && !skipped.contains($0.projectID) }
+            .map {
+                SupabaseConfirmationTarget(
+                    projectID: $0.projectID,
+                    state: $0.state,
+                    action: .stop,
+                    registration: resolution.owners[$0.projectID]
+                )
+            }
+
+        return SupabaseConfirmationPlan(
+            serviceID: service.id,
+            serviceName: service.name,
+            projectName: projectName,
+            target: SupabaseConfirmationTarget(
+                projectID: projectID,
+                state: targetState,
+                action: action,
+                registration: resolution.owners[projectID]
+            ),
+            stopTargets: stopTargets,
+            snapshot: snapshot,
+            fingerprint: configuration.fingerprint
+        )
+    }
+
+    /// 切替元と一緒に停止される管理下スタックの`project_id`。
+    private func managedProjectIDsStoppedWith(
+        _ source: ProjectDefinition?
+    ) async -> Set<SupabaseProjectID> {
+        guard let source else { return [] }
+        let managed = await registry.managedSupabaseProjectIDs()
+        let sourceServiceIDs = Set(source.services.map(\.id))
+        return Set(managed.filter { sourceServiceIDs.contains($0.key) }.values)
+    }
+
+    private func throwIfUnknown(
+        _ snapshot: SupabaseStackSnapshot,
+        source: ProjectDefinition?,
+        target: ProjectDefinition?
+    ) async throws {
+        guard snapshot.hasUnknown else { return }
+        throw SwitchFailure(
+            reason: .supabaseObservationFailed(
+                details: snapshot.failureDetails
+            ),
+            facts: await facts(source: source, target: target)
+        )
+    }
+
+    /// 承認済みの`project_id`を1件ずつ停止し、そのつど`notRunning`を確認する。
+    /// 途中で失敗したら後続の停止と起動を中断し、停止済みのスタックは再起動しない。
+    private func executeSupabaseStops(
+        _ plan: SupabaseExecutionPlan,
+        source: ProjectDefinition?,
+        target: ProjectDefinition,
+        resolution: SupabaseConfigurationResolution,
+        progress: @escaping ProgressSink
+    ) async throws {
+        var stopped: [String] = []
+        var remaining = plan.stopProjectIDs
+        let total = remaining.count
+        while !remaining.isEmpty {
+            let projectID = remaining.removeFirst()
+            progress(
+                .stopping(
+                    service: "Supabase \(projectID)",
+                    index: stopped.count + 1,
+                    total: total
+                )
+            )
+            do {
+                try await registry.stopUnmanagedStack(
+                    using: plan.configuration,
+                    projectID: projectID
+                )
+                stopped.append(projectID.rawValue)
+            } catch {
+                throw SwitchFailure(
+                    reason: .supabaseStopFailed(
+                        projectID: projectID.rawValue,
+                        reason: "\(error)",
+                        stopped: stopped,
+                        remaining: remaining.map(\.rawValue)
+                    ),
+                    facts: await facts(source: source, target: target)
+                )
+            }
+        }
+
+        // 停止が無くても、引き継ぐ直前に対象がまだ`running`かを確かめる。
+        guard !plan.stopProjectIDs.isEmpty || plan.action == .adopt else { return }
+
+        let snapshot = await registry.observeSupabaseStacks()
+        try await throwIfUnknown(snapshot, source: source, target: target)
+
+        let expected: SupabaseStackState = plan.action == .adopt ? .running : .notRunning
+        let latest = makeSupabasePlan(
+            service: plan.service,
+            configuration: plan.configuration,
+            projectID: plan.projectID,
+            projectName: target.name,
+            snapshot: snapshot,
+            skippingStopFor: await managedProjectIDsStoppedWith(source),
+            resolution: resolution
+        )
+        guard latest.target.state == expected, latest.stopTargets.isEmpty else {
+            // 停止後に予期しないスタックが現れた、または対象の状態が変わった。
+            throw SwitchFailure(
+                reason: .supabaseConfirmationRequired(plan: latest),
+                facts: await facts(source: source, target: target)
+            )
+        }
+    }
+
+    /// 計画に従ってSupabaseを起動、または引き継ぐ。
+    private func beginSupabase(
+        _ plan: SupabaseExecutionPlan,
+        in target: ProjectDefinition
+    ) async throws -> AsyncStream<ServiceSupervisor.Event> {
+        switch plan.action {
+        case .adopt:
+            adoptedServiceIDs.insert(plan.service.id)
+            return try await registry.adoptManagedStack(
+                service: plan.service,
+                in: target,
+                configuration: plan.configuration,
+                projectID: plan.projectID,
+                relationship: .adopted,
+                observation: SupabaseStackObservation(
+                    projectID: plan.projectID,
+                    state: .running
+                )
+            )
+        case .start, .restart:
+            // 停止を確認した以前の引き継ぎを、今回の起動の巻き戻し判定へ持ち越さない。
+            clearState(of: plan.service.id)
+            return try await registry.startManagedStack(
+                service: plan.service,
+                in: target,
+                configuration: plan.configuration,
+                projectID: plan.projectID
+            )
+        case .stop:
+            throw RuntimeError.managedCommandInvalid(
+                service: plan.service.name,
+                reason: "停止だけの計画から起動はできません。"
+            )
+        }
+    }
+
+    // MARK: - 保存済み手掛かりからの復元
+
+    public enum ManagedRestoreOutcome: Equatable, Sendable {
+        /// 実測と一致したため`restored`として管理下へ戻した。
+        case restored(SupabaseStackState)
+        /// 対象`project_id`のコンテナが無い。手掛かりは破棄してよい。
+        case notRunning
+        /// 再検証できないため、statusもstopも実行しなかった。手掛かりは残す。
+        case skipped(reason: String)
+    }
+
+    /// アプリ起動時・フォアグラウンド復帰時の観測。
+    /// 確認表示、引き継ぎ、停止は行わず、表示と管理下の実測値だけを更新する。
+    @discardableResult
+    public func observeSupabaseStacks(
+        registeredProjects: [ProjectDefinition]
+    ) async -> SupabaseStackSnapshot {
+        let resolution = resolveSupabaseConfigurations(
+            registeredProjects: registeredProjects,
+            source: nil,
+            target: nil
+        )
+        await registry.setKnownSupabaseConfigurations(resolution.configurations)
+        return await refreshManagedObservations()
+    }
+
+    @discardableResult
+    private func refreshManagedObservations() async -> SupabaseStackSnapshot {
+        let managed = await registry.managedSupabaseProjectIDs()
+        let snapshot = await registry.refreshManagedObservations()
+        for (serviceID, projectID) in managed where snapshot.observation(of: projectID).state == .notRunning {
+            clearState(of: serviceID)
+        }
+        return snapshot
+    }
+
+    /// 保存済み手掛かりを実測で再検証し、一致した場合だけ`restored`として管理下へ戻す。
+    /// 保存値だけで稼働中へは戻さない。一致しなければコマンドを実行しない。
+    public func restoreManagedStack(
+        hint: ManagedRuntimeHint,
+        service: ServiceDefinition,
+        in project: ProjectDefinition,
+        registeredProjects: [ProjectDefinition]
+    ) async -> ManagedRestoreOutcome {
+        guard !inFlight else {
+            return .skipped(reason: "ほかの起動・停止・切替を実行中です。")
+        }
+        inFlight = true
+        defer { inFlight = false }
+
+        guard hint.relationship != nil else {
+            return .skipped(
+                reason: "旧形式の手掛かりには`project_id`と設定の記録がないため、状態確認コマンドを実行しません。"
+            )
+        }
+        let resolution = resolveSupabaseConfigurations(
+            registeredProjects: registeredProjects,
+            source: nil,
+            target: project
+        )
+        await registry.setKnownSupabaseConfigurations(resolution.configurations)
+
+        guard let projectID = resolution.projectIDsByService[service.id] else {
+            return .skipped(
+                reason: "現在の設定から`project_id`を解決できないため、状態確認コマンドを実行しません。"
+            )
+        }
+        guard let configuration = hint.verifiedConfiguration(
+            of: service,
+            currentProjectID: projectID
+        ) else {
+            return .skipped(
+                reason: "保存時の設定ディレクトリ・起動コマンド・`project_id`と一致しないため、状態確認コマンドを実行しません。"
+            )
+        }
+
+        let snapshot = await registry.observeSupabaseStacks()
+        let observation = snapshot.observation(of: projectID)
+
+        switch observation.state {
+        case .notRunning:
+            clearState(of: service.id)
+            return .notRunning
+        case .unknown:
+            return .skipped(
+                reason: observation.detail ?? "状態を確定できませんでした。"
+            )
+        case .running, .degraded:
+            do {
+                _ = try await registry.adoptManagedStack(
+                    service: service,
+                    in: project,
+                    configuration: configuration,
+                    projectID: projectID,
+                    relationship: .restored,
+                    observation: observation
+                )
+            } catch {
+                return .skipped(reason: "\(error)")
+            }
+            if observation.state == .running {
+                startedServiceIDs.insert(service.id)
+                failureReasons[service.id] = nil
+            } else {
+                // 停止導線は残す。起動済みにはしない。
+                startedServiceIDs.remove(service.id)
+                failureReasons[service.id] = observation.detail
+                    ?? "Supabaseの必須コンテナが揃っていません。"
+            }
+            return .restored(observation.state)
+        }
     }
 
     // MARK: - 起動前の検証
@@ -446,7 +957,35 @@ public actor SwitchCoordinator {
             )
         }
 
+        // 1開発環境に登録できるSupabaseは1件まで。設定検証と同じ制約をここでも守る。
+        let supabaseServices = services.filter { $0.kind == .supabase }
+        if supabaseServices.count > 1 {
+            return SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    ValidationError.multipleSupabaseServices(
+                        services: supabaseServices.map(\.name)
+                    ).description
+                ),
+                facts: await facts(source: source, target: target)
+            )
+        }
+
         for service in services {
+            if service.kind == .supabase {
+                // 状態の観測と確認は`resolveSupabasePlan`が行う。ここは設定の形式だけを見る。
+                if service.supabaseConfiguration == nil {
+                    return SwitchFailure(
+                        reason: .unsupportedConfiguration(
+                            RuntimeError.managedCommandInvalid(
+                                service: service.name,
+                                reason: service.supabaseConfigurationFailureReason
+                            ).description
+                        ),
+                        facts: await facts(source: source, target: target)
+                    )
+                }
+                continue
+            }
             if !service.usesProcessGroupStop {
                 return SwitchFailure(
                     reason: .unsupportedConfiguration(
@@ -570,10 +1109,13 @@ public actor SwitchCoordinator {
     private func stopPhase(
         _ source: ProjectDefinition,
         target: ProjectDefinition?,
+        excluding preservedServiceIDs: Set<UUID> = [],
         progress: @escaping ProgressSink
     ) async throws -> [Int] {
         let occupying = await registry.occupyingServiceIDs(projectID: source.id)
-        let toStop = source.shutdownOrder.filter { occupying.contains($0.id) }
+        let toStop = source.shutdownOrder.filter {
+            occupying.contains($0.id) && !preservedServiceIDs.contains($0.id)
+        }
 
         // 停止前にポートを実測し直す。定期ポーリングの間隔ぶん古い値でゲートを判定しない。
         for service in toStop {
@@ -612,7 +1154,7 @@ public actor SwitchCoordinator {
                 outcome = try await registry.stop(service: service, grace: options.stopGrace)
             } catch {
                 // 停止操作の前にプロセスが消えていることがある。実測して確かめる。
-                if await registry.occupiedProcessGroup(serviceID: service.id) == nil {
+                if await registry.isOccupyingResources(serviceID: service.id) == false {
                     clearState(of: service.id)
                     continue
                 }
@@ -676,7 +1218,7 @@ public actor SwitchCoordinator {
     /// 記録だけを消して実際には動いている、という状態を作らないため、確認してから消す。
     private func clearProjectStateIfFullyStopped(_ project: ProjectDefinition) async {
         for service in project.services {
-            if await registry.isRunning(serviceID: service.id) { return }
+            if await registry.isOccupyingResources(serviceID: service.id) { return }
             if await registry.occupiedProcessGroup(serviceID: service.id) != nil { return }
         }
         for service in project.services {
@@ -739,6 +1281,7 @@ public actor SwitchCoordinator {
     private func startPhase(
         _ target: ProjectDefinition,
         source: ProjectDefinition?,
+        supabasePlan: SupabaseExecutionPlan?,
         progress: @escaping ProgressSink,
         events: @escaping EventSink
     ) async throws -> [String] {
@@ -748,33 +1291,50 @@ public actor SwitchCoordinator {
 
         for (index, service) in services.enumerated() {
             progress(.starting(service: service.name, index: index + 1, total: services.count))
+            // 同じ設定で再試行したとき、前回の失敗理由を今回の理由へ連結しない。
+            failureReasons[service.id] = nil
 
-            let spec: StartupObservationSpec
-            do {
-                spec = try StartupObservationPolicy.spec(
-                    for: service,
-                    observationWindow: options.startupObservationWindow,
-                    pollInterval: options.startupPollInterval
-                )
-            } catch {
-                // preflight で弾いているはずだが、ここでも既定へ倒さない。
-                try await failStart(
-                    service: service,
-                    reason: "\(error)",
-                    target: target,
-                    source: source,
-                    startedInThisRun: startedInThisRun,
-                    degraded: &degraded,
-                    progress: progress
-                )
-                continue
+            let spec: StartupObservationSpec?
+            if service.kind == .supabase {
+                spec = nil
+            } else {
+                do {
+                    spec = try StartupObservationPolicy.spec(
+                        for: service,
+                        observationWindow: options.startupObservationWindow,
+                        pollInterval: options.startupPollInterval
+                    )
+                } catch {
+                    // preflight で弾いているはずだが、ここでも既定へ倒さない。
+                    try await failStart(
+                        service: service,
+                        reason: "\(error)",
+                        target: target,
+                        source: source,
+                        startedInThisRun: startedInThisRun,
+                        degraded: &degraded,
+                        progress: progress
+                    )
+                    continue
+                }
             }
 
             do {
                 // 前回停止時のログは原因調査のため残し、新しい起動を試す時点で区切る。
                 events(service.id, .logSessionStarted)
                 let observation = ServiceObservation()
-                let stream = try await registry.start(service: service, in: target)
+                let stream: AsyncStream<ServiceSupervisor.Event>
+                if service.kind == .supabase {
+                    guard let supabasePlan, supabasePlan.service.id == service.id else {
+                        throw RuntimeError.managedCommandInvalid(
+                            service: service.name,
+                            reason: "既存スタックの実測結果がないため、Supabaseを起動しません。"
+                        )
+                    }
+                    stream = try await beginSupabase(supabasePlan, in: target)
+                } else {
+                    stream = try await registry.start(service: service, in: target)
+                }
                 observations[service.id] = observation
                 consumers[service.id]?.cancel()
                 consumers[service.id] = Task {
@@ -785,23 +1345,38 @@ public actor SwitchCoordinator {
                         events(service.id, observedEvent)
                     }
                 }
-                startedInThisRun.append(service)
+                // 引き継いだスタックは今回起動していない。巻き戻しの対象へ入れない。
+                if !adoptedServiceIDs.contains(service.id) {
+                    startedInThisRun.append(service)
+                }
                 failureReasons[service.id] = nil
                 residualGroups[service.id] = nil
             } catch {
-                try await failStart(
+                try await handleStartFailure(
+                    error,
                     service: service,
-                    reason: "\(error)",
                     target: target,
                     source: source,
                     startedInThisRun: startedInThisRun,
                     degraded: &degraded,
-                    progress: progress
+                    progress: progress,
+                    events: events
                 )
                 continue
             }
 
+            // Supabaseは起動または引き継ぎの時点で`running`を確認済み。
+            // 終了済みの開始コマンドを通常の初期観測へ渡してはいけない。
+            if service.kind == .supabase {
+                startedServiceIDs.insert(service.id)
+                failureReasons[service.id] = nil
+                continue
+            }
+
             progress(.observingStartup(service: service.name))
+            guard let spec else {
+                preconditionFailure("通常プロセスの起動確認条件がありません。")
+            }
             let result = await awaitStartupObservation(service: service, spec: spec)
             switch result {
             case .passed:
@@ -824,6 +1399,63 @@ public actor SwitchCoordinator {
         }
 
         return degraded
+    }
+
+    private func handleStartFailure(
+        _ error: Error,
+        service: ServiceDefinition,
+        target: ProjectDefinition,
+        source: ProjectDefinition?,
+        startedInThisRun: [ServiceDefinition],
+        degraded: inout [String],
+        progress: @escaping ProgressSink,
+        events: @escaping EventSink
+    ) async throws {
+        let startReason = "\(error)"
+        if isManagedStartOwnershipUnconfirmed(error) {
+            failureReasons[service.id] = startReason
+            startedServiceIDs.remove(service.id)
+            await rollback(startedInThisRun, progress: progress)
+            throw SwitchFailure(
+                reason: .startFailed(service: service.name, reason: startReason),
+                facts: await facts(source: source, target: target)
+            )
+        }
+        if await registry.isOccupyingResources(serviceID: service.id) {
+            await stopAfterFailedStart(service)
+        }
+        let reason = failureReasons[service.id].map {
+            startReason + "\n" + $0
+        } ?? startReason
+
+        // 補償停止できずに資源が残るなら、`continue`でも後続を起動しない。
+        // 残存を抱えたまま次のサービスを起動すると、止め方の分からない状態が積み上がる。
+        if await registry.isOccupyingResources(serviceID: service.id) {
+            failureReasons[service.id] = reason
+            startedServiceIDs.remove(service.id)
+            residualManagedServiceIDs.insert(service.id)
+            await rollback(startedInThisRun, progress: progress)
+            throw SwitchFailure(
+                reason: .startFailed(service: service.name, reason: reason),
+                facts: await facts(source: source, target: target)
+            )
+        }
+
+        try await failStart(
+            service: service,
+            reason: reason,
+            target: target,
+            source: source,
+            startedInThisRun: startedInThisRun,
+            degraded: &degraded,
+            progress: progress
+        )
+    }
+
+    private func isManagedStartOwnershipUnconfirmed(_ error: any Error) -> Bool {
+        guard let runtimeError = error as? RuntimeError else { return false }
+        if case .managedStartOwnershipUnconfirmed = runtimeError { return true }
+        return false
     }
 
     /// 単体再起動の開始失敗では、再起動前から動いていた他サービスを巻き戻さない。
@@ -850,6 +1482,23 @@ public actor SwitchCoordinator {
         )
     }
 
+    /// 今回このrunで起動したものだけを、起動順の逆に停止する。
+    /// 引き継いだSupabaseは巻き戻さず、残存ありとして停止導線を残す。
+    private func rollback(
+        _ startedInThisRun: [ServiceDefinition],
+        progress: @escaping ProgressSink
+    ) async {
+        for started in startedInThisRun.reversed() {
+            progress(.rollingBack(service: started.name))
+            await stopAfterFailedStart(started)
+        }
+        for serviceID in adoptedServiceIDs {
+            if await registry.isOccupyingResources(serviceID: serviceID) {
+                residualManagedServiceIDs.insert(serviceID)
+            }
+        }
+    }
+
     /// `block` なら今回起動したサービスを安全に停止して中断、`continue` なら一部停止として続行。
     private func failStart(
         service: ServiceDefinition,
@@ -867,12 +1516,8 @@ public actor SwitchCoordinator {
         case .continue:
             degraded.append(service.name)
         case .block:
-            // 今回このrunで起動したものだけを、起動順の逆に停止する。
-            // 以前から動いていたプロセスまで巻き込まない。
-            for started in startedInThisRun.reversed() {
-                progress(.rollingBack(service: started.name))
-                await stopAfterFailedStart(started)
-            }
+            // 以前から動いていたプロセスと、引き継いだスタックまで巻き込まない。
+            await rollback(startedInThisRun, progress: progress)
             throw SwitchFailure(
                 reason: .startFailed(service: service.name, reason: reason),
                 facts: await facts(source: source, target: target)
@@ -881,7 +1526,7 @@ public actor SwitchCoordinator {
     }
 
     private func stopAfterFailedStart(_ service: ServiceDefinition) async {
-        guard await registry.occupiedProcessGroup(serviceID: service.id) != nil else {
+        guard await registry.isOccupyingResources(serviceID: service.id) else {
             startedServiceIDs.remove(service.id)
             return
         }
@@ -902,6 +1547,8 @@ public actor SwitchCoordinator {
             }
         } catch {
             startedServiceIDs.remove(service.id)
+            let existing = failureReasons[service.id].map { $0 + "\n" } ?? ""
+            failureReasons[service.id] = existing + "補償停止に失敗しました。\n\(error)"
             if let processGroupID = await registry.occupiedProcessGroup(serviceID: service.id) {
                 residualGroups[service.id] = processGroupID
             }
@@ -1080,7 +1727,7 @@ public actor SwitchCoordinator {
         var outcomes: [UUID: ServiceStopOutcome] = [:]
         for serviceID in serviceIDs {
             guard let service = project.service(id: serviceID) else { continue }
-            guard await registry.occupiedProcessGroup(serviceID: serviceID) != nil else {
+            guard await registry.isOccupyingResources(serviceID: serviceID) else {
                 // 送信前に消えていた。止まったこと自体は実測どおりなので成功として扱う。
                 clearState(of: serviceID)
                 outcomes[serviceID] = .stopped(nil)
@@ -1118,9 +1765,26 @@ public actor SwitchCoordinator {
         if let reason = restartRecoveries[service.id]?.failureReason {
             return .failed(reason: reason)
         }
-        if let reason = failureReasons[service.id] { return .failed(reason: reason) }
+        // 巻き戻し後も残った引き継ぎ分は「残存あり」。停止導線を画面から消さない。
+        if residualManagedServiceIDs.contains(service.id),
+           await registry.isOccupyingResources(serviceID: service.id) {
+            return .residual
+        }
+        if let reason = failureReasons[service.id] {
+            // 失敗理由があっても停止対象をRegistryが保持しているなら、単なる失敗ではない。
+            // 残存扱いにしないとプロジェクトが非稼働になり、停止の導線が画面から消える。
+            if await registry.isOccupyingResources(serviceID: service.id) {
+                return .residual
+            }
+            return .failed(reason: reason)
+        }
         if await registry.isRunning(serviceID: service.id) {
             return startedServiceIDs.contains(service.id) ? .healthy : .running
+        }
+        // managed Supabaseのdegraded / unknownは、プロセスのPGIDを持たない。
+        // 管理関係と資源占有が残る限り、停止中へ倒さず停止導線を残す。
+        if await registry.isOccupyingResources(serviceID: service.id) {
+            return .residual
         }
         // 起動したプロセスは終了したのに、孫がプロセスグループに残っていることがある。
         // これを「失敗」や「停止中」と表示すると、資源を握ったままなのに
@@ -1235,6 +1899,8 @@ public actor SwitchCoordinator {
         residualGroups[serviceID] = nil
         restartRecoveries[serviceID] = nil
         observations[serviceID] = nil
+        adoptedServiceIDs.remove(serviceID)
+        residualManagedServiceIDs.remove(serviceID)
     }
 
     /// 外部プロセスを自動終了しないため、所有区分を実測と自分の記録から決める。

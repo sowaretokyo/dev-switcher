@@ -11,6 +11,491 @@ import Testing
 @Suite("引き継ぎ操作の画面状態")
 @MainActor
 struct AppStateHandoffTests {
+    /// テスト用の`project_id`。`#require`のネストを避けるため定数で持つ。
+    private var bellStackID: SupabaseProjectID {
+        guard let projectID = SupabaseProjectID(rawValue: "bell") else {
+            preconditionFailure("テスト用の project_id が不正です。")
+        }
+        return projectID
+    }
+
+    /// Supabase 1件だけの開発環境。`project_id`は`supabase/config.toml`から解決する。
+    private func makeSupabaseProject(
+        name: String = "Bell",
+        projectID: String = "bell",
+        directory: URL
+    ) throws -> ProjectDefinition {
+        try writeSupabaseConfig(projectID: projectID, in: directory)
+        return ProjectDefinition(
+            name: name,
+            color: .blue,
+            directory: directory,
+            services: [makeAppStateSupabaseService(workingDirectory: directory)]
+        )
+    }
+
+    @Test("アプリ起動では外部スタックを検出しても確認を出さない")
+    func launchObservesExternalStackWithoutConfirmation() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        // 手掛かりなしで同一スタックが動いている＝外部スタック。
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        #expect(state.supabaseConfirmation == nil)
+        #expect(state.phase(of: project) == .stopped)
+        // 観測だけ。引き継ぎも停止もしない。
+        let serviceID = try #require(project.services.first?.id)
+        let observed = try #require(state.state(of: serviceID).supabase)
+        #expect(observed.state == .running)
+        #expect(observed.label == "外部・稼働中")
+        #expect(observed.relationship == nil)
+        #expect(state.hasManagedResources(in: project) == false)
+        #expect(state.activeProject == nil)
+        #expect(state.canStart)
+        #expect(try RuntimeHintStore(directory: directory).load().managed.isEmpty)
+        #expect(await world.commandLines.allSatisfy { $0.contains("status") })
+        #expect(await world.runningProjectIDs == ["bell"])
+
+        // フォアグラウンド復帰でも確認は出さない。
+        await state.applicationDidBecomeActive()
+        #expect(state.supabaseConfirmation == nil)
+
+        await world.setStack("bell", .degraded(reason: "DB unhealthy"))
+        await state.applicationDidBecomeActive()
+        #expect(state.state(of: serviceID).supabase?.label == "外部・一部だけ稼働")
+        #expect(state.state(of: serviceID).supabase?.detail == "DB unhealthy")
+        await world.failInventory("Docker unavailable")
+        await state.applicationDidBecomeActive()
+        #expect(state.state(of: serviceID).supabase?.state == .unknown)
+        #expect(state.state(of: serviceID).supabase?.detail == "Docker unavailable")
+        #expect(state.supabaseObservationError == "Docker unavailable")
+        #expect(state.hasManagedResources(in: project) == false)
+
+        await world.failInventory(nil)
+        await world.setStack("bell", nil)
+        await state.applicationDidBecomeActive()
+        #expect(state.state(of: serviceID).supabase?.state == .notRunning)
+        #expect(state.supabaseObservationError == nil)
+        #expect(state.supabaseConfirmation == nil)
+        #expect(await world.commandLines.allSatisfy { $0.contains("status") })
+    }
+
+    @Test("停止を確認したSupabaseの外部再起動では管理を戻さず、再度引き継ぎ確認を出す",
+          arguments: [false, true])
+    func externallyRestartedSupabaseRequiresNewApproval(observedStop: Bool) async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        let serviceID = try #require(project.services.first?.id)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld()
+        let hintStore = RuntimeHintStore(directory: directory)
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+        #expect(state.state(of: serviceID).supabase?.relationship == .launched)
+
+        if observedStop {
+            await world.setStack("bell", nil)
+            await state.applicationDidBecomeActive()
+        } else {
+            state.stopProject(project)
+            await state.waitForPendingOperation()
+        }
+        #expect(state.state(of: serviceID).supabase?.relationship == nil)
+        #expect(try hintStore.load().managed.isEmpty)
+
+        await world.setStack("bell", .databaseHealthy)
+        await world.resetCommands()
+        await state.applicationDidBecomeActive()
+        #expect(state.state(of: serviceID).supabase?.label == "外部・稼働中")
+        #expect(state.hasManagedResources(in: project) == false)
+        #expect(state.activeProject == nil)
+        #expect(state.canStart)
+        #expect(state.supabaseConfirmation == nil)
+        #expect(try hintStore.load().managed.isEmpty)
+
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+        let confirmation = try #require(state.supabaseConfirmation)
+        #expect(confirmation.plan.target.action == .adopt)
+        state.cancelSupabaseConfirmation()
+        #expect(await world.commandLines.allSatisfy { $0.contains("status") })
+        #expect(await world.runningProjectIDs == ["bell"])
+
+        // 停止確認で破棄した手掛かりを、次回起動時に復元しない。
+        let relaunched = makeAppState(directory: directory, supabaseWorld: world)
+        await relaunched.bootstrap()
+        #expect(relaunched.state(of: serviceID).supabase?.label == "外部・稼働中")
+        #expect(relaunched.hasManagedResources(in: project) == false)
+    }
+
+    @Test("未登録の外部SupabaseもID・実測状態・観測理由を画面へ渡す")
+    func externalSupabaseWithoutRegistrationIsVisible() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: ["external": .indeterminate(reason: "Unsupported state")])
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        let external = try #require(state.unregisteredSupabaseObservations.first)
+        #expect(external.projectID.rawValue == "external")
+        #expect(external.state == .unknown)
+        #expect(external.detail == "Unsupported state")
+        #expect(state.activeProject == nil)
+        #expect(state.supabaseConfirmation == nil)
+        #expect(await world.commandLines.isEmpty)
+    }
+
+    @Test("起動を押したときだけ確認を出し、キャンセルでコマンドを1件も実行しない")
+    func confirmationAppearsOnlyOnStartAndCancelChangesNothing() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+        await world.resetCommands()
+
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+
+        let presentation = try #require(state.supabaseConfirmation)
+        #expect(presentation.plan.target.action == .adopt)
+        #expect(presentation.plan.target.projectID.rawValue == "bell")
+        #expect(presentation.plan.stopTargets.isEmpty)
+        #expect(state.canStart == false)
+        #expect(state.canChangeConfiguration == false)
+
+        state.cancelSupabaseConfirmation()
+
+        #expect(state.supabaseConfirmation == nil)
+        #expect(state.phase(of: project) == .stopped)
+        // 確認をキャンセルした場合、start/stopは1件も実行しない。
+        #expect(await world.commandLines.allSatisfy { !$0.contains("start") })
+        #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
+        #expect(await world.runningProjectIDs == ["bell"])
+    }
+
+    @Test("引き継ぎを承認するとstartを実行せず、開発環境の停止でstopできる")
+    func approvedAdoptionSkipsStartAndStopsWithProject() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let hintStore = RuntimeHintStore(directory: directory)
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+
+        let presentation = try #require(state.supabaseConfirmation)
+        await world.resetCommands()
+        state.approveSupabaseConfirmation(presentation)
+        await state.waitForPendingOperation()
+
+        #expect(state.supabaseConfirmation == nil)
+        #expect(state.phase(of: project) == .running)
+        #expect(await world.commandLines.allSatisfy { !$0.contains(" start") })
+
+        // 引き継いだスタックは、通常の停止操作で停止できる。
+        let hint = try #require(hintStore.load().managed.first)
+        #expect(hint.relationship == .adopted)
+        #expect(hint.supabaseProjectID?.rawValue == "bell")
+
+        state.stopProject(project)
+        await state.waitForPendingOperation()
+
+        #expect(state.phase(of: project) == .stopped)
+        #expect(await world.runningProjectIDs.isEmpty)
+        #expect(try hintStore.load().managed.isEmpty)
+    }
+
+    @Test("引き継ぎ後に別サービスがblockで失敗しても、引き継いだSupabaseを止めない")
+    func adoptedSupabaseSurvivesBlockingFailureAsResidual() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeSupabaseConfig(projectID: "bell", in: directory)
+        let supabase = makeAppStateSupabaseService(workingDirectory: directory)
+        let failing = ServiceDefinition(
+            name: "Web",
+            kind: .web,
+            ports: [],
+            start: CommandSpec(
+                executable: "/bin/sh",
+                arguments: ["-c", "exit 3"],
+                workingDirectory: directory
+            ),
+            enabledByDefault: true,
+            failurePolicy: .block
+        )
+        let project = ProjectDefinition(
+            name: "Bell",
+            color: .blue,
+            directory: directory,
+            services: [supabase, failing]
+        )
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+        let presentation = try #require(state.supabaseConfirmation)
+        state.approveSupabaseConfirmation(presentation)
+        await state.waitForPendingOperation()
+
+        // 引き継いだスタックは巻き戻さない。残存ありとして停止導線を残す。
+        #expect(state.phase(of: project) == .residual)
+        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(state.canStop)
+
+        state.stopProject(project)
+        await state.waitForPendingOperation()
+        #expect(state.phase(of: project) == .stopped)
+        #expect(await world.runningProjectIDs.isEmpty)
+    }
+
+    @Test("引き継ぎ済みの手掛かりを再起動後に実測して restored へ戻す")
+    func restoresManagedHintAfterRelaunch() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        let service = try #require(project.services.first)
+        try ProjectStore(directory: directory).save([project])
+        let hintStore = RuntimeHintStore(directory: directory)
+        try hintStore.save(
+            [],
+            legacy: [],
+            managed: [
+                try #require(
+                    ManagedRuntimeHint(
+                        projectID: project.id,
+                        service: service,
+                        supabaseProjectID: bellStackID,
+                        relationship: .launched
+                    )
+                ),
+            ]
+        )
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        #expect(state.phase(of: project) == .running)
+        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedHintError == nil)
+
+        state.stopProject(project)
+        await state.waitForPendingOperation()
+
+        #expect(state.phase(of: project) == .stopped)
+        #expect(await world.runningProjectIDs.isEmpty)
+    }
+
+    @Test("設定が変わった手掛かりではstatusもstopも実行しない")
+    func changedConfigurationHintIsNotExecuted() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let originalDirectory = directory.appendingPathComponent("original", isDirectory: true)
+        let currentDirectory = directory.appendingPathComponent("current", isDirectory: true)
+        for path in [originalDirectory, currentDirectory] {
+            try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+            try writeSupabaseConfig(projectID: "bell", in: path)
+        }
+
+        let originalService = makeAppStateSupabaseService(workingDirectory: originalDirectory)
+        let hint = try #require(
+            ManagedRuntimeHint(
+                projectID: UUID(),
+                service: originalService,
+                supabaseProjectID: bellStackID,
+                relationship: .launched
+            )
+        )
+        var currentService = originalService
+        currentService.start.workingDirectory = currentDirectory
+        let project = ProjectDefinition(
+            id: hint.projectID,
+            name: "Bell",
+            color: .blue,
+            directory: currentDirectory,
+            services: [currentService]
+        )
+        try ProjectStore(directory: directory).save([project])
+        try RuntimeHintStore(directory: directory).save([], legacy: [], managed: [hint])
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        #expect(state.managedHintError?.contains("保存時の設定") == true)
+        #expect(state.hasDiscardableManagedHints)
+        #expect(state.canStart == false)
+        // 一致しない手掛かりからは、状態確認も停止も実行しない。
+        #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
+    }
+
+    @Test("project_idが変わったmanaged hintを画面から破棄できる")
+    func changedProjectIDHintCanBeDiscarded() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(projectID: "bell", directory: directory)
+        let service = try #require(project.services.first)
+        try ProjectStore(directory: directory).save([project])
+        let hintStore = RuntimeHintStore(directory: directory)
+        let hint = try #require(
+            ManagedRuntimeHint(
+                projectID: project.id,
+                service: service,
+                supabaseProjectID: bellStackID,
+                relationship: .launched
+            )
+        )
+        try hintStore.save([], legacy: [], managed: [hint])
+
+        // サービス定義とコマンドは同じまま、config.tomlのIDだけが変わった状態。
+        try writeSupabaseConfig(projectID: "penta", in: directory)
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+
+        await state.bootstrap()
+
+        #expect(state.managedHintError?.contains("`project_id`と一致しない") == true)
+        #expect(state.hasDiscardableManagedHints)
+        #expect(state.canStart == false)
+
+        await state.discardUnmatchedManagedHints()
+
+        #expect(state.managedHintError == nil)
+        #expect(state.hasDiscardableManagedHints == false)
+        #expect(try hintStore.load().managed.isEmpty)
+        #expect(state.canStart)
+        #expect(state.canChangeConfiguration)
+    }
+
+    @Test("旧schemaの手掛かりでは現在設定のstatusを実行しない")
+    func legacyManagedHintIsNotExecuted() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        let service = try #require(project.services.first)
+        try ProjectStore(directory: directory).save([project])
+        let hintStore = RuntimeHintStore(directory: directory)
+        let json = """
+            {
+              "schemaVersion": 5,
+              "hints": [],
+              "legacyHints": [],
+              "managedHints": [{
+                "projectID": "\(project.id.uuidString)",
+                "serviceID": "\(service.id.uuidString)",
+                "serviceName": "\(service.name)"
+              }]
+            }
+            """
+        try Data(json.utf8).write(to: hintStore.fileURL)
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        #expect(state.managedHintError?.contains("旧形式の手掛かり") == true)
+        #expect(state.hasDiscardableManagedHints)
+        #expect(state.canStart == false)
+        #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
+    }
+
+    @Test("状態を判定できないSupabaseは通常hintエラーと分けて表示する")
+    func unobservableSupabaseHasDedicatedErrorState() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        let service = try #require(project.services.first)
+        try ProjectStore(directory: directory).save([project])
+        try RuntimeHintStore(directory: directory).save(
+            [],
+            legacy: [],
+            managed: [
+                try #require(
+                    ManagedRuntimeHint(
+                        projectID: project.id,
+                        service: service,
+                        supabaseProjectID: bellStackID,
+                        relationship: .launched
+                    )
+                ),
+            ]
+        )
+        let world = FakeSupabaseWorld()
+        await world.failInventory("docker が応答しません。")
+
+        let state = makeAppState(directory: directory, supabaseWorld: world)
+        await state.bootstrap()
+
+        #expect(state.managedHintError?.contains("docker が応答しません。") == true)
+        #expect(state.hintError == nil)
+        #expect(state.hasDiscardableManagedHints == false)
+        #expect(state.canStart == false)
+    }
+
+    @Test("定義がないmanaged hintを明示的かつ保存成功時だけ破棄する")
+    func missingManagedHintCanBeDiscardedTransactionally() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = makeWorkerProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let hintStore = ControllableHintStore(directory: directory)
+        try writeSupabaseConfig(projectID: "bell", in: directory)
+        let missingService = makeAppStateSupabaseService(workingDirectory: directory)
+        let missing = try #require(
+            ManagedRuntimeHint(
+                projectID: UUID(),
+                service: missingService,
+                supabaseProjectID: bellStackID,
+                relationship: .launched
+            )
+        )
+        try hintStore.save([], legacy: [], managed: [missing])
+
+        let state = makeAppState(directory: directory, hintStore: hintStore)
+        await state.bootstrap()
+
+        #expect(state.managedHintError?.contains("対応するSupabase設定が見つからない") == true)
+        #expect(state.hintError == nil)
+        #expect(state.hasDiscardableManagedHints)
+        #expect(state.canStart == false)
+
+        hintStore.failAllSaves()
+        await state.discardUnmatchedManagedHints()
+
+        #expect(state.hasDiscardableManagedHints)
+        #expect(try hintStore.load().managed == [missing])
+
+        hintStore.allowSaves()
+        await state.discardUnmatchedManagedHints()
+
+        #expect(state.managedHintError == nil)
+        #expect(state.hasDiscardableManagedHints == false)
+        #expect(try hintStore.load().managed.isEmpty)
+        #expect(state.canChangeConfiguration)
+    }
+
+
     @Test("UIはポート観測不能をlistenなしと区別して表示する")
     func unavailablePortObservationHasDistinctUILabel() {
         var unavailable = AppState.ServiceUIState()
@@ -1506,6 +1991,84 @@ struct AppStateHandoffTests {
     }
 
     // MARK: - 起動前後の保存
+
+    @Test("起動後の保存失敗では今回起動したSupabaseだけを停止し、引き継ぎ分を残す",
+          arguments: [false, true])
+    func unsavedSupabaseStartPreservesAdoption(adopting: Bool) async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: adopting ? ["bell": .databaseHealthy] : [:])
+        let hintStore = ControllableHintStore(directory: directory)
+        let state = makeAppState(directory: directory, hintStore: hintStore, supabaseWorld: world)
+        await state.bootstrap()
+
+        if adopting {
+            state.startOrSwitch(to: project)
+            await state.waitForPendingOperation()
+            let confirmation = try #require(state.supabaseConfirmation)
+            let base = hintStore.saveAttempts
+            hintStore.failSaves { $0 == base + 2 }
+            state.approveSupabaseConfirmation(confirmation)
+        } else {
+            let base = hintStore.saveAttempts
+            hintStore.failSaves { $0 == base + 2 }
+            state.startOrSwitch(to: project)
+        }
+        await state.waitForPendingOperation()
+
+        #expect(state.operationError != nil)
+        #expect(await world.runningProjectIDs == (adopting ? ["bell"] : []))
+        #expect(await world.commandLines.contains { $0.contains("stop") } == !adopting)
+        #expect(state.phase(of: project) == (adopting ? .residual : .stopped))
+        if adopting {
+            let hint = try #require(hintStore.load().managed.first)
+            #expect(hint.relationship == .adopted)
+            #expect(state.hasManagedResources(in: project))
+            state.stopProject(project)
+            await state.waitForPendingOperation()
+            #expect(await world.runningProjectIDs.isEmpty)
+            #expect(try hintStore.load().managed.isEmpty)
+        }
+    }
+
+    @Test("引き継ぎ後の保存失敗が続いてもSupabaseを維持し、保存再試行と明示停止ができる")
+    func persistentSaveFailurePreservesAdoptedSupabase() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = try makeSupabaseProject(directory: directory)
+        try ProjectStore(directory: directory).save([project])
+        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let hintStore = ControllableHintStore(directory: directory)
+        let state = makeAppState(directory: directory, hintStore: hintStore, supabaseWorld: world)
+        await state.bootstrap()
+        state.startOrSwitch(to: project)
+        await state.waitForPendingOperation()
+        let confirmation = try #require(state.supabaseConfirmation)
+        let base = hintStore.saveAttempts
+        hintStore.failSaves { $0 >= base + 2 }
+        state.approveSupabaseConfirmation(confirmation)
+        await state.waitForPendingOperation()
+
+        #expect(state.phase(of: project) == .residual)
+        #expect(state.hasManagedResources(in: project))
+        #expect(state.hintError != nil)
+        #expect(state.canStart == false)
+        #expect(await state.flushRuntimeHintsBeforeTermination() == false)
+        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
+
+        hintStore.allowSaves()
+        await state.retryLoadingHints()
+        #expect(state.hintError == nil)
+        let hint = try #require(hintStore.load().managed.first)
+        #expect(hint.relationship == .adopted)
+        state.stopProject(project)
+        await state.waitForPendingOperation()
+        #expect(await world.runningProjectIDs.isEmpty)
+        #expect(try hintStore.load().managed.isEmpty)
+    }
 
     @Test("起動前に手掛かりを保存できなければ、プロセスを1つも起動しない")
     func startIsAbortedWhenPreSaveFails() async throws {

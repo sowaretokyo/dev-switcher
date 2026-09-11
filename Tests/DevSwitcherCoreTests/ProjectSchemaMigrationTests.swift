@@ -324,6 +324,8 @@ struct ProjectSchemaMigrationTests {
             name: "Supabase",
             kind: .supabase,
             ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
+            executable: "supabase",
+            arguments: ["start"],
             workingDirectory: directory,
             stop: CommandSpec(executable: "  ", arguments: [""], workingDirectory: directory)
         )

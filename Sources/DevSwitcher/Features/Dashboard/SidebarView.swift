@@ -135,11 +135,16 @@ private struct ServiceRow: View {
     let service: ServiceDefinition
 
     var body: some View {
-        let phase = state.state(of: service.id).phase
+        let uiState = state.state(of: service.id)
+        let phase = uiState.phase
         let unreadStderrCount = state.logBuffer(of: service.id).unreadStderrCount
 
         HStack(spacing: Spacing.tight) {
-            StatusDot(phase: phase)
+            if let supabase = uiState.supabase, supabase.relationship == nil, supabase.state != .notRunning {
+                SupabaseStatusDot(state: supabase.state)
+            } else {
+                StatusDot(phase: phase)
+            }
             Text(service.name)
                 .font(Typography.row)
                 .lineLimit(1)
@@ -165,6 +170,8 @@ private struct ServiceRow: View {
     }
 
     private var portSummary: String {
+        if let supabase = state.state(of: service.id).supabase,
+           supabase.relationship == nil, supabase.state != .notRunning { return supabase.label }
         // 対象外は今回起動しないので、ポートの代わりに状態を出す。
         if state.state(of: service.id).phase == .excluded { return "対象外" }
         guard let primary = service.primaryPort else { return "ポートなし" }

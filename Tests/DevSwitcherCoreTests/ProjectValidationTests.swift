@@ -299,4 +299,190 @@ struct ProjectValidationTests {
             try ProjectValidator.check(project)
         }
     }
+
+    @Test("Supabaseの起動コマンドにstartがなければ拒否する")
+    func rejectsSupabaseWithoutStartSubcommand() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["status"],
+            workingDirectory: directory
+        )
+
+        let errors = ProjectValidator.validate(
+            makeProject(directory: directory, services: [service])
+        )
+
+        #expect(errors.contains(.supabaseStartSubcommandMissing(service: "Supabase")))
+    }
+
+    @Test("ラッパーのscript名startをSupabaseサブコマンドとして受け付けない")
+    func rejectsAmbiguousSupabaseWrapperCommand() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "npm",
+            arguments: ["run", "start"],
+            workingDirectory: directory
+        )
+
+        let errors = ProjectValidator.validate(
+            makeProject(directory: directory, services: [service])
+        )
+
+        #expect(errors.contains(.supabaseCommandUnsupported(service: "Supabase")))
+        #expect(service.supabaseConfiguration == nil)
+    }
+
+    @Test("Supabaseのラッパー引数を維持してstatusとstopを導出する")
+    func derivesSupabaseLifecycleFromWrappedCommand() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "pnpm",
+            arguments: ["exec", "supabase@latest", "start", "--exclude", "studio"],
+            workingDirectory: directory
+        )
+
+        let configuration = try #require(service.supabaseConfiguration)
+        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+
+        #expect(configuration.configDirectory == directory.standardizedFileURL)
+        #expect(configuration.statusCommand.executable == "pnpm")
+        #expect(configuration.statusCommand.arguments == [
+            "exec", "supabase@latest", "status",
+            "--workdir", directory.standardizedFileURL.path,
+            "--output", "json",
+        ])
+        // 停止は必ず対象`project_id`を明示する。`--all`と`--no-backup`は生成できない。
+        #expect(configuration.stopCommand(projectID: projectID).arguments == [
+            "exec", "supabase@latest", "stop",
+            "--workdir", directory.standardizedFileURL.path,
+            "--project-id", "bell",
+        ])
+    }
+
+    @Test("停止コマンドに --all と --no-backup を生成しない")
+    func neverGeneratesForbiddenSupabaseStopOptions() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start"],
+            workingDirectory: directory
+        )
+        let configuration = try #require(service.supabaseConfiguration)
+        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+
+        for command in [configuration.statusCommand, configuration.stopCommand(projectID: projectID)] {
+            #expect(!command.arguments.contains("--all"))
+            #expect(!command.arguments.contains("--no-backup"))
+        }
+    }
+
+    @Test("起動コマンドの --all と --no-backup を保存時に拒否する")
+    func rejectsForbiddenSupabaseStopOptionsInStartCommand() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start", "--no-backup"],
+            workingDirectory: directory
+        )
+
+        let errors = ProjectValidator.validate(
+            makeProject(directory: directory, services: [service])
+        )
+
+        #expect(errors.contains(
+            .supabaseForbiddenStopOption(service: "Supabase", option: "--no-backup")
+        ))
+        #expect(service.supabaseConfiguration == nil)
+    }
+
+    @Test("startより後ろのSupabase workdirをstatusとstopへ引き継ぐ")
+    func preservesTrailingSupabaseWorkdirInLifecycleCommands() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = directory.appendingPathComponent("repo-a", isDirectory: true)
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "pnpm",
+            arguments: [
+                "exec", "supabase@latest", "start", "--exclude", "studio",
+                "--workdir", target.path,
+            ],
+            workingDirectory: directory
+        )
+
+        let configuration = try #require(service.supabaseConfiguration)
+        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+
+        // `--workdir`があれば、そこが`project_id`を読む設定ディレクトリになる。
+        #expect(configuration.configDirectory.path == target.standardizedFileURL.path)
+        #expect(configuration.statusCommand.arguments == [
+            "exec", "supabase@latest", "status", "--workdir", configuration.configDirectory.path,
+            "--output", "json",
+        ])
+        #expect(configuration.stopCommand(projectID: projectID).arguments == [
+            "exec", "supabase@latest", "stop", "--workdir", configuration.configDirectory.path,
+            "--project-id", "bell",
+        ])
+    }
+
+    @Test("Supabase workdirの値が欠けていれば拒否する")
+    func rejectsSupabaseWithMissingTrailingWorkdirValue() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start", "--workdir"],
+            workingDirectory: directory
+        )
+
+        let errors = ProjectValidator.validate(
+            makeProject(directory: directory, services: [service])
+        )
+
+        #expect(errors.contains(.supabaseWorkdirValueMissing(service: "Supabase")))
+    }
+
+    @Test("Supabaseのカスタム終了コマンドを拒否する")
+    func rejectsCustomSupabaseStopCommand() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start"],
+            workingDirectory: directory,
+            stop: CommandSpec(
+                executable: "/usr/bin/true",
+                arguments: [],
+                workingDirectory: directory
+            )
+        )
+
+        let errors = ProjectValidator.validate(
+            makeProject(directory: directory, services: [service])
+        )
+
+        #expect(errors.contains(.supabaseCustomStopUnsupported(service: "Supabase")))
+        #expect(service.supabaseConfiguration == nil)
+    }
 }

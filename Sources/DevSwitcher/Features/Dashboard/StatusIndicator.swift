@@ -46,6 +46,44 @@ struct StatusLabel: View {
     }
 }
 
+/// 通常プロセスの状態と、Supabaseスタックの実測表示を使い分ける。
+struct ServiceStatusLabel: View {
+    let state: AppState.ServiceUIState
+
+    var body: some View {
+        if let supabase = state.supabase, supabase.relationship == nil, supabase.state != .notRunning {
+            HStack(spacing: Spacing.tight) {
+                SupabaseStatusDot(state: supabase.state)
+                Text(supabase.label)
+                    .font(Typography.support)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } else {
+            StatusLabel(phase: state.phase)
+        }
+    }
+}
+
+struct SupabaseStatusDot: View {
+    let state: SupabaseStackState
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: Metrics.statusDot, height: Metrics.statusDot)
+            .accessibilityLabel(state.label)
+    }
+
+    private var color: Color {
+        switch state {
+        case .notRunning: .secondary
+        case .running: .green
+        case .degraded, .unknown: .orange
+        }
+    }
+}
+
 struct ProjectStatusDot: View {
     let phase: ProjectPhase
 

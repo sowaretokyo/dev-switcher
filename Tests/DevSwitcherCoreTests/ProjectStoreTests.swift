@@ -9,6 +9,8 @@ struct ProjectStoreTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
+        // Supabaseは`project_id`を設定ファイルから解決する。保存前に用意する。
+        try writeSupabaseConfig(projectID: "bell", in: directory)
         let store = ProjectStore(directory: directory.appendingPathComponent("store", isDirectory: true))
         let service = makeService(
             name: "Supabase",
@@ -17,6 +19,8 @@ struct ProjectStoreTests {
                 PortSpec(label: "API", port: 54_321, isPrimary: true, openURL: "http://localhost:54321"),
                 PortSpec(label: "DB", port: 54_322, isPrimary: false),
             ],
+            executable: "supabase",
+            arguments: ["start"],
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [service])

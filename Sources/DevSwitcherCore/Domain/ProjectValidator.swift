@@ -7,7 +7,9 @@ public enum ProjectValidator {
         _ project: ProjectDefinition,
         existingProjects: [ProjectDefinition] = []
     ) -> [ValidationError] {
-        structuralErrors(project, existingProjects: existingProjects) + filesystemErrors(project)
+        structuralErrors(project, existingProjects: existingProjects)
+            + filesystemErrors(project)
+            + supabaseStackErrors(project, existingProjects: existingProjects)
     }
 
     public static func check(
@@ -131,6 +133,23 @@ public enum ProjectValidator {
             where argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errors.append(.emptyArgument(service: label, argumentIndex: argumentIndex))
             }
+            if service.kind == .supabase {
+                if service.stop != nil {
+                    errors.append(.supabaseCustomStopUnsupported(service: label))
+                } else if !service.hasSupportedSupabaseInvocation {
+                    errors.append(.supabaseCommandUnsupported(service: label))
+                } else if !service.hasSupabaseStartSubcommand {
+                    errors.append(.supabaseStartSubcommandMissing(service: label))
+                } else if let forbidden = ServiceDefinition.forbiddenStopOptions
+                    .sorted()
+                    .first(where: service.start.arguments.contains) {
+                    errors.append(
+                        .supabaseForbiddenStopOption(service: label, option: forbidden)
+                    )
+                } else if service.supabaseConfiguration == nil {
+                    errors.append(.supabaseWorkdirValueMissing(service: label))
+                }
+            }
 
             if let stop = service.stop {
                 if stop.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -148,8 +167,68 @@ public enum ProjectValidator {
             errors.append(contentsOf: portErrors(for: service.ports, serviceLabel: label))
         }
 
+        // `enabled`にかかわらず、1開発環境に登録できるSupabaseは1件まで。
+        let supabaseServices = project.services.filter { $0.kind == .supabase }
+        if supabaseServices.count > 1 {
+            errors.append(
+                .multipleSupabaseServices(services: supabaseServices.map(\.name))
+            )
+        }
+
         errors.append(contentsOf: orderErrors(project))
 
+        return errors
+    }
+
+    /// 登録済み開発環境全体で`project_id`が一意かを確認する。
+    ///
+    /// 1件でも解決できない場合は「重複なし」と扱わず、保存を失敗させる。
+    /// ディレクトリ名やコンテナ名から`project_id`を補完しない。
+    public static func supabaseStackErrors(
+        _ project: ProjectDefinition,
+        existingProjects: [ProjectDefinition]
+    ) -> [ValidationError] {
+        var errors: [ValidationError] = []
+        var owners: [SupabaseProjectID: String] = [:]
+
+        // 候補を含む全開発環境を、名前順ではなく登録順で解決する。
+        let candidates = existingProjects.filter { $0.id != project.id } + [project]
+        for candidate in candidates {
+            for service in candidate.services where service.kind == .supabase {
+                guard let configuration = service.supabaseConfiguration else {
+                    // 起動コマンドの形式エラーは構造検証が出す。ここでは重複判定だけを止める。
+                    if candidate.id == project.id {
+                        errors.append(
+                            .supabaseProjectIDUnresolved(
+                                service: service.name,
+                                reason: service.supabaseConfigurationFailureReason
+                            )
+                        )
+                    }
+                    continue
+                }
+                do {
+                    let projectID = try configuration.resolveProjectID()
+                    if let owner = owners[projectID], owner != candidate.name {
+                        errors.append(
+                            .duplicateSupabaseProjectID(
+                                projectID: projectID.rawValue,
+                                otherProject: owner
+                            )
+                        )
+                    } else {
+                        owners[projectID] = candidate.name
+                    }
+                } catch {
+                    errors.append(
+                        .supabaseProjectIDUnresolved(
+                            service: service.name,
+                            reason: "\(error)"
+                        )
+                    )
+                }
+            }
+        }
         return errors
     }
 

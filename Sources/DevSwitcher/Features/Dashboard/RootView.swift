@@ -51,6 +51,14 @@ struct RootView: View {
         .sheet(item: $state.failurePresentation) { presentation in
             SwitchFailureSheet(presentation: presentation)
         }
+        .sheet(
+            item: Binding(
+                get: { state.supabaseConfirmation },
+                set: { if $0 == nil { state.cancelSupabaseConfirmation() } }
+            )
+        ) { presentation in
+            SupabaseConfirmationSheet(presentation: presentation)
+        }
         // 引き継ぎシートを閉じる・差し替えるのは AppState だけ。ビュー側の dismiss を
         // 許すと、決着していない手掛かりを抱えたまま画面から消える。
         .sheet(item: Binding(get: { state.handoffPresentation }, set: { _ in })) { presentation in
@@ -65,6 +73,25 @@ private struct BannerArea: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let error = state.supabaseObservationError {
+                Banner(title: "Supabaseを観測できません", message: error, tint: .orange) {
+                    Button("再観測") {
+                        Task { await state.applicationDidBecomeActive() }
+                    }
+                }
+            }
+            if !state.unregisteredSupabaseObservations.isEmpty {
+                Banner(
+                    title: "未登録の外部Supabase",
+                    message: state.unregisteredSupabaseObservations.map {
+                        let label = "\($0.projectID): \($0.state.label)"
+                        return $0.detail.map { label + "\n" + $0 } ?? label
+                    }.joined(separator: "\n"),
+                    tint: .secondary
+                ) {
+                    EmptyView()
+                }
+            }
             if let incident = state.runtimeIncident {
                 Banner(
                     title: "プロセスが予期せず終了しました",
@@ -109,12 +136,31 @@ private struct BannerArea: View {
             if let hintError = state.hintError {
                 Banner(
                     title: "再検証の手掛かりを扱えません",
-                    message: "\(hintError)\nアプリ再起動後の引き継ぎができない可能性があります。起動済みかどうかの判定には影響しません。",
+                    message: "\(hintError)\nアプリ再起動後の引き継ぎや次回保存に影響する可能性があります。原因を解消して再試行してください。",
                     tint: .orange,
                     messageLineLimit: 3
                 ) {
                     Button("再試行") {
                         Task { await state.retryLoadingHints() }
+                    }
+                }
+            }
+            if let managedHintError = state.managedHintError {
+                Banner(
+                    title: "Supabaseの状態を再検証できません",
+                    message: managedHintMessage(managedHintError),
+                    tint: .orange,
+                    messageLineLimit: 5
+                ) {
+                    HStack(spacing: Spacing.s) {
+                        if state.hasDiscardableManagedHints {
+                            Button("手掛かりを破棄", role: .destructive) {
+                                Task { await state.discardUnmatchedManagedHints() }
+                            }
+                        }
+                        Button("再試行") {
+                            Task { await state.retryLoadingHints() }
+                        }
                     }
                 }
             }
@@ -141,6 +187,17 @@ private struct BannerArea: View {
                 EmptyView()
             }
         }
+    }
+
+    private func managedHintMessage(_ error: String) -> String {
+        var lines = [
+            error,
+            "該当するSupabaseが起動中か停止中か判定できないため、設定変更と新しい起動を停止しています。",
+        ]
+        if state.hasDiscardableManagedHints {
+            lines.append("保存時の設定を確認してSupabaseを手動停止するか、手掛かりを破棄してください。破棄してもSupabase自体は停止しません。")
+        }
+        return lines.joined(separator: "\n")
     }
 }
 

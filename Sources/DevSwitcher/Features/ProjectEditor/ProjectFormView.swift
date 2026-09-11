@@ -279,8 +279,16 @@ private struct ServiceCard: View {
                 TextField("Web", text: $service.name)
                     .textFieldStyle(.roundedBorder)
             }
-            FormRow("種別") {
-                Picker("", selection: $service.kind) {
+            FormRow(
+                "種別",
+                note: service.kind == .supabase
+                    ? "開始後に supabase status で確認し、開発環境の停止時に supabase stop を実行します。"
+                    : nil
+            ) {
+                Picker("", selection: Binding(
+                    get: { service.kind },
+                    set: { model.setKind($0, for: service.id) }
+                )) {
                     ForEach(ServiceKind.allCases, id: \.self) { kind in
                         Text(kind.displayName).tag(kind)
                     }

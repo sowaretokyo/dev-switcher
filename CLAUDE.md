@@ -25,13 +25,15 @@
 - Milestone 2を現在の基準線とする。次の実装依頼では`IMPLEMENTATION_BRIEF.md`のMilestone 3だけを対象にし、Milestone 2の安全性を維持する。
 - Milestone 3は、単一画面での手動開発環境追加・編集・登録解除と、名前付き作業ディレクトリ別の複数プロセス管理に限定する。起動済み開発環境は全項目の編集を拒否する。起動・停止は開発環境単位のままとする。
 - Milestone 4はローカル実行用`.app`の生成と起動確認に限定する。
-- 自動検出、5ステップウィザード、プロジェクト複製、managed command、カスタム終了コマンド、Docker lifecycle、HTTP readiness、Expo QR、メニューバー、署名・公証・DMG、UI自動化はPost-MVPとし、先回りしない。
+- 自動検出、5ステップウィザード、プロジェクト複製、Supabase以外のmanaged command、カスタム終了コマンド、Docker lifecycle、HTTP readiness、Expo QR、メニューバー、署名・公証・DMG、UI自動化はPost-MVPとし、先回りしない。
 - 必須値の欠落や不正な設定は fail-fast にする。空文字や既定値で握りつぶさない。
 - 実行コマンドは `executable` と `arguments` に分けた構造化データとして扱う。利用者入力を shell 文字列へ連結しない。
 - GUI 起動時の `PATH` は固定コマンドで取得し、利用者のコマンド実行には login shell を使わない。
 - 子・孫プロセスが残らないよう、起動時からプロセスグループを管理する。
 - 停止対象はポート番号から推測せず、観測した PID・プロセスグループ・管理方式から特定する。
-- 外部プロセスを終了しない。観測情報として表示しても、Dev Switcherからsignalを送らない。
+- 外部の通常プロセスを終了しない。観測情報として表示しても、Dev Switcherからsignalを送らない。Supabaseだけは`MVP_SPEC.md` 6.1.1の確認を利用者が承認した場合に限り、対象`project_id`へ管理コマンドを実行できる。
+- 1開発環境のSupabaseは1件まで、`project_id`は登録済み開発環境全体で一意とする。同一Supabaseを引き継いだ場合は`supabase start`を実行せず、後続の起動失敗でも巻き戻さない。状態を観測できない場合は停止中へ倒さず、`supabase stop --all`と`--no-backup`を実行しない。
+- Supabaseはアプリ起動時、フォアグラウンド復帰時、起動・停止・切替の直前に再観測する。外部スタックの確認は利用者が起動または切替を実行したときだけ出す。
 - プロジェクト配下の `.env`、`.env.*`、`.envrc` を読まない。
 - DB migration、reset、seed、依存パッケージの自動インストールを実行しない。
 - アプリの状態保存は Application Support 配下へ atomic write する。

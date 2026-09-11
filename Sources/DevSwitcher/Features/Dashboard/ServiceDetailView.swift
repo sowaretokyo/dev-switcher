@@ -43,7 +43,7 @@ struct ServiceDetailView: View {
                 Text(service.kind.displayName)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
-                StatusLabel(phase: uiState.phase)
+                ServiceStatusLabel(state: uiState)
                 Spacer(minLength: Spacing.s)
                 if restartOperation != nil {
                     HStack(spacing: Spacing.tight) {
@@ -90,9 +90,35 @@ struct ServiceDetailView: View {
             LabeledValue(label: "起動確認", value: startupObservationDescription, lineLimit: 3)
             // プロジェクト詳細から退避してきた。実行内容を確かめる場所はここ1か所にする。
             LabeledValue(label: "起動コマンド", value: service.start.displayCommandLine, lineLimit: 3)
+            if let configuration = service.supabaseConfiguration {
+                LabeledValue(
+                    label: "状態確認",
+                    value: configuration.statusCommand.displayCommandLine,
+                    lineLimit: 3
+                )
+                LabeledValue(
+                    label: "設定ファイル",
+                    value: configuration.configFileURL.path,
+                    lineLimit: 2
+                )
+            }
 
             if let warning = uiState.warning {
                 NoteText(warning, tint: .orange)
+            }
+            if let supabase = uiState.supabase {
+                LabeledValue(label: "スタックの実測状態", value: supabase.state.label)
+                if let projectID = supabase.projectID {
+                    LabeledValue(label: "project_id", value: projectID.rawValue)
+                }
+                if supabase.isExternal {
+                    NoteText("外部で起動されたSupabaseです。開発環境の起動時に引き継ぎを確認します。", tint: .secondary)
+                } else if let relationship = supabase.relationship {
+                    LabeledValue(label: "管理関係", value: relationship.label)
+                }
+                if let detail = supabase.detail {
+                    NoteText(detail, tint: .orange)
+                }
             }
             if case let .failed(reason) = uiState.phase {
                 NoteText(reason, tint: .red)
@@ -135,6 +161,9 @@ struct ServiceDetailView: View {
     /// 何を見て起動成功と判断しているかを表示する。
     /// HTTP は投げないので、応答するかどうかまでは保証しないことが分かる文言にする。
     private var startupObservationDescription: String {
+        if service.kind == .supabase {
+            return "Dockerの実測でDBコンテナがhealthyになり、対象workdirの `supabase status` も成功すること"
+        }
         do {
             return try StartupObservationPolicy.spec(for: service).description
         } catch {
@@ -143,6 +172,9 @@ struct ServiceDetailView: View {
     }
 
     private func observedPortsText(_ uiState: AppState.ServiceUIState) -> String {
+        if service.kind == .supabase, uiState.observedPortRecord == .unavailable {
+            return "Supabase CLI で管理"
+        }
         if let text = uiState.observedPortsAvailabilityText { return text }
         guard case let .observed(ports) = uiState.observedPortRecord else {
             preconditionFailure("観測状態の分岐が不足しています。")

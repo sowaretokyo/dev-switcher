@@ -304,7 +304,7 @@ struct ServiceSummaryRow: View {
 
                 Spacer(minLength: Spacing.s)
 
-                StatusLabel(phase: uiState.phase)
+                ServiceStatusLabel(state: uiState)
             }
 
             // 補助情報は固定の横並びにしない。狭い詳細ペインで黙って切れる。
@@ -327,6 +327,9 @@ struct ServiceSummaryRow: View {
 
             if let warning = uiState.warning {
                 NoteText(warning, tint: .orange, indent: Metrics.checkboxIndent)
+            }
+            if let detail = uiState.supabase?.detail {
+                NoteText(detail, tint: .orange, indent: Metrics.checkboxIndent)
             }
             if case let .failed(reason) = uiState.phase {
                 NoteText(reason, tint: .red, indent: Metrics.checkboxIndent)

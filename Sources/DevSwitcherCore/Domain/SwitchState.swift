@@ -208,6 +208,18 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
         case cancelled
         /// MVP で実行できない設定。既定へ倒さず起動前に止める。
         case unsupportedConfiguration(String)
+        /// 既存Supabaseの引き継ぎ・復旧・停止についての承認待ち。
+        /// 承認前は既存スタック、切替元、切替先のいずれも変更していない。
+        case supabaseConfirmationRequired(plan: SupabaseConfirmationPlan)
+        /// Dockerまたは`supabase status`から状態を確定できなかった。停止中へ倒さない。
+        case supabaseObservationFailed(details: [String])
+        /// 承認済みの既存スタックを停止できなかった。停止済みのスタックは再起動しない。
+        case supabaseStopFailed(
+            projectID: String,
+            reason: String,
+            stopped: [String],
+            remaining: [String]
+        )
         /// ポートを実測できなかった。「空いている」と解釈せず、ここで止める。
         case portObservationFailed(context: String, reason: String)
         case operationInProgress
@@ -219,6 +231,9 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
             case .startFailed: "起動直後に落ちた"
             case .cancelled: "切替を中止した"
             case .unsupportedConfiguration: "未対応の設定"
+            case .supabaseConfirmationRequired: "Supabaseの確認"
+            case .supabaseObservationFailed: "Supabaseの状態を確認できない"
+            case .supabaseStopFailed: "既存のSupabaseを停止できない"
             case .portObservationFailed: "ポートを確認できない"
             case .operationInProgress: "処理が実行中"
             }
@@ -238,6 +253,19 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
                 "切替元の停止は完了しました。切替先は起動していません。"
             case let .unsupportedConfiguration(message):
                 message
+            case let .supabaseConfirmationRequired(plan):
+                "サービス「\(plan.serviceName)」の起動前に、既存のSupabaseスタックの扱いを確認してください。\n"
+                    + plan.allTargets
+                    .map { "\($0.projectID): \($0.state.label) → \($0.action.label)（\($0.registrationLabel)）" }
+                    .joined(separator: "\n")
+            case let .supabaseObservationFailed(details):
+                "Supabaseスタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。\n"
+                    + details.joined(separator: "\n")
+            case let .supabaseStopFailed(projectID, reason, stopped, remaining):
+                "既存のSupabase「\(projectID)」を停止できませんでした。\n\(reason)\n"
+                    + "停止済み: \(stopped.isEmpty ? "なし" : stopped.joined(separator: " / "))\n"
+                    + "未処理: \(remaining.isEmpty ? "なし" : remaining.joined(separator: " / "))\n"
+                    + "停止済みのスタックは自動で再起動しません。"
             case let .portObservationFailed(context, reason):
                 "\(context)に失敗しました。空いているとは判断できないため、起動を中止しました。\n\(reason)"
             case .operationInProgress:

@@ -498,8 +498,8 @@ struct HandoffTests {
 
     // MARK: - 保存
 
-    @Test("schema v2の整数ポート配列をv3へ移行して読み戻せる")
-    func migratesV2ObservedPortsToV3() throws {
+    @Test("schema v2の整数ポート配列を現行形式へ移行して読み戻せる")
+    func migratesV2ObservedPortsToCurrentSchema() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -536,9 +536,155 @@ struct HandoffTests {
 
         try store.save(migrated.hints, legacy: migrated.legacy)
         let savedJSON = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(savedJSON.contains("\"schemaVersion\" : 3"))
+        #expect(savedJSON.contains("\"schemaVersion\" : 6"))
         #expect(try store.load() == migrated)
     }
+
+    @Test("schema v3の手掛かりをmanaged commandなしで読み戻せる")
+    func loadsV3RuntimeHintsWithoutManagedCommands() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RuntimeHintStore(directory: directory)
+        let json = """
+            {
+              "schemaVersion": 3,
+              "hints": [],
+              "legacyHints": []
+            }
+            """
+        try Data(json.utf8).write(to: store.fileURL)
+
+        let loaded = try store.load()
+
+        #expect(loaded.hints.isEmpty)
+        #expect(loaded.legacy.isEmpty)
+        #expect(loaded.managed.isEmpty)
+    }
+
+    @Test("schema v5でmanagedHintsが欠けていれば読み込みを失敗させる")
+    func rejectsV5RuntimeHintsWithoutManagedHints() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RuntimeHintStore(directory: directory)
+        let json = """
+            {
+              "schemaVersion": 5,
+              "hints": [],
+              "legacyHints": []
+            }
+            """
+        try Data(json.utf8).write(to: store.fileURL)
+
+        #expect(throws: RuntimeHintStoreError.self) {
+            try store.load()
+        }
+    }
+
+    @Test(
+        "project_idを持たない旧schemaのmanaged hintは未検証のまま移行する",
+        arguments: [4, 5]
+    )
+    func migratesLegacyManagedHintsAsUnverified(schemaVersion: Int) throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RuntimeHintStore(directory: directory)
+        let projectID = UUID()
+        let serviceID = UUID()
+        let json = """
+            {
+              "schemaVersion": \(schemaVersion),
+              "hints": [],
+              "legacyHints": [],
+              "managedHints": [{
+                "projectID": "\(projectID.uuidString)",
+                "serviceID": "\(serviceID.uuidString)",
+                "serviceName": "Supabase"
+              }]
+            }
+            """
+        try Data(json.utf8).write(to: store.fileURL)
+
+        let loaded = try store.load()
+        let hint = try #require(loaded.managed.first)
+        // 構成同一性が無いので、この手掛かりからstatus/stopは実行できない。
+        #expect(hint.supabaseProjectID == nil)
+        #expect(hint.configDirectory == nil)
+        #expect(hint.fingerprint == nil)
+        #expect(hint.relationship == nil)
+
+        try store.save(loaded.hints, legacy: loaded.legacy, managed: loaded.managed)
+        let savedJSON = try String(contentsOf: store.fileURL, encoding: .utf8)
+        #expect(savedJSON.contains("\"schemaVersion\" : 6"))
+        #expect(try store.load() == loaded)
+    }
+
+    @Test("schema v6のmanaged hintでキーが欠けていれば読み込みを失敗させる")
+    func rejectsV6ManagedHintWithMissingKeys() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RuntimeHintStore(directory: directory)
+        let json = """
+            {
+              "schemaVersion": 6,
+              "hints": [],
+              "legacyHints": [],
+              "managedHints": [{
+                "projectID": "\(UUID().uuidString)",
+                "serviceID": "\(UUID().uuidString)",
+                "serviceName": "Supabase"
+              }]
+            }
+            """
+        try Data(json.utf8).write(to: store.fileURL)
+
+        #expect(throws: RuntimeHintStoreError.self) {
+            try store.load()
+        }
+    }
+
+    @Test("Supabaseの手掛かりをproject_id・設定ディレクトリ・管理関係ごと読み戻せる")
+    func roundTripsManagedRuntimeHints() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            name: "Supabase",
+            kind: .supabase,
+            executable: "supabase",
+            arguments: ["start"],
+            workingDirectory: directory
+        )
+        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let hint = try #require(
+            ManagedRuntimeHint(
+                projectID: UUID(),
+                service: service,
+                supabaseProjectID: projectID,
+                relationship: .adopted
+            )
+        )
+        let store = RuntimeHintStore(directory: directory)
+
+        try store.save([], legacy: [], managed: [hint])
+        let loaded = try store.load()
+
+        #expect(loaded.hints.isEmpty)
+        #expect(loaded.legacy.isEmpty)
+        #expect(loaded.managed == [hint])
+        #expect(hint.configDirectory == directory.standardizedFileURL)
+        #expect(hint.relationship == .adopted)
+
+        // 起動コマンドが変わったら、この手掛かりを根拠に停止コマンドを組み立てない。
+        var changedService = service
+        changedService.start.arguments.append(contentsOf: ["--exclude", "studio"])
+        #expect(hint.matchesConfiguration(of: service, currentProjectID: projectID))
+        #expect(!hint.matchesConfiguration(of: changedService, currentProjectID: projectID))
+        #expect(hint.verifiedConfiguration(of: service, currentProjectID: projectID) != nil)
+        // `project_id`が変わっていたら再検証しない。
+        let otherID = try #require(SupabaseProjectID(rawValue: "penta"))
+        #expect(!hint.matchesConfiguration(of: service, currentProjectID: otherID))
+        #expect(hint.verifiedConfiguration(of: service, currentProjectID: otherID) == nil)
+    }
+
 
     @Test("現行hint同士のserviceID重複をdecode時に拒否する")
     func rejectsDuplicateCurrentHintServiceIDs() throws {

@@ -3,6 +3,7 @@
 - ステータス: 実装開始可能
 - 作成日: 2026-08-01
 - MVP範囲更新: 2026-08-05
+- Supabase lifecycle rev.8: 2026-09-08
 - 通常プロセスの再起動とログ通知 rev.9: 2026-09-09
 - 対象: Claude Codeおよび実装担当者
 
@@ -126,17 +127,31 @@ Finderから起動したGUIアプリは、ターミナルと同じ`PATH`を持�
 
 必要であれば`posix_spawn`と`POSIX_SPAWN_SETPGROUP`を使用する。stdoutとstderrは別のpipeから受け取り、受信時刻を付けて同じログストリームへ統合する。
 
-### 5.4 managed command（Post-MVP）
+### 5.4 managed command
 
 `supabase start`や`docker compose up -d`のように起動コマンド自身が終了してもサービスが残るものは、通常の子プロセスと区別する。
 
-MVPでは通常のforeground child processだけを管理する。managed commandとDockerを設定できる旧形式を読み込んだ場合は、起動前に明示的に拒否し、通常のプロセスグループ停止へ黙ってフォールバックしない。将来対応する場合は次の責務分離を維持する。
+SupabaseはCLIプロセスではなく、`supabase/config.toml`の`project_id`で同定したローカルスタックを管理する。設定ディレクトリは明示的な`--workdir`、未指定なら起動コマンドの作業ディレクトリから決定し、`SUPABASE_WORKDIR`などの周辺環境で対象を暗黙に変えない。状態は`notRunning` / `running` / `degraded` / `unknown`、管理関係は`launched` / `adopted` / `restored`として別々に保持する。単一の`active`値へ状態、資源占有、停止権限を混在させない。
+
+設定検証では、1開発環境内のSupabaseサービスを`enabled`にかかわらず1件までとし、`project_id`の重複を登録済み開発環境全体で拒否する。`project_id`を解決できない定義も保存または起動へ進めない。
+
+起動前にローカルSupabaseスタックを実測し、`MVP_SPEC.md` 6.1.1の状態遷移を適用する。対象workdirの`supabase status`だけでは別`project_id`のスタックを検出できないため、Supabase用のread-only inventoryでローカルスタックを列挙する。この観測を汎用Docker lifecycleやコンテナの直接停止へ拡張しない。
+
+状態分類をCLIのstderr文字列だけで決めない。inventoryに対象コンテナが無ければ`notRunning`、DBコンテナがrunningかつhealthyで、設定ディレクトリが既知なら対象設定の`status`も成功した場合を`running`とする。inventoryの構造化されたコンテナ状態からDBコンテナの欠損・停止・unhealthyを確認できれば`degraded`とし、どれにも確定できないエラーや未対応の応答は`unknown`として変更操作を止める。設定ディレクトリが不明な外部スタックは、DBコンテナの実測だけで`running`または`degraded`を判定する。
+
+同一スタックが`running`で引き継ぎを承認された場合はmanaged handleを登録して残りのサービスへ進み、`supabase start`を実行しない。`degraded`または別スタックの停止を承認された場合は、確認時の全`project_id`と状態をsnapshotし、実行直前のinventoryと完全一致した場合だけ、各IDへ限定した`stop`、`notRunning`の確認、対象の`start`、`running`の確認を順に行う。不一致なら変更前に確認を出し直す。どの観測失敗も`notRunning`へ倒さず、`--all`で複数対象をまとめて停止しない。
+
+起動トランザクションでは`launchedInThisRun`と`adopted`を分離し、`failurePolicy: block`の巻き戻しは前者だけを対象にする。引き継ぎ後に後続サービスが失敗した場合、Supabaseのmanaged handleを維持して開発環境を`residual`にし、停止操作を可能にする。確認のキャンセル、`unknown`、既存スタックの停止失敗はpreflight失敗として`failurePolicy`を適用しない。`supabase start`の実行直前に再観測し、コマンド成功と`running`確認が揃った後だけ`launched`とする。起動処理失敗後に`notRunning`を確認できた場合は`failurePolicy`を適用し、それ以外は由来不明のため自動停止せず中断する。
+
+アプリ終了時は停止せず、次回起動時にmanaged command用の手掛かりから状態を再実測する。手掛かりには少なくとも`project_id`、設定ディレクトリ、導出したlifecycleコマンドの構成同一性を持たせる。一致した`launched`または`adopted`だけを`restored`とし、不一致または観測不能な対象へ`status`や`stop`を実行しない。read-only inventoryはアプリ起動時、フォアグラウンド復帰時、起動・停止・切替の直前に更新し、定期ポーリングは行わない。起動時と復帰時に手掛かりのない外部スタックを検出しても、確認は利用者が起動または切替を実行するまで出さない。
+
+`stop`と`status`は、`start`と同じCLI呼び出し形式および有効な設定ディレクトリから導出する。利用者が入力した任意の停止コマンド、`supabase stop --all`、`--no-backup`は拒否する。Supabase以外のmanaged commandとDockerは起動前に明示的に拒否し、通常のプロセスグループ停止へ黙ってフォールバックしない。
 
 - child process: プロセスグループで管理
-- managed command: 明示的な終了コマンドと実測ポートで管理
+- Supabase managed command: 明示的なstatus/stopコマンドで管理
 - Docker: コンテナ単位で管理し、コンテナ内PIDを直接killしない
 
-停止対象はポートの有無ではなく、起動または引き継ぎ済みの`ObservedRuntime`から決定する。
+停止対象はポートの有無ではなく、起動または引き継ぎ済みの管理方式から決定する。child processは`ObservedRuntime`、Supabase managed commandは`launched` / `adopted` / `restored`と再検証済みの`project_id`を停止根拠にする。
 
 ## 6. プロセスとポートの検査
 
@@ -200,11 +215,11 @@ MVPでは通常のforeground child processだけを管理する。managed comman
 - 一部停止と対象外
 - アプリ再起動後の実プロセス再検証と、停止する・そのまま使う選択
 
-Milestone 2ではHTTPヘルスチェックを行わない（rev.3 の判断）。全サービスの起動成功は「プロセスが既定の初期観測期間中に終了せず、観測終了時点でも管理下にあること」で判定し、利用者へ設定を求めない。種別による判定の違いも持たせない。設定ポートへHTTPリクエストを送ってはいけない。同じポートを先に取った別サービスの応答を自分の応答と誤認するため。Dockerはコマンド自身が終了してもコンテナが残るため、この判定を当てはめられない。managed commandとともにPost-MVPで実装するまで、起動前に明示的に拒否する。
+Milestone 2ではHTTPヘルスチェックを行わない（rev.3 の判断）。通常のforeground processの起動成功は「プロセスが既定の初期観測期間中に終了せず、観測終了時点でも管理下にあること」で判定し、利用者へ設定を求めない。通常プロセスの種別による判定の違いも持たせない。設定ポートへHTTPリクエストを送ってはいけない。同じポートを先に取った別サービスの応答を自分の応答と誤認するため。例外としてSupabaseはプロセス生存ではなく`status`で起動を確認し、`stop`で停止する。DockerやSupabase以外のmanaged commandはPost-MVPで対応するまで、起動前に明示的に拒否する。
 
 再起動後の引き継ぎでは、前回観測したPIDなどを「稼働中」という事実として復元しない。再検証の手掛かりはプロジェクト設定と別に保存し、開始時刻、実行ファイル、作業ディレクトリ、期待するポートを実測して、一致したプロセスだけを候補にする。候補が一致しない場合や観測に失敗した場合は引き継がない。プロセス不存在など確実に古い手掛かりだけを自動整理し、観測不能な手掛かりは利用者が判断するまで保持する。外部プロセスは自動終了しない。
 
-Milestone 2では切替ロジックと日常操作のUIを完成させる。複数サービスを追加・編集するUIはMilestone 3の対象とし、Milestone 2のテストでは値型から複数サービス構成を作る。自動検出、managed command、Docker lifecycleはPost-MVPとする。
+Milestone 2では切替ロジックと日常操作のUIを完成させる。複数サービスを追加・編集するUIはMilestone 3の対象とし、Milestone 2のテストでは値型から複数サービス構成を作る。自動検出、Supabase以外のmanaged command、Docker lifecycleはPost-MVPとする。
 
 ### Milestone 3: 手動の複数サービス管理
 
@@ -214,7 +229,7 @@ Milestone 2では切替ロジックと日常操作のUIを完成させる。複�
 - プロセス名、種別、起動コマンド、任意のポート、既定の起動対象、失敗ポリシーを編集する
 - 起動済みプロジェクトは編集できず、先に停止を求める
 - 既存の終了順、今回の起動対象、未対応の終了方法を編集保存で欠落させない
-- 5ステップウィザード、自動検出、複製、managed command、Docker、HTTP readinessは実装しない
+- 5ステップウィザード、自動検出、複製、Supabase以外のmanaged command、Docker、HTTP readinessは実装しない
 - 通常の起動・停止は開発環境単位とし、稼働中の通常プロセスだけ復旧用の再起動を提供する。個別起動・個別停止は実装しない
 
 ### Milestone 4: ローカル`.app`
@@ -227,7 +242,7 @@ Milestone 2では切替ロジックと日常操作のUIを完成させる。複�
 
 - JavaScript、Expo、Supabase、Inngest、Docker Composeの自動検出と5ステップウィザード
 - プロジェクト複製
-- managed command、カスタム終了コマンド、Docker lifecycle
+- Supabase以外のmanaged command、カスタム終了コマンド、Docker lifecycle
 - HTTP readinessとカスタムヘルスチェック
 - Expo QR、メニューバー、グローバルショートカット
 - Universal buildの確定、Developer ID署名、公証、DMG、別Macでの初回起動確認
@@ -254,6 +269,8 @@ Milestone 2では切替ロジックと日常操作のUIを完成させる。複�
 - 起動前に設定ポートの空き確認を行わず、HTTPリクエストも送らない
 - `failurePolicy: block`の起動失敗では今回起動したサービスを安全に停止し、後続を起動しない
 - `failurePolicy: continue`の起動失敗では後続を起動し、プロジェクトを一部停止として表示する
+- Supabaseの確認キャンセル、観測不能、既存スタックの停止失敗では`failurePolicy: continue`でも後続を起動しない
+- 引き継いだSupabaseは後続の`failurePolicy: block`による巻き戻し対象にせず、残存ありとして停止できる
 - 同じ設定ポートを持つサービスが複数あっても、保存を拒否せず設定順に起動を試行する
 - 停止側で実際に起動または引き継いだ全サービスを停止する
 - 停止側の全実測ポートが解放されるまで、切替先を1件も起動しない
@@ -311,5 +328,103 @@ Milestone 3は手動の開発環境管理に絞ります。単一の編集画面
 
 起動済みプロジェクトの編集と登録解除はUIだけでなくAPI境界でも拒否し、停止後に許可してください。設定ファイルを読み込めない状態では古いメモリ内容による追加、更新、起動を拒否し、停止は復旧手段として維持してください。編集画面が扱わない終了順、今回の起動対象、未対応の終了方法を保存時に欠落させないでください。必須値を空文字や0で補完せず、具体的な検証エラーを表示してください。
 
-v1/v2設定は各プロセスの既存作業パスごとにv3へ変換し、プロセスID、起動順、終了順、今回の起動対象を維持してください。5ステップウィザード、自動検出、プロジェクト複製、作業ディレクトリまたはプロセス単位の個別起動・個別停止、managed command、カスタム終了コマンド、Docker lifecycle、HTTP readiness、配布工程は実装しないでください。Milestone 2の起動・停止・切替・排他・引き継ぎ・終了時flushを変更しないでください。最後にMilestone 3の完了条件と照合し、swift buildとswift testの成功・失敗を正確に報告してください。
+v1/v2設定は各プロセスの既存作業パスごとにv3へ変換し、プロセスID、起動順、終了順、今回の起動対象を維持してください。5ステップウィザード、自動検出、プロジェクト複製、作業ディレクトリまたはプロセス単位の個別起動・個別停止、Supabase以外のmanaged command、カスタム終了コマンド、Docker lifecycle、HTTP readiness、配布工程は実装しないでください。Milestone 2の起動・停止・切替・排他・引き継ぎ・終了時flushを変更しないでください。最後にMilestone 3の完了条件と照合し、swift buildとswift testの成功・失敗を正確に報告してください。
+```
+
+## 13. Supabase lifecycle rev.8を実装するClaude Codeへの依頼
+
+```text
+このリポジトリのCLAUDE.md、MVP_SPEC.md、DESIGN.md、IMPLEMENTATION_BRIEF.mdを全文読み、MVP_SPEC.md 5.5、6.1.1、11と、DESIGN.md rev.8を正としてSupabase lifecycle rev.8を実装してください。
+
+作業ツリーにはSupabase lifecycleの部分実装を含む未コミット差分があります。最初にgit status --shortとgit diffを確認し、既存差分を破棄・巻き戻し・上書きしないでください。その後、変更前のswift buildとswift testを実行し、成功・失敗を基準線として記録してください。実装前に、次の形式で短いプランを提示してください。
+
+| ファイル | 変更内容 |
+| --- | --- |
+| 対象ファイル | そのファイルが受け持つ責務と変更点 |
+
+目的は、Supabase CLIプロセスではなく、`supabase/config.toml`の`project_id`で識別したローカルスタックを安全に観測・起動・引き継ぎ・停止することです。1開発環境につきSupabaseサービスは1件まで、`project_id`は登録済み開発環境全体で一意とします。複数スタックの同時利用と、同じスタックを複数の開発環境から共有する機能は実装しません。
+
+現状の部分実装は完成形ではありません。少なくとも次を置き換えてください。
+
+- `ManagedCommandSupervisor.Status`の`running` / `stopped` / `incomplete`と単一の`active`値を、実測状態`notRunning` / `running` / `degraded` / `unknown`と、管理関係`launched` / `adopted` / `restored`へ分離する
+- `supabase status`のstderr文字列から停止・不完全状態を推測する処理を、Dockerの構造化されたread-only inventoryへ置き換える
+- `supabase stop`の終了コード0だけで停止済みとせず、対象`project_id`が`notRunning`になったことを再観測する
+- 同一`project_id`の`running`を起動失敗にするpreflightを、引き継ぎ確認へ置き換える
+- 承認済みサービスIDの集合だけを渡すAPIを、対象`project_id`、確認時の全スタックと状態、対象設定のfingerprintを含む承認snapshotへ置き換える
+- 起動時だけのmanaged hint再検証に、フォアグラウンド復帰時と起動・停止・切替直前の再観測を加える。定期ポーリングは追加しない
+
+想定する変更責務は次のとおりです。既存責務に合わなければファイル分割は変更して構いませんが、状態、観測、停止権限を1つのBoolへまとめないでください。
+
+| ファイル | 変更内容 |
+| --- | --- |
+| `Sources/DevSwitcherCore/Domain/ServiceDefinition.swift` | Supabaseの設定ディレクトリ、`project_id`、start/status/対象限定stopを構造化して導出する。`--all`、`--no-backup`、任意stopを生成できない型にする |
+| `Sources/DevSwitcherCore/Domain/ProjectValidator.swift`、`ValidationError.swift` | 1開発環境2件以上のSupabaseと、登録済み開発環境間の`project_id`重複を具体的なエラーで拒否する |
+| `Sources/DevSwitcherCore/Domain/RuntimeState.swift`、`SwitchState.swift` | 4つの実測状態、3つの管理関係、確認snapshotと結果を別型で表現する |
+| `Sources/DevSwitcherCore/Runtime/ManagedCommandSupervisor.swift` | `active`とstderr判定を廃止し、inventory、status、start、対象限定stop、停止後確認を組み合わせる |
+| `Sources/DevSwitcherCore/Runtime/RuntimeRegistry.swift` | `launched` / `adopted` / `restored`のhandleを登録し、状態ではなく管理関係と再検証済みIDを停止権限にする |
+| `Sources/DevSwitcherCore/Persistence/RuntimeHintStore.swift` | `project_id`、設定ディレクトリ、lifecycle fingerprintを保存する。旧hintを根拠にstatus/stopを実行しない |
+| `Sources/DevSwitcherCore/Switching/SwitchCoordinator.swift` | 全スタックのpreflight、承認snapshotの再検証、個別停止、引き継ぎ、failurePolicy、巻き戻しを1つの排他トランザクションとして実装する |
+| `Sources/DevSwitcher/App/AppState.swift`、`DevSwitcherApp.swift` | 起動・切替時だけ確認を出し、アプリ起動・フォアグラウンド復帰時は観測と表示更新だけを直列実行する |
+| `Sources/DevSwitcher/Features/Switching/` | 同一IDの引き継ぎ、degradedの復旧、別IDへの切替を1つのSupabase確認シートで扱い、複数対象を全件表示する |
+| `Tests/DevSwitcherCoreTests/`、`Tests/DevSwitcherTests/` | DockerとSupabase CLIを差し替え可能なtest doubleで、以下の完了条件を自動検証する |
+
+`project_id`は、明示的な`--workdir`があればそのディレクトリ、なければ`CommandSpec.workingDirectory`を基準に`supabase/config.toml`から取得してください。ディレクトリ名、コンテナ名、ポートから補完・正規化しないでください。対象ファイルが無い、読めない、トップレベルの`project_id`が無い・空・重複・解釈不能のいずれも具体的なエラーにします。外部パッケージは追加せず、必要な範囲だけを読む専用parserに分離し、コメント内や別sectionの文字列を誤認しないテストを追加してください。TOMLエスケープを正しく解釈しない限り、バックスラッシュを削除するなどの部分変換はせずfail-fastで拒否してください。`.env`、`.env.*`、`.envrc`は読みません。`SUPABASE_WORKDIR`など、対象を暗黙に変える環境値はSupabase CLIへ渡さないでください。
+
+ローカルスタックの列挙は、Supabase CLIが付ける`com.supabase.cli.project`ラベルを使い、`docker ps -a`と`docker inspect`相当のread-onlyコマンドからJSONを解析する専用inventoryへ分離してください。IDはコンテナ名から切り出さずラベル値を使います。DBコンテナの存在、running状態、healthを構造化データから判定し、次の規則を実装してください。
+
+- 対象IDのコンテナが0件なら`notRunning`。volumeは数えない
+- DBコンテナがrunningかつhealthyで、設定ディレクトリが既知なら対象workdirの`supabase status`も成功した場合だけ`running`
+- 設定ディレクトリが不明な外部スタックは、DBコンテナがrunningかつhealthyなら`running`
+- コンテナが1件以上あり、DBの欠損・停止・unhealthyを確認できたら`degraded`
+- Dockerの実行失敗、JSON解析失敗、ラベル欠落、DB候補の重複、未対応の状態は`unknown`。`notRunning`へ倒さない
+
+Docker CLIの場所は既存の`ExecutableResolver`とGUI用PATH解決を利用し、shell文字列を組み立てないでください。このinventoryは観測専用です。`docker start`、`docker stop`、コンテナ削除、volume操作は実装しません。ラベル名とJSON decodeを1箇所に閉じ込め、Supabase CLI互換性を将来更新できるようにしてください。
+
+設定保存時は、`enabled`に関係なく1開発環境内のSupabaseが2件以上なら拒否してください。候補を含む全登録済み開発環境の`project_id`を解決して重複を拒否し、解決不能な環境があれば一意性を確認できたことにせず保存を失敗させます。保存済み設定の読み込みではファイルを黙って書き換えず、起動直前にも全登録済みSupabaseのIDを再解決してください。解決不能または重複なら新しい起動・切替を止めますが、すでに管理下にあるサービスの停止導線は残してください。
+
+起動または切替のpreflightは、今回の起動対象にSupabaseが含まれる場合だけ、他サービスや切替元を変更する前に行います。観測結果から次の1件の確認planを作ってください。
+
+- 対象IDが`running`: 対象を`adopted`にする。`supabase start`は実行しない
+- 対象IDが`degraded`: 対象限定stop、`notRunning`確認、対象start、`running`確認
+- 別IDが`running`または`degraded`: 停止対象へ追加する
+- 対象が`notRunning`: 別IDの停止完了後に対象start、`running`確認
+- 1件でも`unknown`: 確認や変更操作へ進まず、理由を表示する
+
+既存スタックが複数なら確認を分割せず、引き継ぐ対象と停止する全対象を1つのシートに表示してください。各行に`project_id`を必須表示し、登録済みなら開発環境名と設定ディレクトリ、未登録なら「未登録」を表示します。停止後に対象の起動が失敗しても停止済みスタックを自動再起動しないことを明記し、キャンセルを既定操作にします。通常の開発環境切替で停止承認済みの管理下Supabaseを重ねて確認しないでください。
+
+承認値には、確認時の全スタックIDと状態、対象設定の`project_id`とfingerprintを含めてください。承認後、最初の変更操作の直前にinventoryと対象設定を再取得し、snapshotと一致しなければ何も変更せず、最新内容で確認を出し直します。承認済みIDを各`supabase stop --project-id <id>`で1件ずつ停止して`notRunning`を確認し、全件停止後にも予期しないスタックが現れていないか再観測してから対象を起動または引き継いでください。`--all`と`--no-backup`はコマンド構築APIでも拒否し、直接Dockerを変更しないでください。
+
+同じ対象IDの`running`と別IDが共存する場合は、別IDだけを停止し、対象がまだ`running`であることを確認して`adopted`にします。対象が`degraded`なら対象を含む承認済み全件を停止して対象だけを起動します。途中の停止に失敗したら後続の停止と起動を中断し、すでに停止したスタックを再起動しません。失敗したID、停止済みID、未処理IDを結果へ残してください。
+
+確認キャンセル、`unknown`、snapshot不一致、既存スタックの停止失敗はpreflight失敗です。Supabaseサービスが`failurePolicy: continue`でも後続サービスを起動しないでください。`supabase start`は実行直前に対象が`notRunning`か再観測し、コマンドと起動後の`running`確認がともに成功した後だけ`launched`のhandleを登録してください。起動処理失敗後が`notRunning`なら`failurePolicy`を適用します。`running` / `degraded` / `unknown`なら起動由来を確定できないため自動停止せず、`failurePolicy`に関係なく中断してください。再試行時に最新状態を観測し、引き継ぎまたは停止の確認へ進めます。
+
+起動トランザクションでは、今回Dev Switcherが起動した`launchedInThisRun`と、既存スタックを引き継いだ`adopted`を別々に保持してください。後続サービスが`failurePolicy: block`で失敗した場合、`launchedInThisRun`だけを逆順で停止し、`adopted`は稼働・管理関係・hintを維持します。この開発環境は`residual`（残存あり）とし、通常の停止操作から引き継いだSupabaseを停止できるようにしてください。今回起動したSupabaseは従来どおり巻き戻します。
+
+managed hintには`project_id`、設定ディレクトリ、lifecycle fingerprintを保存し、保存値だけで稼働中へ戻さないでください。前回の`launched`または`adopted`を示すhintと、現在の設定、inventory、対象workdirのstatusが一致した場合だけ`restored`にします。旧schema、設変更、ID変更、観測不能ではstatusやstopを実行せず、hintと理由を保持します。定義の欠落、設定またはIDの不一致を確認できるhintは、利用者の明示操作で破棄できるようにします。schemaを変更する場合は明示的な移行分岐と往復テストを追加し、欠落値を既定値で補完しないでください。
+
+read-only inventoryは、アプリ起動時、アプリがフォアグラウンドへ戻った時、各start/stop/switchの直前に更新してください。既存の排他トークンとactorを通し、操作中の観測と競合させないでください。アプリ起動時と復帰時は表示更新とhintの自動再検証だけを行い、手掛かりのない外部スタックを検出しても確認、引き継ぎ、停止を実行しません。確認は利用者がstartまたはswitchを押した時だけ出します。Timerや定期ポーリングは追加しません。
+
+最低限、次をSwift Testingで検証してください。実Dockerや利用者のSupabaseへ依存せず、inventoryとCLI実行を注入可能にしてtest doubleで確認します。
+
+- Supabaseが2件ある1開発環境を、片方がdisabledでも拒否する
+- 異なる開発環境の同じ`project_id`を拒否し、異なるIDは保存できる
+- `config.toml`の欠落、空、重複、コメント内・別sectionの誤認、未対応エスケープを拒否する
+- コンテナ0件、healthy DB、DB欠損、stopped、unhealthy、Docker失敗、JSON不正を4状態へ分類する
+- 同一IDの`running`は確認後に`adopted`となり、startを実行しない。キャンセルではコマンドを1件も実行しない
+- 同一IDの`degraded`は承認後だけ、対象限定stop、停止確認、start、running確認の順になる
+- 別IDが1件または複数ある場合、1つの確認に全件を含め、承認後も各IDを個別停止する
+- 登録済みと未登録の既存スタックを確認表示で区別する
+- 承認後にID集合・状態・対象fingerprintのいずれかが変わった場合、停止・起動せず最新内容で再確認する
+- 途中の停止失敗と`unknown`では、`failurePolicy: continue`でも後続を起動しない
+- `--all`、`--no-backup`、Docker変更コマンドが全経路で実行されない
+- 対象start失敗後の実測が`notRunning`の場合だけ`failurePolicy`を適用し、由来不明の占有状態を自動停止しない
+- 今回起動したSupabaseは後続のblock失敗で停止し、引き継いだSupabaseは停止せず残存ありと停止導線を維持する
+- `launched`と`adopted`のhintを再起動後に実測して`restored`へでき、旧hint・設定不一致・ID不一致・観測不能からstatus/stopしない。破棄可能な不一致hintは明示操作で破棄できる
+- アプリ起動とフォアグラウンド復帰では確認を出さず、start/switch時だけ出す
+- 通常の開発環境切替で管理下Supabaseの停止確認を二重に出さない
+- `failurePolicy`、通常プロセスの起動順・停止順、ポート解放ゲート、通常プロセスの引き継ぎに回帰がない
+
+外部パッケージ、汎用Docker lifecycle、Supabase以外のmanaged command、複数Supabaseの同時稼働、共有スタック、HTTP readiness、自動検出ウィザードは追加しないでください。DB reset、migration、seed、`supabase stop --all`、`--no-backup`、ローカルファイル削除を実行しないでください。実Supabaseのstart/stopは利用者の明示承認なしに検証で実行せず、未実施なら未検証として報告してください。
+
+実装後にswift buildとswift testを実行してください。失敗した場合はテストをskip・弱体化せず、原因と未完了条件を報告してください。最後に、変更したファイル、検証結果、実Docker Desktop＋Supabase CLIで未確認の項目、残るCLIバージョン互換性リスクを簡潔に報告してください。完了判断は利用者が行います。
 ```

@@ -109,6 +109,244 @@ func makeFailingService(
     )
 }
 
+/// Docker inventoryとSupabase CLIの両方を差し替えるテスト用の世界。
+///
+/// 実Dockerにも利用者のSupabaseにも触れず、状態遷移と実行コマンドだけを検証する。
+/// `start`と`stop`はこの世界の状態を変えるので、CLIの契約どおりの順序も確かめられる。
+actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
+    struct CommandRecord: Equatable, Sendable {
+        let executable: String
+        let arguments: [String]
+
+        var line: String { ([executable] + arguments).joined(separator: " ") }
+    }
+
+    enum CommandFailure: Equatable, Sendable {
+        /// 終了コードだけ失敗する。
+        case exit(code: Int32)
+        /// 実行そのものができない（実行ファイルを解決できないなど）。
+        case unavailable(String)
+    }
+
+    private var stacks: [SupabaseProjectID: SupabaseContainerObservation]
+    private var inventoryFailure: String?
+    private var startFailure: CommandFailure?
+    private var stopFailure: CommandFailure?
+    private var statusFailure: CommandFailure?
+    /// `start`呼び出しと同時に外部スタックが現れる競合を再現する。
+    private var stackAppearingOnStart: (SupabaseProjectID, SupabaseContainerObservation)?
+    /// `stop`が終了コード0を返してもコンテナを残す。停止確認の検証に使う。
+    private var stopLeavesStackRunning = false
+    private(set) var commands: [CommandRecord] = []
+
+    init(stacks: [String: SupabaseContainerObservation] = [:]) {
+        var initial: [SupabaseProjectID: SupabaseContainerObservation] = [:]
+        for (rawValue, observation) in stacks {
+            guard let projectID = SupabaseProjectID(rawValue: rawValue) else {
+                preconditionFailure("テスト用の project_id が不正です: \(rawValue)")
+            }
+            initial[projectID] = observation
+        }
+        self.stacks = initial
+    }
+
+    // MARK: - 世界の操作
+
+    func setStack(_ rawValue: String, _ observation: SupabaseContainerObservation?) {
+        guard let projectID = SupabaseProjectID(rawValue: rawValue) else {
+            preconditionFailure("テスト用の project_id が不正です: \(rawValue)")
+        }
+        stacks[projectID] = observation
+    }
+
+    func failInventory(_ reason: String?) { inventoryFailure = reason }
+    func failStart(_ failure: CommandFailure?) { startFailure = failure }
+    func failStop(_ failure: CommandFailure?) { stopFailure = failure }
+    func failStatus(_ failure: CommandFailure?) { statusFailure = failure }
+    func makeStackAppearWhenStartRuns(
+        _ rawValue: String,
+        observation: SupabaseContainerObservation
+    ) {
+        guard let projectID = SupabaseProjectID(rawValue: rawValue) else {
+            preconditionFailure("テスト用の project_id が不正です: \(rawValue)")
+        }
+        stackAppearingOnStart = (projectID, observation)
+    }
+    func keepStackAfterStop(_ keep: Bool) { stopLeavesStackRunning = keep }
+    func resetCommands() { commands.removeAll() }
+
+    var commandLines: [String] { commands.map(\.line) }
+
+    var runningProjectIDs: [String] {
+        stacks.keys.map(\.rawValue).sorted()
+    }
+
+    // MARK: - SupabaseInventoryProbing
+
+    func containers() async -> SupabaseInventoryResult {
+        if let inventoryFailure { return .unobservable(reason: inventoryFailure) }
+        return .observed(stacks)
+    }
+
+    // MARK: - SupabaseCommandRunning
+
+    func run(_ command: CommandSpec) async throws -> SupabaseCommandResult {
+        commands.append(
+            CommandRecord(executable: command.executable, arguments: command.arguments)
+        )
+        // 生成側が変わっても、危険なオプションが実行境界へ届かないことを確かめる。
+        for forbidden in ["--all", "--no-backup"] where command.arguments.contains(forbidden) {
+            throw SupabaseCommandError.forbiddenOption(
+                command: command.displayCommandLine,
+                option: forbidden
+            )
+        }
+
+        if command.arguments.contains("start") {
+            return try runStart(command)
+        }
+        if command.arguments.contains("stop") {
+            return try runStop(command)
+        }
+        if command.arguments.contains("status") {
+            return try runStatus(command)
+        }
+        return SupabaseCommandResult(
+            status: .exited(code: 64),
+            standardOutput: "",
+            standardError: "unexpected command"
+        )
+    }
+
+    private func runStart(_ command: CommandSpec) throws -> SupabaseCommandResult {
+        if let appearing = stackAppearingOnStart {
+            stacks[appearing.0] = appearing.1
+            stackAppearingOnStart = nil
+        }
+        if let failure = startFailure { return try result(for: failure, command: command) }
+        guard let projectID = try? projectID(for: command) else {
+            return SupabaseCommandResult(
+                status: .exited(code: 1),
+                standardOutput: "",
+                standardError: "config.toml を読めません"
+            )
+        }
+        stacks[projectID] = .databaseHealthy
+        return SupabaseCommandResult(
+            status: .exited(code: 0),
+            standardOutput: "Started supabase local development setup.",
+            standardError: ""
+        )
+    }
+
+    private func runStop(_ command: CommandSpec) throws -> SupabaseCommandResult {
+        if let failure = stopFailure { return try result(for: failure, command: command) }
+        guard let index = command.arguments.firstIndex(of: "--project-id"),
+              command.arguments.indices.contains(index + 1),
+              let projectID = SupabaseProjectID(rawValue: command.arguments[index + 1]) else {
+            return SupabaseCommandResult(
+                status: .exited(code: 2),
+                standardOutput: "",
+                standardError: "--project-id が指定されていません"
+            )
+        }
+        if !stopLeavesStackRunning {
+            stacks[projectID] = nil
+        }
+        return SupabaseCommandResult(
+            status: .exited(code: 0),
+            standardOutput: "Stopped supabase local development setup.",
+            standardError: ""
+        )
+    }
+
+    private func runStatus(_ command: CommandSpec) throws -> SupabaseCommandResult {
+        if let failure = statusFailure { return try result(for: failure, command: command) }
+        guard let projectID = try? projectID(for: command),
+              stacks[projectID] == .databaseHealthy else {
+            return SupabaseCommandResult(
+                status: .exited(code: 1),
+                standardOutput: "",
+                standardError: "supabase local development setup is not running."
+            )
+        }
+        return SupabaseCommandResult(
+            status: .exited(code: 0),
+            standardOutput: "{}",
+            standardError: ""
+        )
+    }
+
+    private func result(
+        for failure: CommandFailure,
+        command: CommandSpec
+    ) throws -> SupabaseCommandResult {
+        switch failure {
+        case let .exit(code):
+            return SupabaseCommandResult(
+                status: .exited(code: code),
+                standardOutput: "",
+                standardError: "failed"
+            )
+        case let .unavailable(reason):
+            throw SupabaseCommandError.unresolvable(
+                command: command.displayCommandLine,
+                reason: reason
+            )
+        }
+    }
+
+    /// 実CLIと同じく、`--workdir`（なければ作業ディレクトリ）の設定から対象を決める。
+    private func projectID(for command: CommandSpec) throws -> SupabaseProjectID {
+        var directory = command.workingDirectory
+        if let index = command.arguments.firstIndex(of: "--workdir"),
+           command.arguments.indices.contains(index + 1) {
+            directory = URL(fileURLWithPath: command.arguments[index + 1])
+        }
+        return try SupabaseConfigFile.projectID(inConfigDirectory: directory)
+    }
+}
+
+/// `<directory>/supabase/config.toml` を作る。`project_id`だけを持つ最小構成。
+@discardableResult
+func writeSupabaseConfig(
+    projectID: String,
+    in directory: URL,
+    extraContent: String = ""
+) throws -> URL {
+    let configDirectory = directory.appendingPathComponent("supabase", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: configDirectory,
+        withIntermediateDirectories: true
+    )
+    let url = configDirectory.appendingPathComponent("config.toml")
+    let content = """
+        # Supabase config
+        project_id = "\(projectID)"
+        \(extraContent)
+        """
+    try Data(content.utf8).write(to: url)
+    return url
+}
+
+func makeSupabaseService(
+    name: String = "Supabase",
+    workingDirectory: URL,
+    executable: String = "supabase",
+    arguments: [String] = ["start"],
+    failurePolicy: FailurePolicy = .block
+) -> ServiceDefinition {
+    makeService(
+        name: name,
+        kind: .supabase,
+        ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
+        executable: executable,
+        arguments: arguments,
+        workingDirectory: workingDirectory,
+        failurePolicy: failurePolicy
+    )
+}
+
 func readLines(_ url: URL) -> [String] {
     guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
     return text

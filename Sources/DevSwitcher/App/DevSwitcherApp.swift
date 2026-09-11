@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    /// フォアグラウンド復帰時はSupabaseを再観測する（`MVP_SPEC.md` 11）。
+    /// 確認表示・引き継ぎ・停止はここでは行わない。定期ポーリングも足さない。
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { await appState.applicationDidBecomeActive() }
+    }
+
     /// 錨は同定の根拠になるため、できるだけ終了直前に測り直す。
     /// 判断そのものは `TerminationCoordinator` にあり、テストで確かめている。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

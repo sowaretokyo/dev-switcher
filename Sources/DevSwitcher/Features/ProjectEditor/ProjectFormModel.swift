@@ -317,6 +317,20 @@ final class ProjectFormModel {
         return directory.services.indices.contains(index + offset)
     }
 
+    /// 新規の空欄だけに種別の最小プリセットを入れる。入力済みコマンドは上書きしない。
+    func setKind(_ kind: ServiceKind, for serviceID: UUID) {
+        updateService(serviceID) { service in
+            let wasSupabase = service.kind == .supabase
+            service.kind = kind
+            guard kind == .supabase,
+                  !wasSupabase,
+                  service.executable.trimmed.isEmpty,
+                  service.argumentsText.trimmed.isEmpty else { return }
+            service.executable = "supabase"
+            service.argumentsText = "start"
+        }
+    }
+
     /// SwiftUI が削除アニメーション中の行を再評価する間は、削除済み ID なら nil を返す。
     /// 保存時のデータ整合性は `services` の precondition で別途保証する。
     func positionIfPresent(of serviceID: UUID) -> Int? {

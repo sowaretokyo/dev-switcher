@@ -769,7 +769,7 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(project)
     }
 
-    @Test("MVP で実行できない設定は、停止を始める前に失敗させる")
+    @Test("状態確認方法のないカスタム終了コマンドは、停止を始める前に失敗させる")
     func unsupportedConfigurationFailsBeforeStopping() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -784,10 +784,10 @@ struct SwitchCoordinatorTests {
         )
         let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
 
-        // 終了コマンドを持つサービス（managed command）は Post-MVP。
+        // Supabase以外の任意managed commandには、まだ状態確認方法が無い。
         let managed = makeService(
-            name: "Supabase",
-            kind: .supabase,
+            name: "Custom managed command",
+            kind: .other,
             ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
             executable: "/bin/sh",
             arguments: ["-c", "while true; do sleep 0.1; done"],

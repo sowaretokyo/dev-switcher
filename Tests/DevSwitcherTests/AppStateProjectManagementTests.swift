@@ -314,6 +314,7 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
+        try writeSupabaseConfig(projectID: "bell", in: directory)
         let state = makeAppState(directory: directory)
         await state.bootstrap()
 
@@ -323,7 +324,8 @@ struct AppStateProjectManagementTests {
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Supabase"
         model.services[0].kind = .supabase
-        model.services[0].executable = "/usr/bin/true"
+        model.services[0].executable = "supabase"
+        model.services[0].argumentsText = "start"
         model.addService()
         model.services[1].name = "Web"
         model.services[1].kind = .web
