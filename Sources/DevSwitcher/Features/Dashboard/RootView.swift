@@ -24,11 +24,29 @@ struct RootView: View {
             }
         }
         .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
-        // 稼働中のプロジェクトの識別と操作はツールバーが持つ（DESIGN.md 7章）。
+        // ツールバーの先頭は稼働中の開発環境そのものにする（`mock.html` の `toolbar()`）。
+        // アプリ名はいま見ている画面から自明で、識別情報の前に置くと
+        // 「起動中の開発環境はありません Dev Switcher」と読むことになる。
+        // ウィンドウ自体の題名は `WindowGroup` に残るので、ウィンドウメニューと
+        // Mission Control では引き続き名前で探せる。
+        .toolbar(removing: .title)
+        // 稼働中の開発環境の識別と操作はツールバーが持つ（DESIGN.md 7章）。
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                ToolbarIdentity()
+            // macOS 26 はツールバー項目1つ1つにガラスの背景を敷く。これは押すものに
+            // 与えられる見た目で、状態表示に付くと文字幅ぴったりのボタンに見える。
+            // 読むだけの項目なので背景を外す。26 より前はこの背景自体がないため、
+            // 分岐の else 側で何も指定しなくてよい。
+            if #available(macOS 26, *) {
+                ToolbarItem(placement: .navigation) {
+                    ToolbarIdentity()
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .navigation) {
+                    ToolbarIdentity()
+                }
             }
+            // 操作はガラスの背景を残す。押せることが見た目で分かる必要がある。
             ToolbarItemGroup(placement: .primaryAction) {
                 ToolbarActions()
             }
