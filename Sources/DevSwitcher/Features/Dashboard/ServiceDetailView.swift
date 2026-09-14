@@ -13,7 +13,17 @@ struct ServiceDetailView: View {
         let buffer = state.logBuffer(of: service.id)
 
         VStack(spacing: 0) {
-            header(uiState)
+            // 上部の項目数は実行時に決まり、Supabase では設定ファイルや project_id が増える。
+            // 縮まないまま置くと、サイドバーと同じ高さを持つ画面全体がその高さを要求し、
+            // ウィンドウの上下が切れてサイドバーごと押し出される。
+            // 収まるときはそのまま出し、収まらないときだけスクロールにする。常にスクロールに
+            // すると、上部が短くてもログと高さを半分ずつ分け合い、ログ欄が狭くなる。
+            ViewThatFits(in: .vertical) {
+                header(uiState)
+                ScrollView {
+                    header(uiState)
+                }
+            }
             Divider()
             LogTextView(lines: buffer.lines, isFollowing: $isFollowing)
             Divider()
