@@ -322,8 +322,12 @@ public enum ProjectValidator {
     ) -> [ValidationError] {
         var errors: [ValidationError] = []
         var seenPorts: Set<Int> = []
+        var seenPortIDs: Set<UUID> = []
 
         for port in ports {
+            if !seenPortIDs.insert(port.id).inserted {
+                errors.append(.duplicatePortIDInService(service: serviceLabel, id: port.id))
+            }
             if !PortSpec.validRange.contains(port.port) {
                 errors.append(.portOutOfRange(service: serviceLabel, port: port.port))
             }

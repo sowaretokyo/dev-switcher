@@ -47,6 +47,17 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, Spacing.m)
                 .padding(.vertical, Spacing.s)
+                Button {
+                    state.presentProjectImport()
+                } label: {
+                    Label("JSONから取り込む…", systemImage: "square.and.arrow.down")
+                        .font(Typography.row)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Spacing.m)
+                .padding(.vertical, Spacing.s)
             }
             .background(.bar)
         }

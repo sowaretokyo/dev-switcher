@@ -39,6 +39,9 @@ struct RootView: View {
         .sheet(item: $state.projectFormPresentation) { presentation in
             ProjectFormView(project: presentation.project)
         }
+        .sheet(isPresented: $state.isProjectImportPresented) {
+            ProjectImportView()
+        }
         .sheet(item: $state.unregisterPresentation) { presentation in
             UnregisterConfirmationSheet(presentation: presentation)
         }

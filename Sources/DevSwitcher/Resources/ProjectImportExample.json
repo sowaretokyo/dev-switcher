@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 3,
+  "projects": [
+    {
+      "id": "233F0046-5A31-4BA9-8622-78392125C5ED",
+      "name": "Example",
+      "color": "blue",
+      "workingDirectories": [
+        {
+          "id": "4B7EFC9B-F401-42BE-86D9-E92306A94A12",
+          "name": "Web",
+          "directory": "file:///ABSOLUTE/PATH/TO/web/",
+          "serviceIDs": [
+            "83EC0330-994B-45F3-AFD1-CECB8B4DCC83",
+            "F691046F-42EA-4A22-A30D-D4A1E40C80F8"
+          ]
+        }
+      ],
+      "services": [
+        {
+          "id": "83EC0330-994B-45F3-AFD1-CECB8B4DCC83",
+          "name": "Web",
+          "kind": "web",
+          "start": {
+            "executable": "pnpm",
+            "arguments": ["dev"],
+            "workingDirectory": "file:///ABSOLUTE/PATH/TO/web/"
+          },
+          "ports": [
+            {
+              "id": "ACB0F441-CAB4-4717-B482-66BE14C52954",
+              "port": 3000,
+              "primary": true,
+              "openUrl": "http://localhost:3000"
+            }
+          ],
+          "enabledByDefault": true,
+          "failurePolicy": "block"
+        },
+        {
+          "id": "F691046F-42EA-4A22-A30D-D4A1E40C80F8",
+          "name": "Worker",
+          "kind": "worker",
+          "start": {
+            "executable": "pnpm",
+            "arguments": ["worker"],
+            "workingDirectory": "file:///ABSOLUTE/PATH/TO/web/"
+          },
+          "ports": [],
+          "enabledByDefault": false,
+          "failurePolicy": "continue"
+        }
+      ],
+      "enabledNow": {}
+    }
+  ]
+}

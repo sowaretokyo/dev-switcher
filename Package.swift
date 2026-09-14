@@ -18,7 +18,8 @@ let package = Package(
         .target(
             name: "DevSwitcherApp",
             dependencies: ["DevSwitcherCore"],
-            path: "Sources/DevSwitcher"
+            path: "Sources/DevSwitcher",
+            resources: [.process("Resources")]
         ),
         // 起動エントリだけを持つ薄い実行可能ターゲット。
         .executableTarget(

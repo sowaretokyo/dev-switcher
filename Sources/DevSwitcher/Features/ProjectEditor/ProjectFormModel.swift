@@ -37,11 +37,18 @@ final class ProjectFormModel {
 
     /// 起動・停止・状態・ログを個別に持つ1プロセス分の入力。
     struct ServiceDraft: Identifiable, Equatable {
+        enum ArgumentsFormat {
+            case lines
+            case json
+        }
+
         let id: UUID
         var name: String
         var kind: ServiceKind
         var executable: String
         var argumentsText: String
+        /// 改行や前後の空白を含む既存引数は、境界を失わないJSON配列で編集する。
+        let argumentsFormat: ArgumentsFormat
         var ports: [PortDraft]
         var enabledByDefault: Bool
         var failurePolicy: FailurePolicy
@@ -54,6 +61,7 @@ final class ProjectFormModel {
             kind: ServiceKind = .web,
             executable: String = "",
             argumentsText: String = "",
+            argumentsFormat: ArgumentsFormat = .lines,
             ports: [PortDraft] = [PortDraft(isPrimary: true)],
             enabledByDefault: Bool = true,
             failurePolicy: FailurePolicy = .block,
@@ -64,6 +72,7 @@ final class ProjectFormModel {
             self.kind = kind
             self.executable = executable
             self.argumentsText = argumentsText
+            self.argumentsFormat = argumentsFormat
             self.ports = ports
             self.enabledByDefault = enabledByDefault
             self.failurePolicy = failurePolicy
@@ -71,6 +80,23 @@ final class ProjectFormModel {
         }
 
         init(service: ServiceDefinition) {
+            let arguments = service.start.arguments
+            let lines = arguments.joined(separator: "\n")
+            let needsJSON = arguments.contains { $0.rangeOfCharacter(from: .newlines) != nil }
+                || Self.parseLines(lines) != arguments
+            let argumentsText: String
+            if needsJSON {
+                do {
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+                    argumentsText = String(decoding: try encoder.encode(arguments), as: UTF8.self)
+                } catch {
+                    // 文字列配列は常にJSONで表現できる。変換不能を空欄へ置き換えない。
+                    preconditionFailure("引数をJSONへ変換できませんでした。\(error)")
+                }
+            } else {
+                argumentsText = lines
+            }
             let existingPorts = service.ports.map { port in
                 PortDraft(
                     id: port.id,
@@ -85,7 +111,8 @@ final class ProjectFormModel {
                 name: service.name,
                 kind: service.kind,
                 executable: service.start.executable,
-                argumentsText: service.start.arguments.joined(separator: "\n"),
+                argumentsText: argumentsText,
+                argumentsFormat: needsJSON ? .json : .lines,
                 ports: existingPorts.isEmpty ? [PortDraft(isPrimary: true)] : existingPorts,
                 enabledByDefault: service.enabledByDefault,
                 failurePolicy: service.failurePolicy,
@@ -94,7 +121,24 @@ final class ProjectFormModel {
         }
 
         var parsedArguments: [String] {
-            argumentsText
+            get throws {
+                switch argumentsFormat {
+                case .lines:
+                    return Self.parseLines(argumentsText)
+                case .json:
+                    do {
+                        return try JSONDecoder().decode([String].self, from: Data(argumentsText.utf8))
+                    } catch {
+                        throw ValidationFailure(errors: [
+                            .invalidArgumentsJSON(service: name.trimmed, reason: String(describing: error)),
+                        ])
+                    }
+                }
+            }
+        }
+
+        private static func parseLines(_ text: String) -> [String] {
+            text
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .map { String($0).trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
@@ -327,7 +371,7 @@ final class ProjectFormModel {
                   service.executable.trimmed.isEmpty,
                   service.argumentsText.trimmed.isEmpty else { return }
             service.executable = "supabase"
-            service.argumentsText = "start"
+            service.argumentsText = service.argumentsFormat == .json ? #"["start"]"# : "start"
         }
     }
 
@@ -420,7 +464,7 @@ final class ProjectFormModel {
                     ports: ports,
                     start: CommandSpec(
                         executable: draft.executable.trimmed,
-                        arguments: draft.parsedArguments,
+                        arguments: try draft.parsedArguments,
                         workingDirectory: directory
                     ),
                     stop: draft.preservedStop,

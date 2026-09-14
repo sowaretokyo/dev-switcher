@@ -99,6 +99,79 @@ struct ProjectFormModelTests {
 
     // MARK: - 読み込みと保持
 
+    @Test("複数行引数の内容を編集しても引数境界と空白を保持する")
+    func editingMultilineArgumentsPreservesBoundaries() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(
+            arguments: ["-c", "printf first\nprintf second"],
+            workingDirectory: directory
+        )
+        let model = ProjectFormModel(project: makeProject(with: [service], directory: directory))
+        #expect(model.services[0].argumentsFormat == .json)
+        model.services[0].argumentsText = #"["-c", "  printf changed\n\n  printf second\n", "literal\\n"]"#
+
+        let rebuilt = try model.build()
+        let expected = ["-c", "  printf changed\n\n  printf second\n", "literal\\n"]
+        #expect(rebuilt.services[0].start.arguments == expected)
+        let reopened = ProjectFormModel(project: rebuilt)
+        #expect(try reopened.build().services[0].start.arguments == expected)
+
+        model.services[0].argumentsText = "[]"
+        #expect(try model.build().services[0].start.arguments.isEmpty)
+    }
+
+    @Test("JSON形式の引数が不正なら元の引数や空配列へ戻さず保存を拒否する", arguments: [
+        "",
+        "not json",
+        #"["-c", "unfinished""#,
+        #"["-c", 42]"#,
+        "null",
+    ])
+    func malformedJSONArgumentsFail(text: String) throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(arguments: ["-c", "first\nsecond"], workingDirectory: directory)
+        let model = ProjectFormModel(project: makeProject(with: [service], directory: directory))
+        model.services[0].argumentsText = text
+        do {
+            _ = try model.build()
+            Issue.record("不正なJSON引数を保存できました")
+        } catch let failure as ValidationFailure {
+            guard case let .invalidArgumentsJSON(serviceName, reason) = try #require(failure.errors.first) else {
+                Issue.record("JSON引数の解析エラーを返していません")
+                return
+            }
+            #expect(serviceName == service.name)
+            #expect(!reason.isEmpty)
+        }
+    }
+
+    @Test("JSON引数に含まれる空文字も既存の必須値検証で拒否する")
+    func emptyJSONArgumentIsRejected() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeService(arguments: ["first\nsecond"], workingDirectory: directory)
+        let model = ProjectFormModel(project: makeProject(with: [service], directory: directory))
+        model.services[0].argumentsText = #"["valid", ""]"#
+        #expect(throws: ValidationFailure(errors: [.emptyArgument(service: service.name, argumentIndex: 1)])) {
+            try model.build()
+        }
+    }
+
+    @Test("通常の引数は既存の行単位入力を維持し、引用符やバックスラッシュを解釈しない")
+    func ordinaryArgumentsKeepLineBasedInput() throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let arguments = ["dev", "two words", #"literal\n"#, #""quoted""#, "[brackets]"]
+        let service = makeService(arguments: arguments, workingDirectory: directory)
+        let model = ProjectFormModel(project: makeProject(with: [service], directory: directory))
+        #expect(model.services[0].argumentsFormat == .lines)
+        #expect(try model.build().services[0].start.arguments == arguments)
+        model.services[0].argumentsText = "run\n dev \n\n--port\n3000"
+        #expect(try model.build().services[0].start.arguments == ["run", "dev", "--port", "3000"])
+    }
+
     @Test("3件のサービスを読み込み、全フィールドと ID を維持する")
     func multipleServicesRoundTripThroughTheForm() throws {
         let directory = try makeTemporaryTestDirectory()

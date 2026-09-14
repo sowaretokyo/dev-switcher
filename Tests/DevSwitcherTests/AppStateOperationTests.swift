@@ -192,6 +192,12 @@ struct AppStateOperationTests {
         #expect(state.canStop == false)
         #expect(state.canChangeConfiguration == false)
 
+        let importData = try JSONEncoder().encode(ProjectsDocument(projects: [other]))
+        #expect(throws: AppError.self) { try state.previewProjectImport(importData, path: "input.json") }
+        #expect(throws: AppError.self) { try state.importProjects([other]) }
+        state.presentProjectImport()
+        #expect(!state.isProjectImportPresented)
+
         state.startOrSwitch(to: other)
         #expect(state.inlineOperation?.projectID == fixture.project.id)
         #expect(state.switchPresentation == nil)

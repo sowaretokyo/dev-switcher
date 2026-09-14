@@ -125,6 +125,30 @@ struct ProjectValidationTests {
         )
     }
 
+    @Test("同一プロセス内のポートID重複を具体的なエラーで返す")
+    func duplicatePortIDInServiceRejected() {
+        let sharedID = UUID()
+        let errors = ProjectValidator.portErrors(for: [
+            PortSpec(id: sharedID, port: 3000, isPrimary: true),
+            PortSpec(id: sharedID, port: 3001, isPrimary: false),
+        ], serviceLabel: "Web")
+        #expect(errors == [.duplicatePortIDInService(service: "Web", id: sharedID)])
+    }
+
+    @Test("ポートIDの一意性はプロセスごとに検証する")
+    func portIDUniquenessIsScopedToService() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sharedID = UUID()
+        let first = makeService(name: "First", ports: [
+            PortSpec(id: sharedID, port: 3000, isPrimary: true),
+        ], workingDirectory: directory)
+        let second = makeService(name: "Second", ports: [
+            PortSpec(id: sharedID, port: 3001, isPrimary: true),
+        ], workingDirectory: directory)
+        #expect(ProjectValidator.validate(makeProject(directory: directory, services: [first, second])).isEmpty)
+    }
+
     @Test("起動対象サービス間で同じポートを設定していても保存を拒否しない")
     func duplicatePortAcrossEnabledServicesIsAccepted() throws {
         let directory = try makeTemporaryDirectory()

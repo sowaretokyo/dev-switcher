@@ -15,6 +15,13 @@ public struct ProjectsDocument: Codable, Sendable {
         self.schemaVersion = schemaVersion
         self.projects = projects
     }
+
+    /// 保存ファイルと取り込み確認で、同じ設定を同じJSON表現にする。
+    public func jsonData() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(self)
+    }
 }
 
 public enum ProjectStoreError: Error, Sendable, CustomStringConvertible {
@@ -23,6 +30,7 @@ public enum ProjectStoreError: Error, Sendable, CustomStringConvertible {
     case invalidStoredProject(name: String, errors: [ValidationError])
     case writeFailed(path: String, reason: String)
     case applicationSupportUnavailable(reason: String)
+    case emptyImport
 
     public var description: String {
         switch self {
@@ -37,6 +45,8 @@ public enum ProjectStoreError: Error, Sendable, CustomStringConvertible {
             "設定ファイルを保存できませんでした（\(path)）。\n\(reason)"
         case let .applicationSupportUnavailable(reason):
             "Application Support ディレクトリを利用できません。\n\(reason)"
+        case .emptyImport:
+            "取り込む開発環境がありません。projects に1件以上指定してください。"
         }
     }
 }
@@ -147,16 +157,30 @@ public struct ProjectStore: Sendable {
         let schemaVersion: Int
     }
 
-    public func save(_ projects: [ProjectDefinition]) throws {
+    /// 保存形式と同じJSONを検証する。確認画面では保存もコマンド実行も行わない。
+    /// 旧形式の変換は通常の読み込みと共有し、IDや起動順を取り込み時に変えない。
+    public static func projectsForImport(
+        _ data: Data,
+        path: String,
+        existingProjects: [ProjectDefinition]
+    ) throws -> [ProjectDefinition] {
+        let imported = try decode(data, path: path)
+        guard !imported.isEmpty else { throw ProjectStoreError.emptyImport }
+        try validateForSaving(existingProjects + imported)
+        return imported
+    }
+
+    private static func validateForSaving(_ projects: [ProjectDefinition]) throws {
         for (index, project) in projects.enumerated() {
             let others = ProjectStore.projects(projects, excluding: index)
             try ProjectValidator.check(project, existingProjects: others)
         }
+    }
 
-        let document = ProjectsDocument(projects: projects)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(document)
+    public func save(_ projects: [ProjectDefinition]) throws {
+        try Self.validateForSaving(projects)
+
+        let data = try ProjectsDocument(projects: projects).jsonData()
 
         do {
             try FileManager.default.createDirectory(

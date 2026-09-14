@@ -303,7 +303,12 @@ private struct ServiceCard: View {
                 TextField("pnpm", text: $service.executable)
                     .textFieldStyle(.roundedBorder)
             }
-            FormRow("引数", note: "1行に1つ。シェルへ渡さず、そのまま引数として実行します。空行は無視します。") {
+            FormRow(
+                service.argumentsFormat == .json ? "引数（JSON配列）" : "引数",
+                note: service.argumentsFormat == .json
+                    ? "引数内の改行や前後の空白を保持するため、JSONの文字列配列で編集します。改行は \\n と記述します。引数なしは [] です。"
+                    : "1行に1つ。シェルへ渡さず、そのまま引数として実行します。空行は無視します。"
+            ) {
                 TextEditor(text: $service.argumentsText)
                     .font(Typography.mono)
                     .scrollContentBackground(.hidden)

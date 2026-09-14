@@ -26,10 +26,12 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case duplicateServiceIDAcrossProjects(UUID)
     case executableEmpty(service: String)
     case emptyArgument(service: String, argumentIndex: Int)
+    case invalidArgumentsJSON(service: String, reason: String)
     case workingDirectoryMissing(service: String, url: URL)
     case portNotANumber(service: String, value: String)
     case portOutOfRange(service: String, port: Int)
     case duplicatePortInService(service: String, port: Int)
+    case duplicatePortIDInService(service: String, id: UUID)
     case missingPrimaryPort(service: String)
     case multiplePrimaryPorts(service: String)
     case portLabelEmpty(service: String, port: Int)
@@ -99,6 +101,8 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "プロセス「\(service)」の実行ファイルが空です。"
         case let .emptyArgument(service, index):
             "プロセス「\(service)」の \(index + 1) 番目の引数が空文字です。"
+        case let .invalidArgumentsJSON(service, reason):
+            "プロセス「\(service)」の引数はJSONの文字列配列で指定してください。\n\(reason)"
         case let .workingDirectoryMissing(service, url):
             "プロセス「\(service)」の作業ディレクトリが存在しません（\(url.path)）。"
         case let .portNotANumber(service, value):
@@ -107,6 +111,8 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "プロセス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。"
         case let .duplicatePortInService(service, port):
             "プロセス「\(service)」でポート \(port) が重複しています。"
+        case let .duplicatePortIDInService(service, id):
+            "プロセス「\(service)」内でポート ID が重複しています（\(id.uuidString)）。"
         case let .missingPrimaryPort(service):
             "プロセス「\(service)」に代表ポートが指定されていません。"
         case let .multiplePrimaryPorts(service):

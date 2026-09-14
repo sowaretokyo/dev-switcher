@@ -324,6 +324,7 @@ final class AppState {
     var selection: SidebarItem?
     var expandedProjectIDs: Set<UUID> = []
     var projectFormPresentation: ProjectFormPresentation?
+    var isProjectImportPresented = false
     var unregisterPresentation: UnregisterPresentation?
     var operationError: String?
     var failurePresentation: FailurePresentation?
@@ -1096,6 +1097,35 @@ final class AppState {
         projects.append(project)
         expandedProjectIDs.insert(project.id)
         selection = .project(project.id)
+    }
+
+    func presentProjectImport() {
+        if let reason = configurationBlockedReason {
+            operationError = "開発環境を取り込めません。\n\(reason)"
+            return
+        }
+        isProjectImportPresented = true
+    }
+
+    func previewProjectImport(_ data: Data, path: String) throws -> [ProjectDefinition] {
+        if let reason = configurationBlockedReason { throw AppError.busy(reason) }
+        return try ProjectStore.projectsForImport(data, path: path, existingProjects: projects)
+    }
+
+    /// 全件を再検証して1回で保存する。途中の1件だけを登録した状態を作らない。
+    /// 同期処理なので、既存の設定変更と同様に確認から保存まで別操作を挟まない。
+    func importProjects(_ imported: [ProjectDefinition]) throws {
+        if let reason = configurationBlockedReason { throw AppError.busy(reason) }
+        guard let first = imported.first else { throw ProjectStoreError.emptyImport }
+        guard let store else {
+            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+        }
+        let updated = projects + imported
+        try store.save(updated)
+        projects = updated
+        expandedProjectIDs.formUnion(imported.map(\.id))
+        selection = .project(first.id)
+        isProjectImportPresented = false
     }
 
     func updateProject(_ project: ProjectDefinition) throws {
