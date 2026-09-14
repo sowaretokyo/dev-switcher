@@ -86,25 +86,39 @@ struct ProjectDetailView: View {
         return operation
     }
 
+    private var primaryControl: ProjectPrimaryControl {
+        state.primaryControl(for: project)
+    }
+
     private var controls: some View {
         VStack(alignment: .leading, spacing: Spacing.tight) {
             HStack(spacing: Spacing.s) {
-                if let inlineOperation {
+                switch primaryControl {
+                case let .inProgress(operation):
                     // 進捗はボタンの中で示す。画面を遮らないので、シートが一瞬だけ
                     // 出て消えることがない。二重操作は AppState の API 境界が止める。
                     Button {} label: {
                         HStack(spacing: Spacing.tight) {
                             ProgressView().controlSize(.small)
-                            Text(inlineOperation.kind.label)
+                            Text(operation.kind.label)
                         }
                     }
                     .disabled(true)
-                } else if isStopped {
+                case .stop:
+                    // 起動と同じ場所に置く。ツールバーだけにすると、ここを見ている人が
+                    // 停止の場所を探すことになる。止める操作なので既定ボタンにはしない。
+                    Button("停止", role: .destructive) {
+                        state.stopProject(project)
+                    }
+                    .disabled(!state.canStop)
+                case .start:
                     Button(state.activeProject == nil ? "起動" : "切り替える") {
                         state.startOrSwitch(to: project)
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!state.canStart || enabledCount == 0)
+                case .noAction:
+                    EmptyView()
                 }
                 Text(startSummary)
                     .font(Typography.support)
@@ -113,20 +127,27 @@ struct ProjectDetailView: View {
             // いまどの段階かを出す。ボタンの「起動中」だけでは、
             // どのサービスで止まっているのか分からない。
             // 自分の操作中に「ほかの処理を実行中」と出さないよう、理由表示より優先する。
-            if let inlineOperation {
-                NoteText(inlineOperation.state.label, tint: .secondary)
-            } else if isStopped, let reason = state.startBlockedReason {
-                // 起動できない間もボタンを黙って無効化しない。何を待っているのかを必ず出す。
+            if case let .inProgress(operation) = primaryControl {
+                NoteText(operation.state.label, tint: .secondary)
+            } else if let reason = blockedReason {
+                // 押せない間もボタンを黙って無効化しない。何を待っているのかを必ず出す。
                 NoteText(reason, tint: .orange)
             } else if let notice = state.switchNotice(for: project) {
                 NoteText(notice, tint: .secondary)
             }
-            if isStopped, enabledCount == 0 {
+            if primaryControl == .start, enabledCount == 0 {
                 NoteText("今回起動するプロセスが選ばれていません。1つ以上チェックしてください。", tint: .orange)
             }
-            if !isStopped {
-                NoteText("停止はツールバーの「停止」から行います。", tint: .secondary)
-            }
+        }
+    }
+
+    /// 出しているボタンが押せない理由。ボタンと別の判定で理由を選ぶと、
+    /// 停止ボタンの下に起動できない理由が出るような食い違いが起きる。
+    private var blockedReason: String? {
+        switch primaryControl {
+        case .stop: state.stopBlockedReason
+        case .start: state.startBlockedReason
+        case .inProgress, .noAction: nil
         }
     }
 
@@ -349,5 +370,34 @@ struct ServiceSummaryRow: View {
                 return name.map { "\($0) :\(port.port)" } ?? ":\(port.port)"
             }
             .joined(separator: " · ")
+    }
+}
+
+/// 開発環境の詳細で主に出す操作。
+///
+/// 停止を出すかは表示状態ではなく、止められる資源があるかで決める
+/// （`AppState.hasManagedResources(in:)`）。表示が「失敗」でも管理中のプロセスが
+/// 残っていれば、必要なのは起動ではなく停止になる。ツールバーの停止ボタンも同じ判定で
+/// 出るので、片方にだけ停止がある状態を作らない。
+enum ProjectPrimaryControl: Equatable {
+    case inProgress(AppState.InlineOperation)
+    case stop
+    case start
+    /// 表示上は動作中だが、Dev Switcher が止められる資源がない。押せる操作を出さない。
+    case noAction
+}
+
+extension AppState {
+    func primaryControl(for project: ProjectDefinition) -> ProjectPrimaryControl {
+        if let operation = inlineOperation, operation.projectID == project.id {
+            return .inProgress(operation)
+        }
+        if hasManagedResources(in: project) {
+            return .stop
+        }
+        if phase(of: project).isActive {
+            return .noAction
+        }
+        return .start
     }
 }

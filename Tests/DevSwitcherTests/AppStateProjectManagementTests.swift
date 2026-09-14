@@ -47,12 +47,15 @@ struct AppStateProjectManagementTests {
         #expect(state.canEdit(fixture.project) == false)
         #expect(state.canUnregister(fixture.project) == false)
         #expect(state.canStop)
+        // 表示は失敗でも、詳細には押しても何も起きない起動ではなく停止を出す。
+        #expect(state.primaryControl(for: fixture.project) == .stop)
 
         state.stopProject(fixture.project)
         await state.waitForPendingOperation()
 
         #expect(state.hasManagedResources(in: fixture.project) == false)
         #expect(state.activeProject == nil)
+        #expect(state.primaryControl(for: fixture.project) == .start)
         #expect(state.canEdit(fixture.project))
         #expect(state.canUnregister(fixture.project))
     }
