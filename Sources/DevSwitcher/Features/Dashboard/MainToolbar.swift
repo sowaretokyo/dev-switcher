@@ -49,7 +49,9 @@ struct ToolbarActions: View {
                 .help("起動中のプロセスの URL を開きます")
             }
 
-            if let operation = state.inlineOperation, operation.projectID == project.id {
+            // 詳細ペインと同じ判定を使う。ここだけ別に書くと、片方にだけ停止が出る状態が起きうる。
+            switch state.primaryControl(for: project) {
+            case let .inProgress(operation):
                 // 進行中は押せる操作を残さない。段階そのものは詳細ペインに出す。
                 HStack(spacing: Spacing.xs) {
                     ProgressView().controlSize(.small)
@@ -57,7 +59,7 @@ struct ToolbarActions: View {
                         .font(Typography.support)
                         .foregroundStyle(.secondary)
                 }
-            } else {
+            case .stop:
                 Button(role: .destructive) {
                     state.stopProject(project)
                 } label: {
@@ -65,6 +67,9 @@ struct ToolbarActions: View {
                 }
                 .disabled(!state.canStop)
                 .help(state.stopBlockedReason ?? "\(project.name) のプロセスをすべて停止します")
+            case .start, .noAction:
+                // activeProject は止められる資源を持つ開発環境なので、進行中か停止にしかならない。
+                preconditionFailure("稼働中の開発環境に停止以外の操作が選ばれました。")
             }
         }
     }
@@ -76,6 +81,22 @@ extension ProjectDefinition {
     var hasOpenableURLs: Bool {
         services.contains { service in
             service.ports.contains { $0.openURL != nil }
+        }
+    }
+}
+
+extension ToolbarContent {
+    /// macOS 26 がツールバー項目に敷くガラスの背景を外す。
+    ///
+    /// ガラスの背景は押すものに与えられる見た目で、読むだけの項目に付くと文字幅ぴったりの
+    /// ボタンに見える。26 より前はこの背景自体がないので何もしない。可用性の分岐をここに
+    /// 閉じ込め、呼び出し側で項目の定義を OS ごとに二重に書かないようにする。
+    @ToolbarContentBuilder
+    func sharedBackgroundHidden() -> some ToolbarContent {
+        if #available(macOS 26, *) {
+            sharedBackgroundVisibility(.hidden)
+        } else {
+            self
         }
     }
 }

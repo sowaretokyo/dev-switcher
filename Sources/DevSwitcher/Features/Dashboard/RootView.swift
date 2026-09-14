@@ -32,20 +32,11 @@ struct RootView: View {
         .toolbar(removing: .title)
         // 稼働中の開発環境の識別と操作はツールバーが持つ（DESIGN.md 7章）。
         .toolbar {
-            // macOS 26 はツールバー項目1つ1つにガラスの背景を敷く。これは押すものに
-            // 与えられる見た目で、状態表示に付くと文字幅ぴったりのボタンに見える。
-            // 読むだけの項目なので背景を外す。26 より前はこの背景自体がないため、
-            // 分岐の else 側で何も指定しなくてよい。
-            if #available(macOS 26, *) {
-                ToolbarItem(placement: .navigation) {
-                    ToolbarIdentity()
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .navigation) {
-                    ToolbarIdentity()
-                }
+            // 読むだけの項目なので、押せるものに見えるガラスの背景を外す。
+            ToolbarItem(placement: .navigation) {
+                ToolbarIdentity()
             }
+            .sharedBackgroundHidden()
             // 操作はガラスの背景を残す。押せることが見た目で分かる必要がある。
             ToolbarItemGroup(placement: .primaryAction) {
                 ToolbarActions()

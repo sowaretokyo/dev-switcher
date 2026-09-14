@@ -372,32 +372,3 @@ struct ServiceSummaryRow: View {
             .joined(separator: " · ")
     }
 }
-
-/// 開発環境の詳細で主に出す操作。
-///
-/// 停止を出すかは表示状態ではなく、止められる資源があるかで決める
-/// （`AppState.hasManagedResources(in:)`）。表示が「失敗」でも管理中のプロセスが
-/// 残っていれば、必要なのは起動ではなく停止になる。ツールバーの停止ボタンも同じ判定で
-/// 出るので、片方にだけ停止がある状態を作らない。
-enum ProjectPrimaryControl: Equatable {
-    case inProgress(AppState.InlineOperation)
-    case stop
-    case start
-    /// 表示上は動作中だが、Dev Switcher が止められる資源がない。押せる操作を出さない。
-    case noAction
-}
-
-extension AppState {
-    func primaryControl(for project: ProjectDefinition) -> ProjectPrimaryControl {
-        if let operation = inlineOperation, operation.projectID == project.id {
-            return .inProgress(operation)
-        }
-        if hasManagedResources(in: project) {
-            return .stop
-        }
-        if phase(of: project).isActive {
-            return .noAction
-        }
-        return .start
-    }
-}
