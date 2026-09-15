@@ -39,7 +39,7 @@ GitHubのSettings → Secrets and variables → Actionsに次を登録する。�
 
 ## ローカルで確認・生成する
 
-XcodeとCommand Line Toolsが必要。リポジトリ直下で実行する。
+macOS 26 SDKを含むXcode 26以降とCommand Line Toolsが必要。アプリの最低対応OSはmacOS 15。リポジトリ直下で実行する。
 
 ```bash
 # 署名・公証前の確認用DMG（チーム配布用ではない）
