@@ -9,7 +9,7 @@
 配布先リポジトリをPrivateにし、利用者を招待する。次の結果が`PRIVATE`であることを確認する。Release workflowも生成前とアップロード直前に同じ確認を行い、公開リポジトリでは停止する。
 
 ```bash
-gh repo view yamada-soware/dev-switcher-design --json visibility --jq .visibility
+gh repo view sowaretokyo/dev-switcher --json visibility --jq .visibility
 ```
 
 GitHubのSettings → Secrets and variables → Actionsに次を登録する。証明書は秘密鍵を含むパスワード付き`.p12`を使用する。秘密情報はリポジトリやチャットに貼らない。
