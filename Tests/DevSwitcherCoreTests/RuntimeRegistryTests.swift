@@ -5,6 +5,58 @@ import Testing
 
 @Suite("起動・停止の入り口")
 struct RuntimeRegistryTests {
+    @Test("終了通知を消費する前でも、実際の終了結果と停止意図を取得できる", arguments: [false, true])
+    func observesExitBeforeConsumingEvents(requestedByUser: Bool) async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // このテストは通知と状態参照の順序を検証する。プロセスの起動・終了は実物を使う。
+        let world = ControlledProcessWorld()
+        let registry = RuntimeRegistry(
+            logDirectory: directory,
+            environmentLoader: { fixedShellEnvironment },
+            identityProbe: { world.identity(pid: $0, workingDirectory: $1) },
+            portProbe: { _ in [] },
+            signalSender: { world.send(processGroupID: $0, signal: $1) },
+            groupStateProbe: { world.groupState(processGroupID: $0) },
+            startAbstimeProbe: { world.startObservation(pid: $0) },
+            bootSessionProbe: { "TEST-BOOT-SESSION" }
+        )
+        let service = makeService(
+            kind: .worker, ports: [], executable: "/bin/sleep", arguments: ["30"],
+            workingDirectory: directory
+        )
+        let project = makeProject(directory: directory, services: [service])
+        let stream = try await registry.start(service: service, in: project)
+        let pid = try #require(await registry.occupiedProcessGroup(serviceID: service.id))
+        defer {
+            if world.startObservation(pid: pid).value != nil {
+                _ = world.send(processGroupID: pid, signal: SIGKILL)
+            }
+        }
+        #expect(await registry.observedExit(serviceID: service.id) == nil)
+
+        if requestedByUser {
+            let result = try await registry.stop(service: service, grace: .seconds(5))
+            #expect(result.isStopped)
+        } else {
+            #expect(world.send(processGroupID: pid, signal: SIGTERM) == 0)
+        }
+        let exit = try #require(await waitForValue {
+            await registry.observedExit(serviceID: service.id)
+        })
+        #expect(exit.status == .signaled(signal: SIGTERM))
+        #expect(exit.requestedByUser == requestedByUser)
+
+        // 終了結果を読んだ後に初めて通知を消費し、両経路の内容が一致することを確認する。
+        let log = EventLog()
+        let consumer = Task { await log.consume(stream) }
+        defer { consumer.cancel() }
+        try #require(await waitUntil { await log.exitStatus != nil })
+        #expect(await log.exitStatus == exit.status)
+        #expect(await log.exitWasRequested == requestedByUser)
+        _ = await registry.isOccupyingResources(serviceID: service.id)
+    }
+
     @Test("低水準の引き継ぎ入力もRegistry登録直前に再検証する")
     func rejectsUntrustedLowLevelAdoptionInput() async throws {
         let directory = try makeTemporaryDirectory()

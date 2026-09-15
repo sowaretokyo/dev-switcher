@@ -1259,13 +1259,15 @@ struct SwitchCoordinatorTests {
 
         // 終了コード 0 でも、頼んでいない終了は成功ではない。
         let phase = await coordinator.servicePhase(selfExiting, in: project)
-        guard case let .failed(reason) = phase else {
+        if case let .failed(reason) = phase {
+            #expect(reason.contains("停止操作なし"))
+        } else {
             Issue.record("停止操作なしの終了が失敗として扱われなかった: \(phase)")
-            return
         }
-        #expect(reason.contains("停止操作なし"))
 
+        // 検証失敗時も残りのサービスを止める。明示停止後には古い終了結果を再表示しない。
         _ = try await coordinator.stop(project)
+        #expect(await coordinator.servicePhase(selfExiting, in: project) == .stopped)
     }
 
     @Test("停止元のポート解放を実測できない場合は、解放されたとみなさず切替先を起動しない")

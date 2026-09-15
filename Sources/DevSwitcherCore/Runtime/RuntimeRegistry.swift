@@ -696,6 +696,12 @@ public actor RuntimeRegistry {
 
     // MARK: - 観測
 
+    /// 自分で起動した子の終了結果。引き継いだプロセスには終了コードを持たない。
+    func observedExit(serviceID: UUID) async -> ServiceSupervisor.ExitRecord? {
+        guard case let .launched(supervisor) = handles[serviceID] else { return nil }
+        return await supervisor.observedExit
+    }
+
     public func isRunning(serviceID: UUID) async -> Bool {
         guard let handle = handles[serviceID] else { return false }
         return await handle.isRunning()

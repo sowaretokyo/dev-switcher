@@ -1830,7 +1830,11 @@ public actor SwitchCoordinator {
         }
         // 停止操作なしに終了していたら「停止中」で塗りつぶさない。
         // 終了コード0でも、頼んでいない終了はサービスの成功ではない。
-        if let exit = await observations[service.id]?.exit, !exit.requestedByUser {
+        // 終了イベントのconsumerが未実行でも、Supervisorが持つ実測結果を使う。
+        // 明示停止後はclearStateが観測を消すので、古い終了結果を再表示しない。
+        if observations[service.id] != nil,
+           let exit = await registry.observedExit(serviceID: service.id),
+           !exit.requestedByUser {
             return .failed(reason: "停止操作なしに終了しました（\(exit.status.description)）")
         }
         // 引き継いだ通常プロセスには終了イベントの観測記録がない。

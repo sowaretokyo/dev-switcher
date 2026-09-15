@@ -6,6 +6,11 @@ import Foundation
 /// 親の同一性を観測できた場合は開始時刻を再検証し、観測前に終了した場合はリーダーを
 /// 回収せずPGIDの再利用を防ぐ。所有権を手放したPGIDへは二度とシグナルを送らない。
 public actor ServiceSupervisor {
+    struct ExitRecord: Equatable, Sendable {
+        let status: ExitStatus
+        let requestedByUser: Bool
+    }
+
     public enum Event: Sendable {
         /// 新しい起動試行の境界。UIはここで前回セッションのログを消す。
         case logSessionStarted
@@ -62,6 +67,7 @@ public actor ServiceSupervisor {
     private var portRecord: ObservedPortRecord = .unavailable
     private var didExit = false
     private var stopRequested = false
+    private var exitRecord: ExitRecord?
 
     public init(
         serviceID: UUID,
@@ -105,8 +111,22 @@ public actor ServiceSupervisor {
     public var observedPortRecord: ObservedPortRecord { portRecord }
 
     public var isRunning: Bool {
-        guard let child else { return false }
-        return child.currentStatus == nil
+        guard child != nil else { return false }
+        return observedExit == nil
+    }
+
+    /// 通知の消費を待たず、終了を観測した時点の結果と停止意図を返す。
+    var observedExit: ExitRecord? {
+        if let exitRecord { return exitRecord }
+        guard let status = child?.currentStatus else { return nil }
+        return recordExit(status)
+    }
+
+    private func recordExit(_ status: ExitStatus) -> ExitRecord {
+        if let exitRecord { return exitRecord }
+        let record = ExitRecord(status: status, requestedByUser: stopRequested)
+        exitRecord = record
+        return record
     }
 
     public var processGroupID: pid_t? { launchedProcessGroupID }
@@ -178,6 +198,7 @@ public actor ServiceSupervisor {
         launchedProcessGroupID = spawned.processGroupID
         didExit = false
         stopRequested = false
+        exitRecord = nil
         lastWarning = nil
         runtime = nil
 
@@ -264,7 +285,8 @@ public actor ServiceSupervisor {
             throw RuntimeError.notRunning(service: serviceName)
         }
 
-        if let status = child.currentStatus {
+        if let exit = observedExit {
+            let status = exit.status
             // 未回収のリーダーがPGIDを予約しているため、残った孫へ安全に送信できる。
             // 観測できなかった場合は「居ない」と決めつけず、通常終了を送って確かめる。
             if groupStateProbe(processGroupID).hasLiveMembers == false {
@@ -501,13 +523,14 @@ public actor ServiceSupervisor {
     private func childDidExit(_ status: ExitStatus) {
         guard !didExit else { return }
         didExit = true
+        let exit = recordExit(status)
         portTask?.cancel()
         portTask = nil
         tail?.drain()
         continuation?.yield(
             .exited(
-                status: status,
-                requestedByUser: stopRequested,
+                status: exit.status,
+                requestedByUser: exit.requestedByUser,
                 startupConfirmed: false
             )
         )

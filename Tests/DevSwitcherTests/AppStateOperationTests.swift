@@ -361,4 +361,28 @@ struct AppStateOperationTests {
         })
         #expect(state.runtimeIncident?.status == "終了コード 7")
     }
+
+    @Test("確定済みの対象外を遅れた終了通知で停止中へ戻さない")
+    func delayedRequestedExitPreservesExcludedPhase() async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var project = makeWorkerProject(directory: directory)
+        project.services[0].enabledByDefault = false
+        try ProjectStore(directory: directory).save([project])
+        let state = makeAppState(directory: directory)
+        await state.bootstrap()
+        let service = project.services[0]
+        try #require(state.state(of: service.id).phase == .excluded)
+
+        // 補償停止後の状態反映が先に済み、終了通知だけが後から届いた順序を再現する。
+        // 次のrefreshPhasesを待たず、通知の適用直後にも状態を壊していないことを見る。
+        state.apply(
+            .exited(status: .signaled(signal: SIGTERM), requestedByUser: true, startupConfirmed: true),
+            to: service.id
+        )
+        #expect(state.state(of: service.id).phase == .excluded)
+        #expect(state.state(of: service.id).processID == nil)
+        #expect(state.state(of: service.id).lastMessage == ExitStatus.signaled(signal: SIGTERM).description)
+        #expect(state.runtimeIncident == nil)
+    }
 }

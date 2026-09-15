@@ -2154,7 +2154,8 @@ final class AppState {
         }
     }
 
-    private func apply(_ event: ServiceSupervisor.Event, to serviceID: UUID) {
+    /// イベントの付随情報を反映する。終了後のphaseはrefreshPhasesの実測結果を正とする。
+    func apply(_ event: ServiceSupervisor.Event, to serviceID: UUID) {
         switch event {
         case .logSessionStarted:
             // 停止中は直前の原因を読めるよう残し、次の起動試行で新しいログだけにする。
@@ -2196,13 +2197,8 @@ final class AppState {
                 current.startedAt = nil
                 current.processID = nil
                 current.lastMessage = status.description
-                if requestedByUser {
-                    current.phase = .stopped
-                } else {
-                    current.phase = .failed(
-                        reason: "停止操作なしに終了しました（\(status.description)）"
-                    )
-                }
+                // 遅れて届いた終了通知で、補償停止後の「対象外」や残存状態を上書きしない。
+                // phaseはイベント処理直後のrefreshPhasesでCoordinatorから取得する。
             }
             if !requestedByUser, startupConfirmed,
                let project = projects.first(where: { $0.service(id: serviceID) != nil }),
