@@ -207,6 +207,17 @@ public actor SwitchCoordinator {
         )
     }
 
+    /// 起動済みプロジェクトへ通常プロセス1件を追加する。保存済みの起動対象は変更しない。
+    @discardableResult
+    public func startService(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        progress: @escaping ProgressSink = { _ in },
+        events: @escaping EventSink = { _, _ in }
+    ) async throws -> ProjectFact {
+        try await runServiceOperation(service, in: project, restarting: false, progress: progress, events: events)
+    }
+
     /// 起動済みプロジェクトの通常プロセス1件だけを再起動する。
     ///
     /// プロジェクト全体の起動順を再実行せず、対象の停止、実測ポートの解放確認、
@@ -218,6 +229,17 @@ public actor SwitchCoordinator {
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
     ) async throws -> ProjectFact {
+        try await runServiceOperation(service, in: project, restarting: true, progress: progress, events: events)
+    }
+
+    /// 追加起動と再起動で、初期観測・ログ・失敗時の停止を共有する。
+    private func runServiceOperation(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        restarting: Bool,
+        progress: @escaping ProgressSink,
+        events: @escaping EventSink
+    ) async throws -> ProjectFact {
         guard !inFlight else {
             throw SwitchFailure(
                 reason: .operationInProgress,
@@ -227,18 +249,10 @@ public actor SwitchCoordinator {
         inFlight = true
         defer { inFlight = false }
 
-        guard project.service(id: service.id) != nil else {
+        guard project.service(id: service.id) == service else {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "サービス「\(service.name)」はプロジェクト「\(project.name)」に登録されていません。"
-                ),
-                facts: await facts(source: project, target: nil)
-            )
-        }
-        guard project.isEnabledNow(service.id) else {
-            throw SwitchFailure(
-                reason: .unsupportedConfiguration(
-                    "サービス「\(service.name)」は現在の起動対象から外れています。起動対象にしてから再起動してください。"
+                    "サービス「\(service.name)」の設定がプロジェクト「\(project.name)」の登録内容と一致しません。"
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -246,7 +260,7 @@ public actor SwitchCoordinator {
         guard service.kind != .supabase else {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "Supabaseは通常プロセスと停止・状態確認の方法が異なるため、プロセス単体の再起動はできません。"
+                    "Supabaseは通常プロセスと停止・状態確認の方法が異なるため、単体の起動・再起動はできません。"
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -268,6 +282,28 @@ public actor SwitchCoordinator {
             )
         }
 
+        // 設定上は対象外でも、今回追加起動・引き継ぎしたプロセスは再起動できる。
+        let phase = await servicePhase(service, in: project)
+        let canRun: Bool
+        switch phase {
+        case .excluded, .stopped:
+            canRun = !restarting
+        case .running, .healthy, .failed, .residual:
+            canRun = restarting
+        case .starting, .stopping:
+            canRun = false
+        }
+        guard canRun else {
+            throw SwitchFailure(
+                reason: .unsupportedConfiguration(
+                    restarting
+                        ? "サービス「\(service.name)」は起動対象から外れています。未起動のプロセスには「起動」を使ってください。"
+                        : "サービス「\(service.name)」は追加起動できる状態ではありません。動作中または失敗したプロセスには再起動を使ってください。"
+                ),
+                facts: await facts(source: project, target: nil)
+            )
+        }
+
         let spec: StartupObservationSpec
         do {
             spec = try StartupObservationPolicy.spec(
@@ -283,13 +319,13 @@ public actor SwitchCoordinator {
         }
 
         let restartRecovery: RestartRecovery?
-        if await registry.occupiedProcessGroup(serviceID: service.id) != nil {
+        if restarting, await registry.occupiedProcessGroup(serviceID: service.id) != nil {
             let ports = try await stopForRestart(service, in: project, progress: progress)
             let recovery = RestartRecovery(portsToRelease: ports, failureReason: nil)
             restartRecoveries[service.id] = recovery
             restartRecovery = recovery
         } else {
-            restartRecovery = restartRecoveries[service.id]
+            restartRecovery = restarting ? restartRecoveries[service.id] : nil
         }
 
         if var restartRecovery {
@@ -330,7 +366,7 @@ public actor SwitchCoordinator {
             failureReasons[service.id] = nil
             residualGroups[service.id] = nil
         } catch {
-            throw await restartStartFailure(error, service: service, project: project)
+            throw await serviceStartFailure(error, service: service, project: project)
         }
 
         progress(.observingStartup(service: service.name))
@@ -351,9 +387,9 @@ public actor SwitchCoordinator {
         }
     }
 
-    /// 再起動後の手掛かりを保存できなかった場合に、今回起動した1件だけを戻す。
+    /// 追加起動・再起動後の手掛かりを保存できなかった場合に、今回起動した1件だけを戻す。
     /// UIから通常の単体停止としては公開しない。
-    public func stopAfterUnsavedRestart(
+    public func stopAfterUnsavedServiceStart(
         _ service: ServiceDefinition,
         in project: ProjectDefinition,
         progress: @escaping ProgressSink = { _ in }
@@ -1458,8 +1494,8 @@ public actor SwitchCoordinator {
         return false
     }
 
-    /// 単体再起動の開始失敗では、再起動前から動いていた他サービスを巻き戻さない。
-    private func restartStartFailure(
+    /// 1件の起動失敗では、操作前から動いていた他サービスを巻き戻さない。
+    private func serviceStartFailure(
         _ error: Error,
         service: ServiceDefinition,
         project: ProjectDefinition
@@ -1797,6 +1833,14 @@ public actor SwitchCoordinator {
         if let exit = await observations[service.id]?.exit, !exit.requestedByUser {
             return .failed(reason: "停止操作なしに終了しました（\(exit.status.description)）")
         }
+        // 引き継いだ通常プロセスには終了イベントの観測記録がない。
+        // 初期観測を通過した本体も残存グループも確認できなければ、対象外へ戻さず失敗にする。
+        // 明示停止ではclearStateが起動済みの記録を消すため、この判定には入らない。
+        if service.kind != .supabase,
+           startedServiceIDs.contains(service.id),
+           observations[service.id] == nil {
+            return .failed(reason: "引き継いだプロセスが停止操作なしに終了しました（終了コードは取得できません）")
+        }
         if !project.isEnabledNow(service.id) { return .excluded }
         return .stopped
     }
@@ -1824,7 +1868,7 @@ public actor SwitchCoordinator {
         )
     }
 
-    /// 「対象外」は失敗でも一部停止でもない。判定から必ず除外する（DESIGN.md 決定 h）。
+    /// 実測で「対象外」のものだけを除く。今回追加起動したプロセスの失敗も集計する。
     private func projectPhase(
         _ project: ProjectDefinition,
         services: [ServiceFact]
@@ -1833,29 +1877,33 @@ public actor SwitchCoordinator {
 
         if services.contains(where: { $0.phase == .residual }) { return .residual }
 
-        let enabled = project.services.filter { project.isEnabledNow($0.id) }
-        guard !enabled.isEmpty else { return .stopped }
+        let servicesInThisRun = project.services.map { service -> (definition: ServiceDefinition, phase: ServicePhase) in
+            guard let fact = byID[service.id] else {
+                preconditionFailure("プロジェクトの状態判定に必要なサービスの観測結果がありません。")
+            }
+            return (definition: service, phase: fact.phase)
+        }.filter { $0.phase != .excluded }
+        guard !servicesInThisRun.isEmpty else { return .stopped }
 
-        let facts = enabled.compactMap { byID[$0.id] }
-        if facts.allSatisfy({ $0.phase == .healthy }) { return .running }
-        if facts.allSatisfy({ $0.phase == .stopped || $0.phase == .excluded }) { return .stopped }
-        if facts.contains(where: { $0.phase == .starting || $0.phase == .running }) {
+        if servicesInThisRun.allSatisfy({ $0.phase == .healthy }) { return .running }
+        if servicesInThisRun.allSatisfy({ $0.phase == .stopped }) { return .stopped }
+        if servicesInThisRun.contains(where: { $0.phase == .starting || $0.phase == .running }) {
             return .starting
         }
 
         // 稼働できていないサービスのうち、1つでも block があればプロジェクトの失敗。
         // continue だけなら一部停止（稼働中の一種）。
-        let unavailable = enabled.filter { byID[$0.id]?.phase != .healthy }
-        if let blocking = unavailable.first(where: { $0.failurePolicy == .block }) {
+        let unavailable = servicesInThisRun.filter { $0.phase != .healthy }
+        if let blocking = unavailable.first(where: { $0.definition.failurePolicy == .block }) {
             let reason: String
-            if case let .failed(detail) = byID[blocking.id]?.phase {
+            if case let .failed(detail) = blocking.phase {
                 reason = detail
             } else {
-                reason = "サービス「\(blocking.name)」が起動できていません。"
+                reason = "サービス「\(blocking.definition.name)」が起動できていません。"
             }
             return .failed(reason: reason)
         }
-        return .degraded(stoppedServices: unavailable.map(\.name))
+        return .degraded(stoppedServices: unavailable.map { $0.definition.name })
     }
 
     private func facts(

@@ -164,13 +164,25 @@ final class AppState {
         var state: SwitchState = .idle
     }
 
-    /// 通常プロセス1件だけを再起動している間の進捗。
+    /// 通常プロセス1件だけを起動・再起動している間の進捗。
     /// プロジェクト全体の起動・停止とは表示先が違うため、別の型で持つ。
-    struct ServiceRestartOperation: Equatable {
+    struct ServiceOperation: Equatable {
+        enum Kind: Equatable {
+            case starting
+            case restarting
+
+            var action: String { self == .starting ? "起動" : "再起動" }
+        }
+
         let projectID: UUID
         let serviceID: UUID
-        let serviceName: String
+        let kind: Kind
         var state: SwitchState = .idle
+
+        var label: String {
+            if case .stopping = state { return "停止中" }
+            return kind.action + "中"
+        }
     }
 
     /// 正常起動後に、停止操作なしで終了したプロセスの通知。
@@ -314,8 +326,8 @@ final class AppState {
     private(set) var switchPresentation: SwitchPresentation?
     /// 単純な起動・停止の進捗。対象プロジェクトの行にだけ出す。
     private(set) var inlineOperation: InlineOperation?
-    /// サービス詳細に出す単体再起動の進捗。
-    private(set) var serviceRestartOperation: ServiceRestartOperation?
+    /// サービス詳細に出す追加起動・再起動の進捗。
+    private(set) var serviceOperation: ServiceOperation?
     /// 利用者がまだ閉じていない、直近の予期しないプロセス終了。
     private(set) var runtimeIncident: RuntimeIncident?
     /// 既存Supabaseの扱いについての判断待ち。開閉するのは`AppState`だけ。
@@ -631,10 +643,10 @@ final class AppState {
                     // 終わった操作の進捗は副作用なしで捨てる。反映すると、次の操作が
                     // いきなり完了表示になり、起動フェーズ前でも中止が効かなくなる。
                     guard self.currentActivityID == activityID else { break }
-                    // 進捗の出し先は、切替シートかインライン表示のどちらか一方だけ。
+                    // 進捗は、切替シート・環境全体・プロセス単体の該当する表示先へ流す。
                     self.switchPresentation?.state = state
                     self.inlineOperation?.state = state
-                    self.serviceRestartOperation?.state = state
+                    self.serviceOperation?.state = state
                     await self.refreshPhases()
                 }
             }
@@ -1427,17 +1439,17 @@ final class AppState {
     /// 環境の取得に失敗している間も停止できないと、引き継いだプロセスを画面から止められなくなる。
     var canStop: Bool { stopBlockedReason == nil }
 
-    /// 単体再起動は、起動済みプロジェクトの通常プロセスを復旧するときだけ提供する。
-    /// 停止中プロジェクトのサービス1件だけを起動すると、設定した起動順を迂回するため許可しない。
-    func restartBlockedReason(
+    /// 1件の操作も、保存・環境・排他条件を満たす起動済み開発環境に限定する。
+    private func serviceOperationBlockedReason(
         for service: ServiceDefinition,
         in project: ProjectDefinition
     ) -> String? {
-        guard self.project(project.id)?.service(id: service.id) != nil else {
-            return "対象のプロセス設定が見つかりません。"
+        guard self.project(project.id) == project,
+              project.service(id: service.id) == service else {
+            return "対象のプロセス設定が現在の登録内容と一致しません。"
         }
         guard service.kind != .supabase else {
-            return "Supabaseは専用の停止・状態確認を使うため、プロセス単体では再起動できません。"
+            return "Supabaseは専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
         }
         guard service.usesProcessGroupStop else {
             return RuntimeError.stopCommandUnsupported(service: service.name).description
@@ -1447,7 +1459,33 @@ final class AppState {
         guard hasManagedResources(in: project) else {
             return "停止中の開発環境は、開発環境単位で起動してください。"
         }
+        return nil
+    }
 
+    func serviceStartBlockedReason(
+        for service: ServiceDefinition,
+        in project: ProjectDefinition
+    ) -> String? {
+        if let reason = serviceOperationBlockedReason(for: service, in: project) { return reason }
+        switch state(of: service.id).phase {
+        case .excluded, .stopped:
+            return nil
+        case .starting, .stopping:
+            return "プロセスの起動・停止が完了してから操作してください。"
+        case .running, .healthy, .failed, .residual:
+            return "動作中または失敗したプロセスには再起動を使ってください。"
+        }
+    }
+
+    func canStartService(_ service: ServiceDefinition, in project: ProjectDefinition) -> Bool {
+        serviceStartBlockedReason(for: service, in: project) == nil
+    }
+
+    func restartBlockedReason(
+        for service: ServiceDefinition,
+        in project: ProjectDefinition
+    ) -> String? {
+        if let reason = serviceOperationBlockedReason(for: service, in: project) { return reason }
         switch state(of: service.id).phase {
         case .running, .healthy, .failed, .residual:
             return nil
@@ -1463,41 +1501,61 @@ final class AppState {
     }
 
     func restart(_ service: ServiceDefinition, in project: ProjectDefinition) {
-        if let reason = restartBlockedReason(for: service, in: project) {
-            operationError = "\(service.name) を再起動できません。\n\(reason)"
+        runServiceOperation(service, in: project, kind: .restarting)
+    }
+
+    func startService(_ service: ServiceDefinition, in project: ProjectDefinition) {
+        runServiceOperation(service, in: project, kind: .starting)
+    }
+
+    private func runServiceOperation(
+        _ service: ServiceDefinition,
+        in project: ProjectDefinition,
+        kind: ServiceOperation.Kind
+    ) {
+        let blockedReason = kind == .starting
+            ? serviceStartBlockedReason(for: service, in: project)
+            : restartBlockedReason(for: service, in: project)
+        if let reason = blockedReason {
+            operationError = "\(service.name) を\(kind.action)できません。\n\(reason)"
             return
         }
         guard let token = beginActivity(.operation) else {
             operationError = (activityKind?.blockingDescription ?? "ほかの処理を実行中です。")
-                + "\n完了してからもう一度再起動してください。"
+                + "\n完了してからもう一度操作してください。"
             return
         }
-        serviceRestartOperation = ServiceRestartOperation(
+        serviceOperation = ServiceOperation(
             projectID: project.id,
             serviceID: service.id,
-            serviceName: service.name
+            kind: kind
         )
+        operationError = nil
 
         runActivity(token) { [self] in
-            defer { serviceRestartOperation = nil }
+            defer { serviceOperation = nil }
 
             // PIDが変わる前の完全な手掛かりを残す。保存不能なら何も停止しない。
             guard await persistRuntimeHints() else {
-                operationError = "再検証の手掛かりを保存できないため、\(service.name) の再起動を中止しました。"
+                operationError = "再検証の手掛かりを保存できないため、\(service.name) の\(kind.action)を中止しました。"
                     + "プロセスは停止していません。\n"
                     + (hintStorageFailure ?? "")
                 return
             }
 
-            var restarted = false
+            var started = false
             do {
-                _ = try await coordinator.restart(
-                    service,
-                    in: project,
-                    progress: progressSink(for: token),
-                    events: eventSink
-                )
-                restarted = true
+                switch kind {
+                case .starting:
+                    _ = try await coordinator.startService(
+                        service, in: project, progress: progressSink(for: token), events: eventSink
+                    )
+                case .restarting:
+                    _ = try await coordinator.restart(
+                        service, in: project, progress: progressSink(for: token), events: eventSink
+                    )
+                }
+                started = true
             } catch let failure as SwitchFailure {
                 present(failure)
             } catch {
@@ -1505,8 +1563,8 @@ final class AppState {
             }
             await refreshPhases()
 
-            if await persistRuntimeHints() == false, restarted {
-                await compensateUnsavedRestart(of: service, in: project, token: token)
+            if await persistRuntimeHints() == false, started {
+                await compensateUnsavedServiceStart(of: service, in: project, kind: kind, token: token)
             }
         }
     }
@@ -1683,37 +1741,40 @@ final class AppState {
         if let stopFailure { present(stopFailure) }
     }
 
-    /// 単体再起動後の手掛かりを保存できない場合、今回起動した1件だけを停止する。
-    /// 先に動いていた他サービスまで巻き込むと、単体再起動という操作の範囲を超える。
-    private func compensateUnsavedRestart(
+    /// 1件の起動・再起動後の手掛かりを保存できない場合、今回起動した1件だけを停止する。
+    private func compensateUnsavedServiceStart(
         of service: ServiceDefinition,
         in project: ProjectDefinition,
+        kind: ServiceOperation.Kind,
         token: ActivityToken
     ) async {
         var messages = [
-            "再起動した \(service.name) の手掛かりを保存できませんでした。",
+            "\(kind.action)した \(service.name) の手掛かりを保存できませんでした。",
             "記録に無いプロセスを残さないため、\(service.name) だけを停止します。",
             hintStorageFailure ?? "",
         ].filter { !$0.isEmpty }
 
         var stopFailure: SwitchFailure?
+        var compensationFailed = false
         do {
-            _ = try await coordinator.stopAfterUnsavedRestart(
+            _ = try await coordinator.stopAfterUnsavedServiceStart(
                 service,
                 in: project,
                 progress: progressSink(for: token)
             )
         } catch let failure as SwitchFailure {
             stopFailure = failure
+            compensationFailed = true
             messages.append("補償のための停止に失敗しました。\n\(failure.reason.detail)")
         } catch {
+            compensationFailed = true
             messages.append("補償のための停止に失敗しました。\n\(error)")
         }
         await refreshPhases()
 
-        if stopFailure == nil, await persistRuntimeHints(refreshingPorts: false) {
+        if !compensationFailed, await persistRuntimeHints(refreshingPorts: false) {
             messages.append("停止後の手掛かりを保存しました。")
-        } else if stopFailure == nil {
+        } else if !compensationFailed {
             messages.append("停止後の手掛かりも保存できませんでした。")
         } else {
             messages.append("停止できなかったプロセスが残っています。")

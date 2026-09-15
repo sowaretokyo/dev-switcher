@@ -37,8 +37,8 @@ struct ServiceDetailView: View {
         }
     }
 
-    private var restartOperation: AppState.ServiceRestartOperation? {
-        guard let operation = state.serviceRestartOperation,
+    private var serviceOperation: AppState.ServiceOperation? {
+        guard let operation = state.serviceOperation,
               operation.projectID == project.id,
               operation.serviceID == service.id else { return nil }
         return operation
@@ -55,34 +55,51 @@ struct ServiceDetailView: View {
                     .foregroundStyle(.secondary)
                 ServiceStatusLabel(state: uiState)
                 Spacer(minLength: Spacing.s)
-                if restartOperation != nil {
+                if let serviceOperation {
                     HStack(spacing: Spacing.tight) {
                         ProgressView().controlSize(.small)
-                        Text("再起動中")
+                        Text(serviceOperation.label)
                     }
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                 } else if service.kind != .supabase {
-                    Button {
-                        state.restart(service, in: project)
-                    } label: {
-                        Label("再起動", systemImage: "arrow.clockwise")
+                    if uiState.phase == .excluded || uiState.phase == .stopped {
+                        Button {
+                            state.startService(service, in: project)
+                        } label: {
+                            Label("起動", systemImage: "play.fill")
+                        }
+                        .disabled(!state.canStartService(service, in: project))
+                        .help(
+                            state.serviceStartBlockedReason(for: service, in: project)
+                                ?? "\(service.name) を今回だけ追加で起動します"
+                        )
+                    } else {
+                        Button {
+                            state.restart(service, in: project)
+                        } label: {
+                            Label("再起動", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(!state.canRestart(service, in: project))
+                        .help(
+                            state.restartBlockedReason(for: service, in: project)
+                                ?? "\(service.name) だけを停止し、ポートの解放確認後に起動します"
+                        )
                     }
-                    .disabled(!state.canRestart(service, in: project))
-                    .help(
-                        state.restartBlockedReason(for: service, in: project)
-                            ?? "\(service.name) だけを停止し、ポートの解放確認後に起動します"
-                    )
                 }
-                Text("起動・停止は開発環境単位")
+                Text("停止は開発環境単位")
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
-                    .help("通常の起動・停止は開発環境単位です。起動済み環境の通常プロセスだけ個別に再起動できます。")
+                    .help("起動済みの開発環境では通常プロセスを追加起動・再起動できます。追加したプロセスも開発環境と一緒に停止します。")
             }
 
-            if let restartOperation {
-                NoteText(restartOperation.state.label, tint: .secondary)
+            if let serviceOperation {
+                NoteText(serviceOperation.state.label, tint: .secondary)
+            }
+
+            if service.kind != .supabase, !project.isEnabledNow(service.id) {
+                NoteText("一括起動の対象外です。追加起動しても、次回の一括起動には含まれません。", tint: .secondary)
             }
 
             // 値の長さは実行時に決まる。固定の横並びにすると狭い幅で切れるので折り返す。

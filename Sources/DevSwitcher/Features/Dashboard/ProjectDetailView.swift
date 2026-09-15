@@ -359,7 +359,7 @@ struct ServiceSummaryRow: View {
         .padding(Spacing.m)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         // 対象外は色を持たせない。警告色を使うと、外した日に毎回警告が出ることになる。
-        .opacity(isEnabled ? 1 : 0.55)
+        .opacity(uiState.phase == .excluded ? 0.55 : 1)
     }
 
     private var configuredPorts: String {
