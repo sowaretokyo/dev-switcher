@@ -9,3 +9,6 @@
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Generated application bundles and distribution archives
+dist/

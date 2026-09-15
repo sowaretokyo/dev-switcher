@@ -1,0 +1,14 @@
+Dev Switcher — インストール・更新
+
+対応環境: macOS 15以降（Apple Silicon / Intel）
+
+1. 更新の場合は、起動中のDev Switcherを終了します。
+2. DevSwitcher.appをApplicationsへドラッグします。
+3. 既存のアプリがある場合は「置き換える」を選びます。
+4. ApplicationsからDev Switcherを起動します。
+
+設定はアプリ本体とは別に保存されるため、入れ替えても保持されます。
+Dev Switcherを終了しても、起動済みの開発プロセスは動き続けます。
+次の起動時に既存プロセスが検出されたら、表示された内容を確認してください。
+
+以後の更新も、チームのGitHub Releasesから新版をダウンロードして入れ替えます。

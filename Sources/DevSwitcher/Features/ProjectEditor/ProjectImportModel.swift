@@ -40,8 +40,9 @@ final class ProjectImportModel {
     }
 
     static func creationGuide() throws -> String {
-        guard let guideURL = Bundle.module.url(forResource: "ProjectImportGuide", withExtension: "md"),
-              let exampleURL = Bundle.module.url(forResource: "ProjectImportExample", withExtension: "json") else {
+        let resources = try AppResources.bundle()
+        guard let guideURL = resources.url(forResource: "ProjectImportGuide", withExtension: "md"),
+              let exampleURL = resources.url(forResource: "ProjectImportExample", withExtension: "json") else {
             throw CocoaError(.fileNoSuchFile)
         }
         let guide = try String(contentsOf: guideURL, encoding: .utf8)

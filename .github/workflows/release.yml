@@ -1,0 +1,119 @@
+name: Prepare private DMG release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version (X.Y.Z, e.g. 0.1.0)'
+        required: true
+        type: string
+      build:
+        description: 'Build number (integer, increase for each new build)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-dmg-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require private repository and valid version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_BUILD: ${{ inputs.build }}
+        run: |
+          set -euo pipefail
+          [[ "$(gh repo view "$GITHUB_REPOSITORY" --json visibility --jq .visibility)" == PRIVATE ]]
+          [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$APP_BUILD" =~ ^[0-9]+$ ]]
+
+  verify:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      APP_VERSION: ${{ inputs.version }}
+      APP_BUILD: ${{ inputs.build }}
+      DEVELOPER_ID_APPLICATION: ${{ vars.DEVELOPER_ID_APPLICATION }}
+      NOTARYTOOL_PROFILE: dev-switcher-notary
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Import signing identity and notarization credentials
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          : "${DEVELOPER_ID_APPLICATION:?Repository variable is required}"
+          : "${DEVELOPER_ID_P12_BASE64:?Secret is required}"
+          : "${DEVELOPER_ID_P12_PASSWORD:?Secret is required}"
+          : "${APPLE_ID:?Secret is required}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Secret is required}"
+          : "${APPLE_TEAM_ID:?Secret is required}"
+          umask 077
+          CERTIFICATE_PATH="$RUNNER_TEMP/dev-switcher-signing.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/dev-switcher-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$DEVELOPER_ID_P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          xcrun notarytool store-credentials "$NOTARYTOOL_PROFILE" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "$KEYCHAIN_PATH"
+          echo "NOTARYTOOL_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Build, sign, and notarize DMG
+        run: bash scripts/build-dmg.sh --release
+
+      - name: Create private release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(gh repo view "$GITHUB_REPOSITORY" --json visibility --jq .visibility)" == PRIVATE ]]
+          EXISTING_TAGS=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$APP_VERSION" \
+            --jq "map(select(.ref == \"refs/tags/v$APP_VERSION\")) | length")
+          [[ "$EXISTING_TAGS" == 0 ]] || { echo 'Version tag already exists; use a new version.' >&2; exit 1; }
+          DIST_DIR="dist/$APP_VERSION-$APP_BUILD-release"
+          gh release create "v$APP_VERSION" \
+            "$DIST_DIR/DevSwitcher-$APP_VERSION-$APP_BUILD-release.dmg" \
+            "$DIST_DIR/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --draft --title "Dev Switcher $APP_VERSION (build $APP_BUILD)" \
+            --notes-file packaging/RELEASE_NOTES.md --generate-notes
+
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/dev-switcher-signing.keychain-db"
+          if [[ -f "$KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+          rm -f "$RUNNER_TEMP/dev-switcher-signing.p12"
