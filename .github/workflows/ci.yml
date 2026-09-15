@@ -10,12 +10,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
 env:
   DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -42,6 +47,7 @@ jobs:
       - run: swift test
 
   package:
+    needs: [build, test]
     runs-on: macos-15
     timeout-minutes: 20
     steps:

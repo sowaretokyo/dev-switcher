@@ -818,9 +818,9 @@ struct HandoffTests {
             logDirectory: directory,
             environmentLoader: { fixedShellEnvironment }
         )
-        let readyFile = directory.appendingPathComponent("late.ready")
-        let testProcessID = getpid()
-        // 起動してしばらくしてから子を作るサービス。
+        let spawnTrigger = directory.appendingPathComponent("spawn.trigger")
+        let childPIDFile = directory.appendingPathComponent("late.pid")
+        // 初回の手掛かりを取得してから、テスト側の合図で子を作る。
         let service = makeService(
             name: "Late",
             kind: .worker,
@@ -828,14 +828,21 @@ struct HandoffTests {
             executable: "/bin/sh",
             arguments: [
                 "-c",
-                "sleep 0.4; /bin/sh -c 'remaining=600; while kill -0 \(testProcessID)"
-                    + " 2>/dev/null && [ -d \"\(directory.path)\" ]"
-                    + " && [ \"$remaining\" -gt 0 ];"
-                    + " do remaining=$((remaining - 1)); sleep 0.2; done' &"
-                    + " echo late > \"\(readyFile.path)\"; remaining=600;"
-                    + " while kill -0 \(testProcessID) 2>/dev/null"
-                    + " && [ -d \"\(directory.path)\" ] && [ \"$remaining\" -gt 0 ];"
-                    + " do remaining=$((remaining - 1)); sleep 0.2; done",
+                """
+                while [ ! -e "$1" ]; do
+                    kill -0 "$4" 2>/dev/null && [ -d "$3" ] || exit 2
+                    sleep 0.02
+                done
+                /bin/sh -c 'while kill -0 "$1" 2>/dev/null && [ -d "$2" ]; do sleep 0.05; done' late-child "$4" "$3" &
+                printf '%s\\n' "$!" > "$2.tmp"
+                mv "$2.tmp" "$2"
+                wait
+                """,
+                "late-descendant",
+                spawnTrigger.path,
+                childPIDFile.path,
+                directory.path,
+                String(getpid()),
             ],
             workingDirectory: directory
         )
@@ -845,18 +852,26 @@ struct HandoffTests {
         let stream = try await registry.start(service: service, in: project)
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
-        #expect(await waitUntil { await log.startedRuntime != nil })
+        try #require(await waitUntil { await log.startedRuntime != nil })
 
-        let early = try await registry.runtimeHints()
-        let earlyAnchors = Set(early.first?.groupEvidence.anchors ?? [])
+        let earlyHints = try await registry.runtimeHints()
+        let early = try #require(earlyHints.first { $0.serviceID == service.id })
 
-        #expect(await waitUntil { FileManager.default.fileExists(atPath: readyFile.path) })
-        let late = try await registry.runtimeHints()
-        let lateAnchors = Set(late.first?.groupEvidence.anchors ?? [])
+        try Data().write(to: spawnTrigger, options: .atomic)
+        try #require(await waitUntil { FileManager.default.fileExists(atPath: childPIDFile.path) })
+        let childPIDText = try String(contentsOf: childPIDFile, encoding: .utf8)
+        let childPID = try #require(pid_t(childPIDText.trimmingCharacters(in: .whitespacesAndNewlines)))
+        let childAnchor = ProcessAnchor(
+            pid: childPID,
+            startAbstime: try #require(ProcessInspector.startAbstime(pid: childPID))
+        )
 
-        // 後から生まれた子孫が錨へ入る。入らないと、本体終了後に回収できない。
-        #expect(lateAnchors.count > earlyAnchors.count)
-        #expect(earlyAnchors.isSubset(of: lateAnchors) || !lateAnchors.isEmpty)
+        let lateHints = try await registry.runtimeHints()
+        let late = try #require(lateHints.first { $0.serviceID == service.id })
+
+        // 一時的なsleepの増減ではなく、合図の後に生まれた子そのものが記録されたかを見る。
+        #expect(!early.groupEvidence.anchors.contains(childAnchor))
+        #expect(late.groupEvidence.anchors.contains(childAnchor))
 
         _ = try await registry.stop(service: service, grace: .seconds(5))
     }

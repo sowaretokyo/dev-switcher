@@ -932,14 +932,27 @@ struct SwitchCoordinatorTests {
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
 
-        let marker = directory.appendingPathComponent("gone.marker")
-        // 起動確認を通過してから落ちる、失敗を許容するサービス。
+        let exitTrigger = directory.appendingPathComponent("exit.trigger")
+        // 全サービスの起動成功を確認してから、合図で異常終了させる。
         let optional = makeService(
             name: "Optional",
             kind: .worker,
             ports: [],
             executable: "/bin/sh",
-            arguments: ["-c", "sleep 0.5; echo gone > \"\(marker.path)\"; exit 1"],
+            arguments: [
+                "-c",
+                """
+                while [ ! -e "$1" ]; do
+                    kill -0 "$3" 2>/dev/null && [ -d "$2" ] || exit 2
+                    sleep 0.02
+                done
+                exit 1
+                """,
+                "optional-exit",
+                exitTrigger.path,
+                directory.path,
+                String(getpid()),
+            ],
             workingDirectory: directory,
             failurePolicy: .continue
         )
@@ -955,7 +968,7 @@ struct SwitchCoordinatorTests {
         let outcome = try await coordinator.start(project)
         #expect(outcome.facts.target?.phase == .running)
 
-        #expect(await waitUntil { FileManager.default.fileExists(atPath: marker.path) })
+        try Data().write(to: exitTrigger, options: .atomic)
         // 稼働後に落ちたサービスは、プロジェクトの状態にも出る。
         #expect(await waitUntil {
             await coordinator.projectFact(project).phase
@@ -1202,14 +1215,27 @@ struct SwitchCoordinatorTests {
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
 
-        let marker = directory.appendingPathComponent("gone.marker")
-        // 起動確認を通過したあとに、自分から終了するサービス。
+        let exitTrigger = directory.appendingPathComponent("exit.trigger")
+        // 全サービスの起動成功を確認してから、合図で自発終了させる。
         let selfExiting = makeService(
             name: "SelfExit",
             kind: .worker,
             ports: [],
             executable: "/bin/sh",
-            arguments: ["-c", "sleep 0.5; echo gone > \"\(marker.path)\"; exit 0"],
+            arguments: [
+                "-c",
+                """
+                while [ ! -e "$1" ]; do
+                    kill -0 "$3" 2>/dev/null && [ -d "$2" ] || exit 2
+                    sleep 0.02
+                done
+                exit 0
+                """,
+                "self-exit",
+                exitTrigger.path,
+                directory.path,
+                String(getpid()),
+            ],
             workingDirectory: directory
         )
         let stable = makeOrderedService(
@@ -1226,7 +1252,7 @@ struct SwitchCoordinatorTests {
         // 起動時点ではまだ生きているので稼働中。
         #expect(outcome.facts.target?.phase == .running)
 
-        #expect(await waitUntil { FileManager.default.fileExists(atPath: marker.path) })
+        try Data().write(to: exitTrigger, options: .atomic)
         #expect(await waitUntil {
             await coordinator.servicePhase(selfExiting, in: project) != .healthy
         })
