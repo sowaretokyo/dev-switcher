@@ -33,7 +33,14 @@ final class TestProcessGroupCleanup: @unchecked Sendable {
     private func performCleanup() -> Bool {
         let signalResult = kill(-processGroupID, SIGKILL)
         let signalError = errno
-        guard signalResult == 0 || signalError == ESRCH else { return false }
+        if signalResult != 0, signalError != ESRCH {
+            // macOS はゾンビだけのグループへの送信にも EPERM を返す。
+            // 生存メンバーがいないと実測できた場合だけ、リーダーの回収へ進む。
+            // 本当の権限不足や観測不能を掃除成功として扱わない。
+            guard signalError == EPERM,
+                  ProcessInspector.processGroupState(processGroupID).hasLiveMembers == false
+            else { return false }
+        }
 
         let deadline = ContinuousClock.now + .seconds(2)
         var rawStatus: Int32 = 0
