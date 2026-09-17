@@ -25,7 +25,7 @@ struct ServiceDetailView: View {
                 }
             }
             Divider()
-            LogTextView(lines: buffer.lines, isFollowing: $isFollowing)
+            LogTextView(serviceID: service.id, lines: buffer.lines, isFollowing: $isFollowing)
             Divider()
             footer(buffer)
         }

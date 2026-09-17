@@ -4,6 +4,7 @@ import SwiftUI
 
 /// ログ全体の再描画コストを避けるため`NSTextView`へ差分だけ反映する。
 struct LogTextView: NSViewRepresentable {
+    let serviceID: UUID
     let lines: [LogLine]
     @Binding var isFollowing: Bool
 
@@ -42,7 +43,7 @@ struct LogTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.isFollowing = $isFollowing
-        context.coordinator.apply(lines: lines, follow: isFollowing)
+        context.coordinator.apply(serviceID: serviceID, lines: lines, follow: isFollowing)
     }
 
     @MainActor
@@ -51,6 +52,7 @@ struct LogTextView: NSViewRepresentable {
         weak var textView: NSTextView?
         weak var scrollView: NSScrollView?
 
+        private var renderedServiceID: UUID?
         private var renderedIDs: [UInt64] = []
         private var renderedLengths: [Int] = []
         private var isProgrammaticScroll = false
@@ -63,8 +65,16 @@ struct LogTextView: NSViewRepresentable {
             NotificationCenter.default.removeObserver(self)
         }
 
-        func apply(lines: [LogLine], follow: Bool) {
+        func apply(serviceID: UUID, lines: [LogLine], follow: Bool) {
             guard let textView, let storage = textView.textStorage else { return }
+
+            if renderedServiceID != serviceID {
+                // 行番号はサービス間で重複するため、切り替え時は描画履歴ごと入れ替える。
+                renderedServiceID = serviceID
+                rebuild(lines: lines, storage: storage)
+                scrollIfNeeded(follow: follow)
+                return
+            }
 
             guard let first = lines.first else {
                 if !renderedIDs.isEmpty {
