@@ -70,6 +70,8 @@ struct LineAssembler {
 final class LogFileTail: @unchecked Sendable {
     typealias BatchHandler = @Sendable ([LogLine]) -> Void
 
+    private static let maxBytesPerBatch = 256 * 1024
+
     private struct Source {
         let fileDescriptor: Int32
         let url: URL
@@ -125,7 +127,8 @@ final class LogFileTail: @unchecked Sendable {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: interval.seconds)
         timer.setEventHandler { [weak self] in
-            self?.readAvailable(flushRemainder: false)
+            guard let self, !self.isCancelled else { return }
+            self.readBatch()
         }
         self.timer = timer
         timer.resume()
@@ -140,7 +143,8 @@ final class LogFileTail: @unchecked Sendable {
 
     func drain() {
         queue.sync {
-            readAvailable(flushRemainder: true)
+            guard !isCancelled else { return }
+            readToEnd()
         }
     }
 
@@ -148,27 +152,40 @@ final class LogFileTail: @unchecked Sendable {
         queue.sync {
             guard !isCancelled else { return }
             isCancelled = true
-            readAvailable(flushRemainder: true)
+            readToEnd()
             timer?.cancel()
             timer = nil
         }
     }
 
-    private func readAvailable(flushRemainder: Bool) {
-        guard !isCancelled || flushRemainder else { return }
+    private func readToEnd() {
+        // 終了時も通常の追尾と同じ単位で通知し、未読ログ全体をメモリへ積まない。
+        while readBatch() {}
 
+        var lines: [LogLine] = []
+        for index in sources.indices {
+            if let remainder = sources[index].assembler.flush() {
+                lines.append(makeLine(bytes: remainder, stream: sources[index].stream))
+            }
+        }
+        if !lines.isEmpty { onBatch(lines) }
+    }
+
+    /// 1バッチだけ読み取り、読み切っていないファイルがあればtrueを返す。
+    @discardableResult
+    private func readBatch() -> Bool {
         var lines: [LogLine] = []
         var buffer = [UInt8](repeating: 0, count: 4 * 1024)
         var pending = Set(sources.indices.filter { !sources[$0].failed })
         var bytesRead = 0
 
         // 片方の大量出力でもう片方が後ろへ回らないよう、小さく交互に読む。
-        // 引き継ぎ時の大きな保存済みログも、1回の通知で全量をメモリへ積まない。
-        while !pending.isEmpty, flushRemainder || bytesRead < 256 * 1024 {
-            for index in sources.indices where pending.contains(index) {
+        while !pending.isEmpty, bytesRead < Self.maxBytesPerBatch {
+            for index in sources.indices where pending.contains(index) && bytesRead < Self.maxBytesPerBatch {
                 let descriptor = sources[index].fileDescriptor
+                let readSize = min(buffer.count, Self.maxBytesPerBatch - bytesRead)
                 let count = buffer.withUnsafeMutableBytes { raw in
-                    read(descriptor, raw.baseAddress, raw.count)
+                    read(descriptor, raw.baseAddress, readSize)
                 }
                 if count < 0 {
                     let code = errno
@@ -189,22 +206,14 @@ final class LogFileTail: @unchecked Sendable {
                 for line in sources[index].assembler.append(chunk) {
                     lines.append(makeLine(bytes: line, stream: sources[index].stream))
                 }
-                if count < buffer.count {
+                if count < readSize {
                     pending.remove(index)
                 }
             }
         }
 
-        if flushRemainder {
-            for index in sources.indices {
-                if let remainder = sources[index].assembler.flush() {
-                    lines.append(makeLine(bytes: remainder, stream: sources[index].stream))
-                }
-            }
-        }
-
-        guard !lines.isEmpty else { return }
-        onBatch(lines)
+        if !lines.isEmpty { onBatch(lines) }
+        return !pending.isEmpty
     }
 
     private func makeLine(bytes: [UInt8], stream: LogLine.Stream) -> LogLine {
