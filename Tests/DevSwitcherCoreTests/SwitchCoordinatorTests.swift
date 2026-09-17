@@ -978,30 +978,64 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(project)
     }
 
-    @Test("親が終了して孫が残った場合は残存として扱い、停止の導線を残す")
-    func survivingGrandchildIsReportedAsResidual() async throws {
+    @Test(
+        "親が終了して孫が残った場合は残存として扱い、停止の導線を残す",
+        arguments: [Duration.milliseconds(200), .seconds(2)]
+    )
+    func survivingGrandchildIsReportedAsResidual(observationWindow: Duration) async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let exitTrigger = directory.appendingPathComponent("exit.trigger")
 
-        // 起動確認を通過したあとに親だけが終了し、孫がグループに残る。
+        // 経過時間に依存せず、起動成功後の合図で親だけを終了させる。
         let detached = makeService(
             name: "Detached",
             kind: .worker,
             ports: [],
             executable: "/bin/sh",
-            arguments: ["-c", "sleep 120 & sleep 1; exit 0"],
+            arguments: [
+                "-c",
+                """
+                sleep 120 &
+                child=$!
+                trap 'kill "$child" 2>/dev/null; wait "$child" 2>/dev/null' 0
+                while [ ! -e "$1" ]; do
+                    kill -0 "$3" 2>/dev/null && [ -d "$2" ] || exit 2
+                    sleep 0.02
+                done
+                trap - 0
+                exit 0
+                """,
+                "detached-exit",
+                exitTrigger.path,
+                directory.path,
+                String(getpid()),
+            ],
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [detached])
-        let (registry, coordinator) = makeStack(logDirectory: directory)
+        let (registry, coordinator) = makeStack(
+            logDirectory: directory,
+            options: SwitchCoordinator.Options(
+                releaseTimeout: .seconds(3),
+                stopGrace: .seconds(5),
+                startupObservationWindow: observationWindow,
+                startupPollInterval: .milliseconds(50),
+                gatePollInterval: .milliseconds(50)
+            )
+        )
 
-        _ = try await coordinator.start(project)
-        // 親が終了するまで待つ。孫は残り続ける。
-        #expect(await waitUntil { await registry.isRunning(serviceID: detached.id) == false })
+        let outcome = try await coordinator.start(project)
         let processGroupID = try #require(
             await registry.occupiedProcessGroup(serviceID: detached.id)
         )
         defer { kill(-processGroupID, SIGKILL) }
+        try #require(outcome.facts.target?.phase == .running)
+
+        try Data().write(to: exitTrigger, options: .atomic)
+        // 親が終了するまで待つ。孫は残り続ける。
+        try #require(await waitUntil { await registry.isRunning(serviceID: detached.id) == false })
+        #expect(await registry.occupiedProcessGroup(serviceID: detached.id) == processGroupID)
 
         // 資源を握っている間は「失敗」でも「停止中」でもなく「残存あり」。
         // ここを失敗のままにすると、停止ボタンが出ず画面から復旧できない。
