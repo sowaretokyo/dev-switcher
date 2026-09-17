@@ -110,6 +110,7 @@ final class AppState {
         var observedPorts: [ObservedPort] = []
         var startedAt: Date?
         var warning: String?
+        var logError: String?
         var lastMessage: String?
         var processID: pid_t?
         var processGroupID: pid_t?
@@ -979,7 +980,7 @@ final class AppState {
                   let service = project.service(id: candidate.hint.serviceID)
             else { continue }
             do {
-                try await coordinator.adopt(candidate, service: service, in: project)
+                try await coordinator.adopt(candidate, service: service, in: project, events: eventSink)
                 // 管理下に入ったので、以後は実測から手掛かりを作り直せる。
                 pendingHints[candidate.hint.serviceID] = nil
             } catch {
@@ -2163,6 +2164,7 @@ final class AppState {
             update(serviceID) {
                 $0.lastMessage = nil
                 $0.warning = nil
+                $0.logError = nil
             }
         case let .started(runtime):
             update(serviceID) {
@@ -2189,6 +2191,8 @@ final class AppState {
             }
         case let .warning(message):
             update(serviceID) { $0.warning = message }
+        case let .logUnavailable(message):
+            update(serviceID) { $0.logError = message }
         case let .exited(status, requestedByUser, startupConfirmed):
             update(serviceID) { current in
                 // 本体は終了したが、孫がポートを握ったままのことがある。

@@ -536,6 +536,23 @@ public actor RuntimeRegistry {
         )
     }
 
+    /// 引き継ぎ済みの通常プロセスが書き続けている、アプリ管理下のログへ接続する。
+    func resumeAdoptedLogs(
+        serviceID: UUID,
+        events: @escaping @Sendable (ServiceSupervisor.Event) -> Void
+    ) async throws {
+        guard case let .adopted(supervisor) = handles[serviceID] else {
+            throw RuntimeError.invalidHandoff(
+                service: serviceID.uuidString, reason: "ログを再開する引き継ぎ済みプロセスがありません。"
+            )
+        }
+        let files = ServiceLogFiles(
+            directory: try logDirectoryOverride ?? ApplicationPaths.logDirectory(),
+            serviceID: serviceID
+        )
+        try await supervisor.resumeLogs(files: files, events: events)
+    }
+
     /// 本体が終了し、プロセスグループにだけ残りがある状態を管理下へ置く。
     ///
     /// 引き継ぎ（稼働中として扱うこと）はしない。停止手段を持たせるためだけの登録。

@@ -37,6 +37,14 @@ struct RootView: View {
                 ToolbarIdentity()
             }
             .sharedBackgroundHidden()
+            // macOS の primaryAction は左側へ並ぶため、可変の余白を明示する。
+            if #available(macOS 26, *) {
+                ToolbarSpacer(.flexible, placement: .primaryAction)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    Spacer()
+                }
+            }
             // 操作はガラスの背景を残す。押せることが見た目で分かる必要がある。
             ToolbarItemGroup(placement: .primaryAction) {
                 ToolbarActions()

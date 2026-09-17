@@ -66,6 +66,11 @@ enum Metrics {
     static let projectRowHeight: CGFloat = 27
     static let serviceRowHeight: CGFloat = 25
 
+    /// 長い環境名が操作を押し出さないよう、ツールバー内では末尾を省略する。
+    static let toolbarProjectNameMaxWidth: CGFloat = 200
+    /// スピナーと4文字の状態ラベルを確保し、状態遷移で幅を変えない。
+    static let toolbarStatusWidth: CGFloat = 76
+
     /// 通常のシート幅。
     static let sheetWidth: CGFloat = 452
     /// プロジェクト追加・編集シート。

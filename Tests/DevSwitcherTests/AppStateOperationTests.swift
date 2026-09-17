@@ -69,12 +69,15 @@ struct AppStateOperationTests {
         )
         try await adoptRunningService(state: state, fixture: fixture)
 
+        #expect(state.toolbarProject?.id == fixture.project.id)
         state.stopProject(fixture.project)
         // 受け付けた直後に、対象と操作種別が分かること。
         #expect(state.switchPresentation == nil)
         #expect(state.inlineOperation?.projectID == fixture.project.id)
         #expect(state.inlineOperation?.kind == .stopping)
         #expect(state.phase(of: fixture.project) == .stopping)
+        #expect(state.toolbarProject?.id == fixture.project.id)
+        #expect(!state.canStop)
 
         await state.waitForPendingOperation()
 
@@ -82,6 +85,7 @@ struct AppStateOperationTests {
         #expect(state.switchPresentation == nil)
         #expect(state.inlineOperation == nil)
         #expect(state.phase(of: fixture.project) == .stopped)
+        #expect(state.toolbarProject == nil)
         #expect(fixture.signals.sent.map(\.signal) == [SIGTERM])
     }
 

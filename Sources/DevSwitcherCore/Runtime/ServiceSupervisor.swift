@@ -18,6 +18,7 @@ public actor ServiceSupervisor {
         case log([LogLine])
         case ports([ObservedPort])
         case warning(String)
+        case logUnavailable(String)
         /// 終了コード0でも、停止要求なしの終了を成功扱いしないため操作意図を伴う。
         /// `startupConfirmed` はCoordinatorが初期観測を通過させた場合だけtrueにする。
         case exited(status: ExitStatus, requestedByUser: Bool, startupConfirmed: Bool)
@@ -211,16 +212,20 @@ public actor ServiceSupervisor {
         self.continuation = continuation
 
         // ログは受信順のまま continuation へ流す。actor を挟むと順序が崩れるため直接 yield する。
-        tail = LogFileTail(
-            files: [
-                (url: logFiles.standardOutput, stream: .stdout),
-                (url: logFiles.standardError, stream: .stderr),
-            ],
-            label: serviceID.uuidString,
-            onBatch: { lines in
-                continuation.yield(.log(lines))
-            }
-        )
+        do {
+            tail = try LogFileTail(
+                files: [
+                    (url: logFiles.standardOutput, stream: .stdout),
+                    (url: logFiles.standardError, stream: .stderr),
+                ],
+                label: serviceID.uuidString,
+                onBatch: { lines in continuation.yield(.log(lines)) },
+                onFailure: { error in continuation.yield(.logUnavailable("\(error)")) }
+            )
+        } catch {
+            // ログの障害とプロセスの稼働を分け、停止手段を維持したまま通知する。
+            continuation.yield(.logUnavailable("\(error)"))
+        }
 
         if let identity {
             let observed = ObservedRuntime(

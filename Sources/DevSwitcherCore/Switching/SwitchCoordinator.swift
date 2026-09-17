@@ -31,7 +31,7 @@ actor ServiceObservation {
                 requestedByUser: requestedByUser,
                 startupConfirmed: startupConfirmed
             )
-        case .logSessionStarted, .started, .ports, .warning:
+        case .logSessionStarted, .started, .ports, .warning, .logUnavailable:
             break
         }
         return event
@@ -1647,7 +1647,8 @@ public actor SwitchCoordinator {
     public func adopt(
         _ candidate: HandoffCandidate,
         service: ServiceDefinition,
-        in project: ProjectDefinition
+        in project: ProjectDefinition,
+        events: @escaping EventSink = { _, _ in }
     ) async throws {
         guard !inFlight else { throw RuntimeError.operationInProgress }
         inFlight = true
@@ -1655,6 +1656,15 @@ public actor SwitchCoordinator {
 
         try await registry.adopt(candidate: candidate, service: service, in: project)
         clearState(of: service.id)
+        events(service.id, .logSessionStarted)
+        do {
+            try await registry.resumeAdoptedLogs(serviceID: service.id) { event in
+                events(service.id, event)
+            }
+        } catch {
+            // 読み取り失敗でも引き継ぎ済みの管理関係は保ち、利用者が停止できるようにする。
+            events(service.id, .logUnavailable("引き継いだプロセスのログを取得できません。\n\(error)"))
+        }
 
         let spec: StartupObservationSpec
         do {

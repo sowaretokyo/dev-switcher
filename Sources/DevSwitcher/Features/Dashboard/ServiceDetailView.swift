@@ -25,7 +25,10 @@ struct ServiceDetailView: View {
                 }
             }
             Divider()
-            LogTextView(serviceID: service.id, lines: buffer.lines, isFollowing: $isFollowing)
+            LogTextView(
+                serviceID: service.id, sessionID: buffer.sessionID,
+                lines: buffer.lines, isFollowing: $isFollowing
+            )
             Divider()
             footer(buffer)
         }
@@ -132,6 +135,9 @@ struct ServiceDetailView: View {
 
             if let warning = uiState.warning {
                 NoteText(warning, tint: .orange)
+            }
+            if let logError = uiState.logError {
+                NoteText(logError, tint: .orange)
             }
             if let supabase = uiState.supabase {
                 LabeledValue(label: "スタックの実測状態", value: supabase.state.label)

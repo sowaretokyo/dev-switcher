@@ -28,9 +28,11 @@ struct LogBufferTests {
     @Test("新しい起動セッションでは過去ログと未読数を消す")
     func clearsPreviousSession() {
         let buffer = LogBuffer()
+        let previousSessionID = buffer.sessionID
         buffer.append([
             line(id: 1, stream: .stderr, text: "old error"),
         ])
+        #expect(buffer.sessionID == previousSessionID)
 
         buffer.clear()
 
@@ -38,6 +40,7 @@ struct LogBufferTests {
         #expect(buffer.stderrCount == 0)
         #expect(buffer.unreadStderrCount == 0)
         #expect(buffer.droppedCount == 0)
+        #expect(buffer.sessionID != previousSessionID)
     }
 
     private func line(id: UInt64, stream: LogLine.Stream, text: String) -> LogLine {

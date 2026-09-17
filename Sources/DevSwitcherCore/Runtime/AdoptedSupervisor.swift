@@ -13,7 +13,7 @@ import Foundation
 /// 記録済みの具体的なプロセス（PID＋開始 abstime）が残っているかで同定する。
 /// 同定できた時点で証拠を更新し、後発の子孫も錨へ加える。
 ///
-/// 引き継ぎ前の標準出力は後から取得できないため、ログは持たない。
+/// 前回起動時に標準出力・標準エラーを接続したログファイルの追尾を再開する。
 actor AdoptedSupervisor {
     typealias PortProbe = @Sendable (pid_t) async throws -> [ObservedPort]
 
@@ -32,6 +32,7 @@ actor AdoptedSupervisor {
     private let portProbe: PortProbe
     /// 停止を試みて所有権を手放したか。手放した PGID へは二度と送らない。
     private var released = false
+    private var logTail: LogFileTail?
 
     init(
         serviceID: UUID,
@@ -72,6 +73,23 @@ actor AdoptedSupervisor {
     public var processGroupID: pid_t? { released ? nil : processGroupIdentifier }
 
     public var observedPorts: ObservedPortRecord { ports }
+
+    func resumeLogs(
+        files: ServiceLogFiles,
+        events: @escaping @Sendable (ServiceSupervisor.Event) -> Void
+    ) throws {
+        guard !released else { throw RuntimeError.notRunning(service: serviceName) }
+        precondition(logTail == nil, "引き継いだプロセスのログ追尾を二重に開始できません。")
+        logTail = try LogFileTail(
+            files: [
+                (url: files.standardOutput, stream: .stdout),
+                (url: files.standardError, stream: .stderr),
+            ],
+            label: serviceID.uuidString,
+            onBatch: { events(.log($0)) },
+            onFailure: { events(.logUnavailable("\($0)")) }
+        )
+    }
 
     public var observedRuntime: ObservedRuntime? {
         guard !released else { return nil }
@@ -150,6 +168,12 @@ actor AdoptedSupervisor {
 
     private func terminate(signal: Int32, grace: Duration) async -> ServiceStopOutcome {
         guard !released else { return .stopped(nil) }
+        defer {
+            if released {
+                logTail?.cancel()
+                logTail = nil
+            }
+        }
 
         // 検証結果を保持して後から使わず、所属の最終観測から送出までを1 APIで行う。
         switch ProcessGroupIdentification.identifyAndSend(

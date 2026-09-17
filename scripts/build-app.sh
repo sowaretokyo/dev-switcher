@@ -20,6 +20,9 @@ APP="$OUTPUT_DIR/DevSwitcher.app"
 STAGING=$(mktemp -d "${TMPDIR:-/tmp}/dev-switcher-app.XXXXXX")
 trap 'rm -rf "$STAGING"' EXIT
 
+ICON_SOURCE="$ROOT/packaging/AppIcon.icns"
+[[ -f "$ICON_SOURCE" ]] || { echo "Missing app icon: $ICON_SOURCE" >&2; exit 1; }
+
 BINARIES=()
 for ARCH in arm64 x86_64; do
     BUILD_ARGS=(--package-path "$ROOT" --scratch-path "$ROOT/.build/distribution/$ARCH"
@@ -39,6 +42,7 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 xcrun lipo -create "${BINARIES[@]}" -output "$BUNDLE/Contents/MacOS/DevSwitcher"
 chmod +x "$BUNDLE/Contents/MacOS/DevSwitcher"
 ditto "$RESOURCE_BUNDLE" "$BUNDLE/Contents/Resources/DevSwitcher_DevSwitcherApp.bundle"
+ditto "$ICON_SOURCE" "$BUNDLE/Contents/Resources/AppIcon.icns"
 ditto "$ROOT/packaging/Info.plist" "$BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $APP_BUILD" "$BUNDLE/Contents/Info.plist"

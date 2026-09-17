@@ -8,6 +8,7 @@ import Observation
 final class LogBuffer {
     static let capacity = 20_000
 
+    private(set) var sessionID = UUID()
     private(set) var lines: [LogLine] = []
     private(set) var droppedCount = 0
     private(set) var unreadStderrCount = 0
@@ -24,6 +25,7 @@ final class LogBuffer {
     }
 
     func clear() {
+        sessionID = UUID()
         lines.removeAll()
         droppedCount = 0
         unreadStderrCount = 0
