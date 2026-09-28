@@ -68,7 +68,7 @@ struct AppStateServiceStartTests {
             #expect(state.state(of: inngest.id).phase == .healthy)
             #expect(state.state(of: web.id).processID == webPID)
             #expect(state.logBuffer(of: inngest.id).lines.isEmpty)
-            #expect(state.logBuffer(of: inngest.id).unreadStderrCount == 0)
+            #expect(state.logBuffer(of: inngest.id).stderrCount == 0)
             #expect(state.logBuffer(of: web.id).lines == [oldLog])
             #expect(state.canRestart(inngest, in: project))
             #expect(state.projects == [project])

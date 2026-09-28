@@ -148,7 +148,6 @@ private struct ServiceRow: View {
     var body: some View {
         let uiState = state.state(of: service.id)
         let phase = uiState.phase
-        let unreadStderrCount = state.logBuffer(of: service.id).unreadStderrCount
 
         HStack(spacing: Spacing.tight) {
             if let supabase = uiState.supabase, supabase.relationship == nil, supabase.state != .notRunning {
@@ -160,16 +159,6 @@ private struct ServiceRow: View {
                 .font(Typography.row)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if unreadStderrCount > 0 {
-                Text(unreadStderrCount > 99 ? "99+" : "\(unreadStderrCount)")
-                    .font(Typography.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 1)
-                    .background(.red, in: Capsule())
-                    .help("未読の stderr が \(unreadStderrCount) 行あります。選択するとログを確認できます。")
-                    .accessibilityLabel("未読エラーログ \(unreadStderrCount) 行")
-            }
             Spacer(minLength: Spacing.xs)
             Text(portSummary)
                 .font(Typography.monoSmall)

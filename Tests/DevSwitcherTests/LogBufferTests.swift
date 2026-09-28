@@ -3,29 +3,25 @@ import DevSwitcherCore
 import Foundation
 import Testing
 
-@Suite("ログのセッションと未読stderr")
+@Suite("ログのセッションと出力先")
 @MainActor
 struct LogBufferTests {
-    @Test("stderrだけを未読として数え、開いたら既読にする")
-    func tracksUnreadStandardError() {
+    @Test("stdoutとstderrの本文・出力先を保持し、stderrの行数を数える")
+    func preservesStreamsAndCountsStandardError() {
         let buffer = LogBuffer()
 
-        buffer.append([
+        let batch = [
             line(id: 1, stream: .stdout, text: "ready"),
-            line(id: 2, stream: .stderr, text: "compile error"),
-            line(id: 3, stream: .stderr, text: "stack trace"),
-        ])
+            line(id: 2, stream: .stderr, text: "$ next dev"),
+            line(id: 3, stream: .stderr, text: "Starting containers..."),
+        ]
+        buffer.append(batch)
 
+        #expect(buffer.lines == batch)
         #expect(buffer.stderrCount == 2)
-        #expect(buffer.unreadStderrCount == 2)
-
-        buffer.markStderrAsRead()
-
-        #expect(buffer.stderrCount == 2)
-        #expect(buffer.unreadStderrCount == 0)
     }
 
-    @Test("新しい起動セッションでは過去ログと未読数を消す")
+    @Test("新しい起動セッションでは過去ログと行数を消す")
     func clearsPreviousSession() {
         let buffer = LogBuffer()
         let previousSessionID = buffer.sessionID
@@ -38,7 +34,6 @@ struct LogBufferTests {
 
         #expect(buffer.lines.isEmpty)
         #expect(buffer.stderrCount == 0)
-        #expect(buffer.unreadStderrCount == 0)
         #expect(buffer.droppedCount == 0)
         #expect(buffer.sessionID != previousSessionID)
     }

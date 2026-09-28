@@ -1268,10 +1268,6 @@ final class AppState {
         return buffer
     }
 
-    func markLogAsRead(serviceID: UUID) {
-        logBuffer(of: serviceID).markStderrAsRead()
-    }
-
     func phase(of project: ProjectDefinition) -> ProjectPhase {
         // 実測だけでは、順番に停止している途中と一部の異常終了を区別できない。
         // 操作中だけ意図した遷移を優先し、完了後は再びCoordinatorの実測へ戻す。
@@ -1966,7 +1962,6 @@ final class AppState {
         expandedProjectIDs.insert(item.projectID)
         selection = item
         if case let .service(_, serviceID) = item {
-            markLogAsRead(serviceID: serviceID)
             if runtimeIncident?.serviceID == serviceID {
                 runtimeIncident = nil
             }
@@ -2178,12 +2173,7 @@ final class AppState {
                 $0.warning = nil
             }
         case let .log(lines):
-            let buffer = logBuffer(of: serviceID)
-            buffer.append(lines)
-            if case let .service(_, selectedServiceID) = selection,
-               selectedServiceID == serviceID {
-                buffer.markStderrAsRead()
-            }
+            logBuffer(of: serviceID).append(lines)
         case let .ports(ports):
             update(serviceID) {
                 $0.observedPortRecord = .observed(ports.map(\.port))

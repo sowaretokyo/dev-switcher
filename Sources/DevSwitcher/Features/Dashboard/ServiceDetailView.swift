@@ -32,12 +32,6 @@ struct ServiceDetailView: View {
             Divider()
             footer(buffer)
         }
-        .onAppear {
-            state.markLogAsRead(serviceID: service.id)
-        }
-        .onChange(of: service.id) { _, serviceID in
-            state.markLogAsRead(serviceID: serviceID)
-        }
     }
 
     private var serviceOperation: AppState.ServiceOperation? {
@@ -179,10 +173,10 @@ struct ServiceDetailView: View {
             if buffer.stderrCount > 0 {
                 Text("stderr \(buffer.stderrCount) 行")
                     .font(Typography.support)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: Spacing.s)
-            Text("ログのエラーはプロセスの状態を変えません")
+            Text("stderr はエラーとは限りません")
                 .font(Typography.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)

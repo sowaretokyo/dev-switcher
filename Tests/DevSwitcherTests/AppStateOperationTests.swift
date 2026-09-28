@@ -326,6 +326,34 @@ struct AppStateOperationTests {
         #expect(state.phase(of: project) == .stopped)
     }
 
+    @Test("ログの内容・出力先では稼働状態や失敗通知を変えない", arguments: [LogLine.Stream.stdout, .stderr])
+    func logsDoNotReportRuntimeFailures(stream: LogLine.Stream) async throws {
+        let directory = try makeTemporaryTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = makeSyntheticFixture(directory: directory)
+        try ProjectStore(directory: directory).save([fixture.project])
+        try RuntimeHintStore(directory: directory).save([fixture.hint])
+        let state = makeAppState(
+            directory: directory,
+            registry: fixture.registry,
+            handoffInspector: fixture.inspector
+        )
+        try await adoptRunningService(state: state, fixture: fixture)
+        let phase = state.state(of: fixture.service.id).phase
+        let logs = ["$ next dev", "Starting containers...", "Error: compilation failed"].enumerated().map {
+            LogLine(id: UInt64($0.offset), timestamp: Date(), stream: stream, text: $0.element)
+        }
+
+        state.apply(.log(logs), to: fixture.service.id)
+
+        #expect(state.logBuffer(of: fixture.service.id).lines == logs)
+        #expect(state.state(of: fixture.service.id).phase == phase)
+        #expect(state.phase(of: fixture.project) == .running)
+        #expect(state.runtimeIncident == nil)
+        #expect(state.failurePresentation == nil)
+        #expect(state.operationError == nil)
+    }
+
     @Test("起動確認後の終了はhealthyの画面反映前でも通知する")
     func confirmedExitIsReportedBeforeHealthyUIState() async throws {
         let directory = try makeTemporaryTestDirectory()
@@ -364,6 +392,12 @@ struct AppStateOperationTests {
             state.runtimeIncident?.serviceID == service.id
         })
         #expect(state.runtimeIncident?.status == "終了コード 7")
+
+        let logTarget = SidebarItem.service(projectID: project.id, serviceID: service.id)
+        state.openLogTarget(logTarget)
+        #expect(state.selection == logTarget)
+        #expect(state.expandedProjectIDs.contains(project.id))
+        #expect(state.runtimeIncident == nil)
     }
 
     @Test("確定済みの対象外を遅れた終了通知で停止中へ戻さない")

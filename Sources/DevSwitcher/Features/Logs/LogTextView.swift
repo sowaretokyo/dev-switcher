@@ -193,9 +193,7 @@ struct LogTextView: NSViewRepresentable {
                     string: line.text + "\n",
                     attributes: [
                         .font: font,
-                        .foregroundColor: line.stream == .stderr
-                            ? NSColor.systemRed
-                            : NSColor.labelColor,
+                        .foregroundColor: NSColor.labelColor,
                     ]
                 )
             )

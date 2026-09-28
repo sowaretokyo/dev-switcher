@@ -84,7 +84,7 @@ struct AppStateHandoffLogTests {
         #expect(await waitForCondition { buffer.lines.count == 4 })
         #expect(buffer.lines.filter { $0.stream == .stdout }.map(\.text) == ["before-out", "after-out"])
         #expect(buffer.lines.filter { $0.stream == .stderr }.map(\.text) == ["before-err", "after-err"])
-        #expect(buffer.unreadStderrCount == 2)
+        #expect(buffer.stderrCount == 2)
         #expect(Set(buffer.lines.map(\.id)).count == buffer.lines.count)
 
         state.stopProject(fixture.project)
