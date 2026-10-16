@@ -60,6 +60,9 @@ enum Metrics {
     static let windowMinWidth: CGFloat = 720
     static let windowMinHeight: CGFloat = 460
 
+    /// 複数の起動時警告が出ても、詳細ペインの操作領域を残す。
+    static let bannerAreaMaxHeight: CGFloat = 200
+
     static let sidebarMinWidth: CGFloat = 200
     static let sidebarIdealWidth: CGFloat = 214
     static let sidebarMaxWidth: CGFloat = 300

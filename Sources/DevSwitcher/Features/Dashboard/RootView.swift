@@ -92,6 +92,21 @@ private struct BannerArea: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
+        // 再起動直後のDocker未起動などでは複数の警告が同時に出る。
+        // その全文を最小高さにするとNavigationSplitView全体が画面外へ押し出される。
+        // 短い警告は内容に合わせ、上限を超える場合だけスクロールで全文を読めるようにする。
+        ViewThatFits(in: .vertical) {
+            banners
+            ScrollView {
+                banners
+            }
+        }
+        .frame(maxHeight: Metrics.bannerAreaMaxHeight)
+        // 空・短文のときは上限いっぱいの空白を取らず、選ばれた内容の高さに合わせる。
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var banners: some View {
         VStack(spacing: 0) {
             if let error = state.supabaseObservationError {
                 Banner(title: "Supabaseを観測できません", message: error, tint: .orange) {
