@@ -15,9 +15,9 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
     case stopCommandUnsupported(service: String)
     case managedCommandInvalid(service: String, reason: String)
     case managedStartOwnershipUnconfirmed(
-        service: String,
-        projectID: SupabaseProjectID,
-        state: SupabaseStackState,
+        stack: String,
+        identity: ManagedStackIdentity,
+        state: ManagedStackState,
         reason: String
     )
 
@@ -51,8 +51,8 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
             "サービス「\(service)」には終了コマンドが設定されています。終了コマンドで管理するサービス（managed command）の実行は Post-MVP で対応します。プロセスグループの停止で代用すると停止できたか確認できないため、起動を中止しました。"
         case let .managedCommandInvalid(service, reason):
             "サービス「\(service)」の管理コマンドを構成できません。\n\(reason)"
-        case let .managedStartOwnershipUnconfirmed(service, projectID, state, reason):
-            "サービス「\(service)」のSupabase「\(projectID)」は起動処理の前後で"
+        case let .managedStartOwnershipUnconfirmed(stack, identity, state, reason):
+            "サービス「\(stack)」の\(identity.type.displayName)「\(identity)」は起動処理の前後で"
                 + "\(state.label)と観測されましたが、Dev Switcherが起動したスタックか確定できません。"
                 + "停止権限を持たないため自動停止していません。再度起動操作を行い、現在のスタックの扱いを確認してください。\n\(reason)"
         }

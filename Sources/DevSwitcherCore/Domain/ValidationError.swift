@@ -42,14 +42,10 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
     case enabledNowUnknownService(id: UUID)
     case stopExecutableEmpty(service: String)
     case stopEmptyArgument(service: String, argumentIndex: Int)
-    case supabaseCustomStopUnsupported(service: String)
-    case supabaseCommandUnsupported(service: String)
-    case supabaseStartSubcommandMissing(service: String)
-    case supabaseWorkdirValueMissing(service: String)
-    case supabaseForbiddenStopOption(service: String, option: String)
-    case multipleSupabaseServices(services: [String])
-    case supabaseProjectIDUnresolved(service: String, reason: String)
-    case duplicateSupabaseProjectID(projectID: String, otherProject: String)
+    case managedStackConfigurationInvalid(stack: String, issue: ManagedStackConfigurationIssue)
+    case managedStackLimitExceeded(type: ManagedStackType, limit: Int, stacks: [String])
+    case managedStackIdentityUnresolved(stack: String, type: ManagedStackType, reason: String)
+    case duplicateManagedStackIdentity(identity: ManagedStackIdentity, otherProject: String)
 
     public var description: String {
         switch self {
@@ -133,22 +129,14 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
             "プロセス「\(service)」の終了コマンドの実行ファイルが空です。"
         case let .stopEmptyArgument(service, index):
             "プロセス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。"
-        case let .supabaseCustomStopUnsupported(service):
-            "Supabase「\(service)」の終了コマンドは個別に指定できません。起動コマンドから導出した `supabase stop` を使用します。"
-        case let .supabaseCommandUnsupported(service):
-            "Supabase「\(service)」の起動コマンドは `supabase start`、`pnpm exec supabase start`、`npx supabase start`、`pnpx supabase start`のいずれかの形式で指定してください。"
-        case let .supabaseStartSubcommandMissing(service):
-            "Supabase「\(service)」の起動コマンドに `start` サブコマンドがありません。"
-        case let .supabaseWorkdirValueMissing(service):
-            "Supabase「\(service)」の `--workdir` にディレクトリが指定されていません。"
-        case let .supabaseForbiddenStopOption(service, option):
-            "Supabase「\(service)」の起動コマンドに `\(option)` は指定できません。複数プロジェクトやバックアップを巻き込むため、Dev Switcherでは実行しません。"
-        case let .multipleSupabaseServices(services):
-            "1つの開発環境に登録できる Supabase は1件までです（\(services.joined(separator: " / "))）。起動対象から外していても登録できません。"
-        case let .supabaseProjectIDUnresolved(service, reason):
-            "Supabase「\(service)」の `project_id` を取得できません。\n\(reason)"
-        case let .duplicateSupabaseProjectID(projectID, otherProject):
-            "Supabase の `project_id`「\(projectID)」は開発環境「\(otherProject)」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。"
+        case let .managedStackConfigurationInvalid(stack, issue):
+            issue.validationMessage(stackName: stack)
+        case let .managedStackLimitExceeded(type, limit, stacks):
+            "1つの開発環境に登録できる \(type.displayName) は\(limit)件までです（\(stacks.joined(separator: " / "))）。起動対象から外していても登録できません。"
+        case let .managedStackIdentityUnresolved(stack, type, reason):
+            "\(type.displayName)「\(stack)」の \(type.identityLabel) を取得できません。\n\(reason)"
+        case let .duplicateManagedStackIdentity(identity, otherProject):
+            "\(identity.type.displayName) の \(identity.type.identityLabel)「\(identity.value)」は開発環境「\(otherProject)」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。"
         }
     }
 }

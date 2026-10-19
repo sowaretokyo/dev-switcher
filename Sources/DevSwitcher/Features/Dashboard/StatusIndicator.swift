@@ -2,7 +2,7 @@ import DevSwitcherCore
 import SwiftUI
 
 /// 状態を表す点。色だけで伝えないよう、必ずテキストラベルと併せて使う。
-/// 対象外だけは色を持たず、中空の丸で描く（DESIGN.md 4章）。
+/// 対象外だけは色を持たず、中空の丸で描く（`docs/SPEC.md` 16.3）。
 struct StatusDot: View {
     let phase: ServicePhase
 
@@ -46,15 +46,16 @@ struct StatusLabel: View {
     }
 }
 
-/// 通常プロセスの状態と、Supabaseスタックの実測表示を使い分ける。
+/// 通常プロセスの状態と、管理対象スタックの実測表示を使い分ける。
 struct ServiceStatusLabel: View {
     let state: AppState.ServiceUIState
 
     var body: some View {
-        if let supabase = state.supabase, supabase.relationship == nil, supabase.state != .notRunning {
+        if let managedStack = state.managedStack, managedStack.relationship == nil,
+           managedStack.state != .notRunning {
             HStack(spacing: Spacing.tight) {
-                SupabaseStatusDot(state: supabase.state)
-                Text(supabase.label)
+                ManagedStackStatusDot(state: managedStack.state)
+                Text(managedStack.label)
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -65,8 +66,8 @@ struct ServiceStatusLabel: View {
     }
 }
 
-struct SupabaseStatusDot: View {
-    let state: SupabaseStackState
+struct ManagedStackStatusDot: View {
+    let state: ManagedStackState
 
     var body: some View {
         Circle()

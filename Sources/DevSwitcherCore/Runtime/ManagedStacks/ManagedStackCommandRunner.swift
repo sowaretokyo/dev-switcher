@@ -1,7 +1,7 @@
 import Foundation
 
-/// Supabase CLIの実行結果。終了コードと出力を分けて保持する。
-public struct SupabaseCommandResult: Equatable, Sendable {
+/// 管理対象スタックのコマンドの実行結果。終了コードと出力を分けて保持する。
+public struct ManagedStackCommandResult: Equatable, Sendable {
     public let status: ExitStatus
     public let standardOutput: String
     public let standardError: String
@@ -22,12 +22,28 @@ public struct SupabaseCommandResult: Equatable, Sendable {
     }
 }
 
-/// Supabase CLIの実行だけを差し替え可能にする。
-public protocol SupabaseCommandRunning: Sendable {
-    func run(_ command: CommandSpec) async throws -> SupabaseCommandResult
+/// 種類ごとに、最後の実行境界で守る規則。
+///
+/// コマンドの構築側でも同じ規則を守るが、構築側の変更が漏れても危険な操作が
+/// 実行されないよう、実行器でもう一度拒否・除去する。
+public struct ManagedStackCommandPolicy: Equatable, Sendable {
+    /// 引数トークンと完全一致したら実行しない引数。
+    public let forbiddenArguments: Set<String>
+    /// 実行環境から除く環境変数。対象を設定とは別の値で決めさせないため。
+    public let removedEnvironmentKeys: Set<String>
+
+    public init(forbiddenArguments: Set<String>, removedEnvironmentKeys: Set<String>) {
+        self.forbiddenArguments = forbiddenArguments
+        self.removedEnvironmentKeys = removedEnvironmentKeys
+    }
 }
 
-public enum SupabaseCommandError: Error, Equatable, Sendable, CustomStringConvertible {
+/// 種類ごとのコマンド実行を差し替え可能にする。
+public protocol ManagedStackCommandRunning: Sendable {
+    func run(_ command: CommandSpec, policy: ManagedStackCommandPolicy) async throws -> ManagedStackCommandResult
+}
+
+public enum ManagedStackCommandError: Error, Equatable, Sendable, CustomStringConvertible {
     case forbiddenOption(command: String, option: String)
     case unresolvable(command: String, reason: String)
 
@@ -41,11 +57,10 @@ public enum SupabaseCommandError: Error, Equatable, Sendable, CustomStringConver
     }
 }
 
-/// 実プロセスでSupabase CLIを実行する。
+/// 実プロセスでコマンドを実行する。
 ///
-/// `--all`と`--no-backup`は最後の実行境界でも拒否する。コマンド生成側の変更が
-/// 漏れても、複数プロジェクトやバックアップを巻き込む停止が実行されないようにする。
-public struct SupabaseProcessCommandRunner: SupabaseCommandRunning {
+/// `policy`の禁止引数を引数トークンの完全一致で拒否し、指定された環境変数を除いてから実行する。
+public struct ManagedStackProcessCommandRunner: ManagedStackCommandRunning {
     public typealias EnvironmentProvider = @Sendable () async throws -> ShellEnvironment
 
     private let environmentProvider: EnvironmentProvider
@@ -59,26 +74,31 @@ public struct SupabaseProcessCommandRunner: SupabaseCommandRunning {
         self.timeout = timeout
     }
 
-    public func run(_ command: CommandSpec) async throws -> SupabaseCommandResult {
-        if let forbidden = ServiceDefinition.forbiddenStopOptions.first(where: {
+    public func run(
+        _ command: CommandSpec,
+        policy: ManagedStackCommandPolicy
+    ) async throws -> ManagedStackCommandResult {
+        if let forbidden = policy.forbiddenArguments.sorted().first(where: {
             command.arguments.contains($0)
         }) {
-            throw SupabaseCommandError.forbiddenOption(
+            throw ManagedStackCommandError.forbiddenOption(
                 command: command.displayCommandLine,
                 option: forbidden
             )
         }
 
         let environment = try await environmentProvider()
-        // 対象はCommandSpecのcwdと明示的な--workdirだけで決める。
+        // 対象は CommandSpec の cwd と明示的な引数だけで決める。
         // ログインシェル由来の値で、検証済みの設定とは別のスタックを操作させない。
         var variables = environment.variables
-        variables.removeValue(forKey: "SUPABASE_WORKDIR")
+        for key in policy.removedEnvironmentKeys {
+            variables.removeValue(forKey: key)
+        }
         let resolved: ResolvedCommand
         do {
             resolved = try ExecutableResolver.resolve(command, searchPath: environment.searchPath)
         } catch {
-            throw SupabaseCommandError.unresolvable(
+            throw ManagedStackCommandError.unresolvable(
                 command: command.displayCommandLine,
                 reason: "\(error)"
             )
@@ -91,7 +111,7 @@ public struct SupabaseProcessCommandRunner: SupabaseCommandRunning {
             workingDirectory: resolved.workingDirectory,
             timeout: timeout
         )
-        return SupabaseCommandResult(
+        return ManagedStackCommandResult(
             status: output.status,
             standardOutput: output.standardOutputText,
             standardError: output.standardErrorText

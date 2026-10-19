@@ -46,11 +46,11 @@ struct AppStateHandoffTests {
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
 
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(state.phase(of: project) == .stopped)
         // 観測だけ。引き継ぎも停止もしない。
         let serviceID = try #require(project.services.first?.id)
-        let observed = try #require(state.state(of: serviceID).supabase)
+        let observed = try #require(state.state(of: serviceID).managedStack)
         #expect(observed.state == .running)
         #expect(observed.label == "外部・稼働中")
         #expect(observed.relationship == nil)
@@ -63,25 +63,25 @@ struct AppStateHandoffTests {
 
         // フォアグラウンド復帰でも確認は出さない。
         await state.applicationDidBecomeActive()
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
 
         await world.setStack("bell", .degraded(reason: "DB unhealthy"))
         await state.applicationDidBecomeActive()
-        #expect(state.state(of: serviceID).supabase?.label == "外部・一部だけ稼働")
-        #expect(state.state(of: serviceID).supabase?.detail == "DB unhealthy")
+        #expect(state.state(of: serviceID).managedStack?.label == "外部・一部だけ稼働")
+        #expect(state.state(of: serviceID).managedStack?.detail == "DB unhealthy")
         await world.failInventory("Docker unavailable")
         await state.applicationDidBecomeActive()
-        #expect(state.state(of: serviceID).supabase?.state == .unknown)
-        #expect(state.state(of: serviceID).supabase?.detail == "Docker unavailable")
-        #expect(state.supabaseObservationError == "Docker unavailable")
+        #expect(state.state(of: serviceID).managedStack?.state == .unknown)
+        #expect(state.state(of: serviceID).managedStack?.detail == "Docker unavailable")
+        #expect(state.managedStackObservationError == "Docker unavailable")
         #expect(state.hasManagedResources(in: project) == false)
 
         await world.failInventory(nil)
         await world.setStack("bell", nil)
         await state.applicationDidBecomeActive()
-        #expect(state.state(of: serviceID).supabase?.state == .notRunning)
-        #expect(state.supabaseObservationError == nil)
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.state(of: serviceID).managedStack?.state == .notRunning)
+        #expect(state.managedStackObservationError == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
     }
 
@@ -99,7 +99,7 @@ struct AppStateHandoffTests {
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
-        #expect(state.state(of: serviceID).supabase?.relationship == .launched)
+        #expect(state.state(of: serviceID).managedStack?.relationship == .launched)
 
         if observedStop {
             await world.setStack("bell", nil)
@@ -108,31 +108,31 @@ struct AppStateHandoffTests {
             state.stopProject(project)
             await state.waitForPendingOperation()
         }
-        #expect(state.state(of: serviceID).supabase?.relationship == nil)
+        #expect(state.state(of: serviceID).managedStack?.relationship == nil)
         #expect(try hintStore.load().managed.isEmpty)
 
         await world.setStack("bell", .databaseHealthy)
         await world.resetCommands()
         await state.applicationDidBecomeActive()
-        #expect(state.state(of: serviceID).supabase?.label == "外部・稼働中")
+        #expect(state.state(of: serviceID).managedStack?.label == "外部・稼働中")
         #expect(state.hasManagedResources(in: project) == false)
         #expect(state.activeProject == nil)
         #expect(state.canStart)
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(try hintStore.load().managed.isEmpty)
 
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
-        let confirmation = try #require(state.supabaseConfirmation)
-        #expect(confirmation.plan.target.action == .adopt)
-        state.cancelSupabaseConfirmation()
+        let confirmation = try #require(state.managedStackConfirmation)
+        #expect(confirmation.plan.primaryEntry.action == .adopt)
+        state.cancelManagedStackConfirmation()
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
         #expect(await world.runningProjectIDs == ["bell"])
 
         // 停止確認で破棄した手掛かりを、次回起動時に復元しない。
         let relaunched = makeAppState(directory: directory, supabaseWorld: world)
         await relaunched.bootstrap()
-        #expect(relaunched.state(of: serviceID).supabase?.label == "外部・稼働中")
+        #expect(relaunched.state(of: serviceID).managedStack?.label == "外部・稼働中")
         #expect(relaunched.hasManagedResources(in: project) == false)
     }
 
@@ -146,12 +146,12 @@ struct AppStateHandoffTests {
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
 
-        let external = try #require(state.unregisteredSupabaseObservations.first)
-        #expect(external.projectID.rawValue == "external")
+        let external = try #require(state.unregisteredManagedStackObservations.first)
+        #expect(external.identity.value == "external")
         #expect(external.state == .unknown)
         #expect(external.detail == "Unsupported state")
         #expect(state.activeProject == nil)
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(await world.commandLines.isEmpty)
     }
 
@@ -170,16 +170,16 @@ struct AppStateHandoffTests {
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
 
-        let presentation = try #require(state.supabaseConfirmation)
-        #expect(presentation.plan.target.action == .adopt)
-        #expect(presentation.plan.target.projectID.rawValue == "bell")
-        #expect(presentation.plan.stopTargets.isEmpty)
+        let presentation = try #require(state.managedStackConfirmation)
+        #expect(presentation.plan.primaryEntry.action == .adopt)
+        #expect(presentation.plan.primaryEntry.identity.value == "bell")
+        #expect(presentation.plan.stopEntries.isEmpty)
         #expect(state.canStart == false)
         #expect(state.canChangeConfiguration == false)
 
-        state.cancelSupabaseConfirmation()
+        state.cancelManagedStackConfirmation()
 
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(state.phase(of: project) == .stopped)
         // 確認をキャンセルした場合、start/stopは1件も実行しない。
         #expect(await world.commandLines.allSatisfy { !$0.contains("start") })
@@ -201,19 +201,19 @@ struct AppStateHandoffTests {
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
 
-        let presentation = try #require(state.supabaseConfirmation)
+        let presentation = try #require(state.managedStackConfirmation)
         await world.resetCommands()
-        state.approveSupabaseConfirmation(presentation)
+        state.approveManagedStackConfirmation(presentation)
         await state.waitForPendingOperation()
 
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(state.phase(of: project) == .running)
         #expect(await world.commandLines.allSatisfy { !$0.contains(" start") })
 
         // 引き継いだスタックは、通常の停止操作で停止できる。
         let hint = try #require(hintStore.load().managed.first)
         #expect(hint.relationship == .adopted)
-        #expect(hint.supabaseProjectID?.rawValue == "bell")
+        #expect(hint.identity?.value == "bell")
 
         state.stopProject(project)
         await state.waitForPendingOperation()
@@ -254,8 +254,8 @@ struct AppStateHandoffTests {
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
-        let presentation = try #require(state.supabaseConfirmation)
-        state.approveSupabaseConfirmation(presentation)
+        let presentation = try #require(state.managedStackConfirmation)
+        state.approveManagedStackConfirmation(presentation)
         await state.waitForPendingOperation()
 
         // 引き継いだスタックは巻き戻さない。残存ありとして停止導線を残す。
@@ -282,7 +282,7 @@ struct AppStateHandoffTests {
             legacy: [],
             managed: [
                 try #require(
-                    ManagedRuntimeHint(
+                    makeManagedStackHint(
                         projectID: project.id,
                         service: service,
                         supabaseProjectID: bellStackID,
@@ -297,7 +297,7 @@ struct AppStateHandoffTests {
         await state.bootstrap()
 
         #expect(state.phase(of: project) == .running)
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(state.managedHintError == nil)
 
         state.stopProject(project)
@@ -320,7 +320,7 @@ struct AppStateHandoffTests {
 
         let originalService = makeAppStateSupabaseService(workingDirectory: originalDirectory)
         let hint = try #require(
-            ManagedRuntimeHint(
+            makeManagedStackHint(
                 projectID: UUID(),
                 service: originalService,
                 supabaseProjectID: bellStackID,
@@ -359,7 +359,7 @@ struct AppStateHandoffTests {
         try ProjectStore(directory: directory).save([project])
         let hintStore = RuntimeHintStore(directory: directory)
         let hint = try #require(
-            ManagedRuntimeHint(
+            makeManagedStackHint(
                 projectID: project.id,
                 service: service,
                 supabaseProjectID: bellStackID,
@@ -432,7 +432,7 @@ struct AppStateHandoffTests {
             legacy: [],
             managed: [
                 try #require(
-                    ManagedRuntimeHint(
+                    makeManagedStackHint(
                         projectID: project.id,
                         service: service,
                         supabaseProjectID: bellStackID,
@@ -463,7 +463,7 @@ struct AppStateHandoffTests {
         try writeSupabaseConfig(projectID: "bell", in: directory)
         let missingService = makeAppStateSupabaseService(workingDirectory: directory)
         let missing = try #require(
-            ManagedRuntimeHint(
+            makeManagedStackHint(
                 projectID: UUID(),
                 service: missingService,
                 supabaseProjectID: bellStackID,
@@ -848,7 +848,7 @@ struct AppStateHandoffTests {
     }
 
     @Test("消滅済みhintの自動整理でもRegistry管理中のhintを消さない")
-    func automaticCleanupKeepsManagedRuntimeHint() async throws {
+    func automaticCleanupKeepsManagedStackHint() async throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -2007,10 +2007,10 @@ struct AppStateHandoffTests {
         if adopting {
             state.startOrSwitch(to: project)
             await state.waitForPendingOperation()
-            let confirmation = try #require(state.supabaseConfirmation)
+            let confirmation = try #require(state.managedStackConfirmation)
             let base = hintStore.saveAttempts
             hintStore.failSaves { $0 == base + 2 }
-            state.approveSupabaseConfirmation(confirmation)
+            state.approveManagedStackConfirmation(confirmation)
         } else {
             let base = hintStore.saveAttempts
             hintStore.failSaves { $0 == base + 2 }
@@ -2045,10 +2045,10 @@ struct AppStateHandoffTests {
         await state.bootstrap()
         state.startOrSwitch(to: project)
         await state.waitForPendingOperation()
-        let confirmation = try #require(state.supabaseConfirmation)
+        let confirmation = try #require(state.managedStackConfirmation)
         let base = hintStore.saveAttempts
         hintStore.failSaves { $0 >= base + 2 }
-        state.approveSupabaseConfirmation(confirmation)
+        state.approveManagedStackConfirmation(confirmation)
         await state.waitForPendingOperation()
 
         #expect(state.phase(of: project) == .residual)

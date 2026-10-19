@@ -88,7 +88,7 @@ struct SidebarView: View {
 }
 
 private extension View {
-    /// 行の高さを `DESIGN.md` 8章の値ちょうどにする。
+    /// 行の高さを `docs/SPEC.md` 16.3 と `DesignTokens.swift` の値ちょうどにする。
     ///
     /// `frame` だけを指定すると List 自身の縦パディングが上乗せされ、指定した高さにならない。
     /// インデントも `padding` ではなく行のインセットで表現し、選択ハイライトの左端を揃える。
@@ -150,8 +150,9 @@ private struct ServiceRow: View {
         let phase = uiState.phase
 
         HStack(spacing: Spacing.tight) {
-            if let supabase = uiState.supabase, supabase.relationship == nil, supabase.state != .notRunning {
-                SupabaseStatusDot(state: supabase.state)
+            if let managedStack = uiState.managedStack, managedStack.relationship == nil,
+               managedStack.state != .notRunning {
+                ManagedStackStatusDot(state: managedStack.state)
             } else {
                 StatusDot(phase: phase)
             }
@@ -170,8 +171,8 @@ private struct ServiceRow: View {
     }
 
     private var portSummary: String {
-        if let supabase = state.state(of: service.id).supabase,
-           supabase.relationship == nil, supabase.state != .notRunning { return supabase.label }
+        if let managedStack = state.state(of: service.id).managedStack,
+           managedStack.relationship == nil, managedStack.state != .notRunning { return managedStack.label }
         // 対象外は今回起動しないので、ポートの代わりに状態を出す。
         if state.state(of: service.id).phase == .excluded { return "対象外" }
         guard let primary = service.primaryPort else { return "ポートなし" }

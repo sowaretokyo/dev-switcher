@@ -15,7 +15,7 @@ public enum SwitchState: Equatable, Sendable {
     case rollingBack(service: String)
     case completed
 
-    /// 起動フェーズへ入ったか。入った後は中止を受け付けない（DESIGN.md I-4）。
+    /// 起動フェーズへ入ったか。入った後は中止を受け付けない（`docs/SPEC.md` 16.2 I-4）。
     public var hasEnteredStartPhase: Bool {
         switch self {
         case .starting, .observingStartup, .rollingBack, .completed: true
@@ -36,7 +36,7 @@ public enum SwitchState: Equatable, Sendable {
     }
 }
 
-/// ポートを握っているプロセスの所有区分。出せる操作を型から導く（DESIGN.md 決定 c）。
+/// ポートを握っているプロセスの所有区分。出せる操作を型から導く（`docs/SPEC.md` 12）。
 public enum PortOwnership: Equatable, Sendable {
     /// Dev Switcher が起動または引き継いだプロセス。通常の自動停止対象。
     case ownedByUs(serviceID: UUID, serviceName: String)
@@ -62,7 +62,7 @@ public enum PortOwnership: Equatable, Sendable {
     }
 }
 
-/// 競合したポートを名指しするために、ポート単位で保持する（DESIGN.md 決定 g）。
+/// 競合したポートを名指しするために、ポート単位で保持する（`docs/SPEC.md` 9）。
 public struct ResolvedPortHolder: Equatable, Sendable {
     public let port: Int
     public let pid: pid_t
@@ -136,7 +136,7 @@ public struct ProjectFact: Equatable, Sendable {
     }
 }
 
-/// 失敗時に「両方のプロジェクトが今どうなっているか」を必ず持つ（DESIGN.md I-5）。
+/// 失敗時に「両方のプロジェクトが今どうなっているか」を必ず持つ（`docs/SPEC.md` 16.2 I-5）。
 /// 型として optional にしないため、この構造体自体を optional で持たせない。
 public struct CurrentStateFacts: Equatable, Sendable {
     /// 切替元。単独起動では対象が存在しないため nil。
@@ -208,14 +208,14 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
         case cancelled
         /// MVP で実行できない設定。既定へ倒さず起動前に止める。
         case unsupportedConfiguration(String)
-        /// 既存Supabaseの引き継ぎ・復旧・停止についての承認待ち。
+        /// 既存の管理対象スタックの引き継ぎ・復旧・停止についての承認待ち。
         /// 承認前は既存スタック、切替元、切替先のいずれも変更していない。
-        case supabaseConfirmationRequired(plan: SupabaseConfirmationPlan)
-        /// Dockerまたは`supabase status`から状態を確定できなかった。停止中へ倒さない。
-        case supabaseObservationFailed(details: [String])
+        case managedStackConfirmationRequired(plan: ManagedStackConfirmationPlan)
+        /// Dockerや各CLIから状態を確定できなかった。停止中へ倒さない。
+        case managedStackObservationFailed(types: [ManagedStackType], details: [String])
         /// 承認済みの既存スタックを停止できなかった。停止済みのスタックは再起動しない。
-        case supabaseStopFailed(
-            projectID: String,
+        case managedStackStopFailed(
+            identity: ManagedStackIdentity,
             reason: String,
             stopped: [String],
             remaining: [String]
@@ -224,6 +224,11 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
         case portObservationFailed(context: String, reason: String)
         case operationInProgress
 
+        /// 種類名を並べる。複数種類のときの文言は Phase B で決める。
+        private static func displayNames(of types: [ManagedStackType]) -> String {
+            types.map(\.displayName).joined(separator: "、")
+        }
+
         public var title: String {
             switch self {
             case .stopFailed: "終了できない"
@@ -231,9 +236,9 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
             case .startFailed: "起動直後に落ちた"
             case .cancelled: "切替を中止した"
             case .unsupportedConfiguration: "未対応の設定"
-            case .supabaseConfirmationRequired: "Supabaseの確認"
-            case .supabaseObservationFailed: "Supabaseの状態を確認できない"
-            case .supabaseStopFailed: "既存のSupabaseを停止できない"
+            case let .managedStackConfirmationRequired(plan): "\(plan.primaryEntry.identity.type.displayName)の確認"
+            case let .managedStackObservationFailed(types, _): "\(Self.displayNames(of: types))の状態を確認できない"
+            case let .managedStackStopFailed(identity, _, _, _): "既存の\(identity.type.displayName)を停止できない"
             case .portObservationFailed: "ポートを確認できない"
             case .operationInProgress: "処理が実行中"
             }
@@ -253,16 +258,16 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
                 "切替元の停止は完了しました。切替先は起動していません。"
             case let .unsupportedConfiguration(message):
                 message
-            case let .supabaseConfirmationRequired(plan):
-                "サービス「\(plan.serviceName)」の起動前に、既存のSupabaseスタックの扱いを確認してください。\n"
-                    + plan.allTargets
-                    .map { "\($0.projectID): \($0.state.label) → \($0.action.label)（\($0.registrationLabel)）" }
+            case let .managedStackConfirmationRequired(plan):
+                "サービス「\(plan.primaryStackName)」の起動前に、既存の\(plan.primaryEntry.identity.type.displayName)スタックの扱いを確認してください。\n"
+                    + plan.entries
+                    .map { "\($0.identity): \($0.state.label) → \($0.action.label)（\($0.registrationLabel)）" }
                     .joined(separator: "\n")
-            case let .supabaseObservationFailed(details):
-                "Supabaseスタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。\n"
+            case let .managedStackObservationFailed(types, details):
+                "\(Self.displayNames(of: types))スタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。\n"
                     + details.joined(separator: "\n")
-            case let .supabaseStopFailed(projectID, reason, stopped, remaining):
-                "既存のSupabase「\(projectID)」を停止できませんでした。\n\(reason)\n"
+            case let .managedStackStopFailed(identity, reason, stopped, remaining):
+                "既存の\(identity.type.displayName)「\(identity)」を停止できませんでした。\n\(reason)\n"
                     + "停止済み: \(stopped.isEmpty ? "なし" : stopped.joined(separator: " / "))\n"
                     + "未処理: \(remaining.isEmpty ? "なし" : remaining.joined(separator: " / "))\n"
                     + "停止済みのスタックは自動で再起動しません。"
@@ -285,5 +290,29 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
 
     public var description: String {
         ([reason.title, reason.detail] + facts.statements).joined(separator: "\n")
+    }
+}
+
+extension ManagedStackConfirmationPlan {
+    /// 起動先スタックの行。`entries`の先頭で、確認 plan は必ず1行以上を持つ。
+    /// Phase A の確認 plan は起動先 1 件、停止行の順に並ぶ。
+    public var primaryEntry: ManagedStackConfirmationTarget {
+        guard let first = entries.first else {
+            preconditionFailure("確認 plan に行がありません。")
+        }
+        return first
+    }
+
+    /// 起動先の行に続く、停止対象の行。
+    public var stopEntries: [ManagedStackConfirmationTarget] {
+        Array(entries.dropFirst())
+    }
+
+    /// 起動先スタックの名前。先頭行の登録情報は plan の生成時に保証済み。
+    public var primaryStackName: String {
+        guard let registration = primaryEntry.registration else {
+            preconditionFailure("確認 plan の先頭行に registration がありません。")
+        }
+        return registration.stackName
     }
 }

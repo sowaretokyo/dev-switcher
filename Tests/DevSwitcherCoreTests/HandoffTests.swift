@@ -536,7 +536,7 @@ struct HandoffTests {
 
         try store.save(migrated.hints, legacy: migrated.legacy)
         let savedJSON = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(savedJSON.contains("\"schemaVersion\" : 6"))
+        #expect(savedJSON.contains("\"schemaVersion\" : 7"))
         #expect(try store.load() == migrated)
     }
 
@@ -607,14 +607,14 @@ struct HandoffTests {
         let loaded = try store.load()
         let hint = try #require(loaded.managed.first)
         // 構成同一性が無いので、この手掛かりからstatus/stopは実行できない。
-        #expect(hint.supabaseProjectID == nil)
-        #expect(hint.configDirectory == nil)
+        #expect(hint.identity == nil)
+        #expect(hint.fingerprint == nil)
         #expect(hint.fingerprint == nil)
         #expect(hint.relationship == nil)
 
         try store.save(loaded.hints, legacy: loaded.legacy, managed: loaded.managed)
         let savedJSON = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(savedJSON.contains("\"schemaVersion\" : 6"))
+        #expect(savedJSON.contains("\"schemaVersion\" : 7"))
         #expect(try store.load() == loaded)
     }
 
@@ -643,7 +643,7 @@ struct HandoffTests {
     }
 
     @Test("Supabaseの手掛かりをproject_id・設定ディレクトリ・管理関係ごと読み戻せる")
-    func roundTripsManagedRuntimeHints() throws {
+    func roundTripsManagedStackHints() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = makeService(
@@ -654,14 +654,13 @@ struct HandoffTests {
             workingDirectory: directory
         )
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
-        let hint = try #require(
-            ManagedRuntimeHint(
-                projectID: UUID(),
+        let environmentID = UUID()
+        let hint = try makeManagedStackHint(
+                projectID: environmentID,
                 service: service,
                 supabaseProjectID: projectID,
                 relationship: .adopted
             )
-        )
         let store = RuntimeHintStore(directory: directory)
 
         try store.save([], legacy: [], managed: [hint])
@@ -670,19 +669,33 @@ struct HandoffTests {
         #expect(loaded.hints.isEmpty)
         #expect(loaded.legacy.isEmpty)
         #expect(loaded.managed == [hint])
-        #expect(hint.configDirectory == directory.standardizedFileURL)
+        let fingerprint = try #require(hint.fingerprint)
+        let configDirectory = switch fingerprint {
+        case let .supabase(supabaseFingerprint): supabaseFingerprint.configDirectory
+        }
+        #expect(configDirectory == directory.standardizedFileURL)
         #expect(hint.relationship == .adopted)
 
         // 起動コマンドが変わったら、この手掛かりを根拠に停止コマンドを組み立てない。
         var changedService = service
         changedService.start.arguments.append(contentsOf: ["--exclude", "studio"])
-        #expect(hint.matchesConfiguration(of: service, currentProjectID: projectID))
-        #expect(!hint.matchesConfiguration(of: changedService, currentProjectID: projectID))
-        #expect(hint.verifiedConfiguration(of: service, currentProjectID: projectID) != nil)
+        func resolved(
+            _ service: ServiceDefinition,
+            _ supabaseProjectID: SupabaseProjectID
+        ) throws -> ResolvedManagedStack {
+            try makeResolvedSupabaseStack(
+                service,
+                projectID: supabaseProjectID,
+                environmentID: environmentID
+            )
+        }
+        #expect(hint.matches(try resolved(service, projectID)))
+        #expect(!hint.matches(try resolved(changedService, projectID)))
+        #expect(hint.matches(try resolved(service, projectID)))
         // `project_id`が変わっていたら再検証しない。
         let otherID = try #require(SupabaseProjectID(rawValue: "penta"))
-        #expect(!hint.matchesConfiguration(of: service, currentProjectID: otherID))
-        #expect(hint.verifiedConfiguration(of: service, currentProjectID: otherID) == nil)
+        #expect(!hint.matches(try resolved(service, otherID)))
+        #expect(!hint.matches(try resolved(service, otherID)))
     }
 
 

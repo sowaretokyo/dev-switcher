@@ -90,14 +90,20 @@ final class AppState {
         }
     }
 
+    /// 種類ごとの観測全体の失敗。
+    struct ManagedStackObservationFailure: Equatable {
+        let type: ManagedStackType
+        let reason: String
+    }
+
     /// 実測状態と管理関係を分け、外部の稼働を停止権限として扱わない。
-    struct SupabaseUIState: Equatable {
-        let projectID: SupabaseProjectID?
-        let state: SupabaseStackState
-        let relationship: SupabaseManagementRelationship?
+    struct ManagedStackUIState: Equatable {
+        let identity: ManagedStackIdentity?
+        let state: ManagedStackState
+        let relationship: ManagedStackRelationship?
         let detail: String?
 
-        var isExternal: Bool { projectID != nil && relationship == nil && state != .notRunning }
+        var isExternal: Bool { identity != nil && relationship == nil && state != .notRunning }
 
         var label: String {
             isExternal ? "外部・\(state.label)" : state.label
@@ -114,7 +120,7 @@ final class AppState {
         var lastMessage: String?
         var processID: pid_t?
         var processGroupID: pid_t?
-        var supabase: SupabaseUIState?
+        var managedStack: ManagedStackUIState?
 
         /// 詳細画面と一覧で共通の観測状態表示。観測不能を空配列へ潰さない。
         var observedPortsAvailabilityText: String? {
@@ -127,7 +133,7 @@ final class AppState {
     /// 停止を伴う切替だけをシートで出す。
     ///
     /// 2段階ゲートの進捗と、起動フェーズ前だけ受け付ける中止のためのUI。
-    /// 多重操作を止めているのはこのシートではなく `ActivityToken` のAPI境界（DESIGN.md I-1）。
+    /// 多重操作を止めているのはこのシートではなく `ActivityToken` のAPI境界（`docs/SPEC.md` 16.2 I-1）。
     /// 単純な起動・停止では出さないので、切替元と切替先は必ず存在する。
     struct SwitchPresentation: Identifiable {
         let id = UUID()
@@ -203,24 +209,26 @@ final class AppState {
         let logTarget: SidebarItem?
     }
 
-    /// 既存Supabaseの引き継ぎ・復旧・停止を、1つのシートで確認するための表示値。
+    /// 既存スタックの引き継ぎ・復旧・停止を、1つのシートで確認するための表示値。
     /// 承認するまで既存スタック、切替元、切替先のいずれも変更していない。
-    struct SupabaseConfirmationPresentation: Identifiable {
+    struct ManagedStackConfirmationPresentation: Identifiable {
         let id = UUID()
         /// 起動または切替の対象開発環境。
         let projectID: UUID
-        let plan: SupabaseConfirmationPlan
+        let plan: ManagedStackConfirmationPlan
+
+        private var typeName: String { plan.primaryEntry.identity.type.displayName }
 
         var title: String {
-            switch plan.target.action {
-            case .adopt: "既存のSupabaseを引き継ぎますか？"
-            case .restart: "既存のSupabaseを復旧しますか？"
-            case .start, .stop: "既存のSupabaseを停止して切り替えますか？"
+            switch plan.primaryEntry.action {
+            case .adopt: "既存の\(typeName)を引き継ぎますか？"
+            case .restart: "既存の\(typeName)を復旧しますか？"
+            case .start, .stop: "既存の\(typeName)を停止して切り替えますか？"
             }
         }
 
         var confirmButtonTitle: String {
-            switch plan.target.action {
+            switch plan.primaryEntry.action {
             case .adopt: "引き継ぐ"
             case .restart: "停止して起動し直す"
             case .start, .stop: "停止して切り替える"
@@ -229,7 +237,7 @@ final class AppState {
 
         /// 引き継ぎだけなら既存スタックを止めないため、破壊的な見た目にしない。
         var isDestructive: Bool {
-            plan.target.action != .adopt || !plan.stopTargets.isEmpty
+            plan.entries.contains { $0.action != .adopt }
         }
     }
 
@@ -250,7 +258,7 @@ final class AppState {
     }
 
     struct HandoffPresentation: Identifiable {
-        /// 判断の進行状態。プロセスの`Phase`とは別の型に保つ（DESIGN.md 型で守る）。
+        /// 判断の進行状態。プロセスの`Phase`とは別の型に保つ（`docs/ARCHITECTURE.md` 4.3、8章と `docs/SPEC.md` 16.2）。
         enum Resolution: Equatable {
             case awaiting
             case resolving(HandoffAction)
@@ -306,8 +314,14 @@ final class AppState {
     private(set) var projects: [ProjectDefinition] = []
     private(set) var serviceStates: [UUID: ServiceUIState] = [:]
     private(set) var projectPhases: [UUID: ProjectPhase] = [:]
-    private(set) var unregisteredSupabaseObservations: [SupabaseStackObservation] = []
-    private(set) var supabaseObservationError: String?
+    private(set) var unregisteredManagedStackObservations: [ManagedStackObservation] = []
+    /// 観測全体が失敗した種類と理由。種類の昇順。
+    private(set) var managedStackObservationFailures: [ManagedStackObservationFailure] = []
+    var managedStackObservationError: String? {
+        managedStackObservationFailures.isEmpty
+            ? nil
+            : managedStackObservationFailures.map(\.reason).joined(separator: "\n")
+    }
     /// 表示上の成功・失敗とは分けて、停止対象が1件でも残っているプロジェクトを持つ。
     private var projectIDsWithManagedResources: Set<UUID> = []
     private(set) var logBuffers: [UUID: LogBuffer] = [:]
@@ -331,8 +345,8 @@ final class AppState {
     private(set) var serviceOperation: ServiceOperation?
     /// 利用者がまだ閉じていない、直近の予期しないプロセス終了。
     private(set) var runtimeIncident: RuntimeIncident?
-    /// 既存Supabaseの扱いについての判断待ち。開閉するのは`AppState`だけ。
-    private(set) var supabaseConfirmation: SupabaseConfirmationPresentation?
+    /// 既存スタックの扱いについての判断待ち。開閉するのは`AppState`だけ。
+    private(set) var managedStackConfirmation: ManagedStackConfirmationPresentation?
 
     var selection: SidebarItem?
     var expandedProjectIDs: Set<UUID> = []
@@ -365,7 +379,7 @@ final class AppState {
     /// 同じ`serviceID`が`pendingHints`と両方に載ることは無い（変換済みなら現行形式が正）。
     private var pendingLegacyHints: [UUID: LegacyRuntimeHint] = [:]
     /// managed commandはPIDを持たないため、statusで再検証できるまで別に保持する。
-    private var pendingManagedHints: [UUID: ManagedRuntimeHint] = [:]
+    private var pendingManagedHints: [UUID: ManagedStackHint] = [:]
     /// 手掛かりの読み込み状態。読み込めていない状態で保存すると、
     /// 既存の記録を空の一覧で上書きしてしまう。
     private var hintLoadState: HintLoadState = .notLoaded
@@ -446,7 +460,7 @@ final class AppState {
     }
 
     /// managed commandの再検証失敗は、通常のPID手掛かりとは起動判定への影響が異なる。
-    /// 同じバナー文言へ混ぜず、Supabaseの状態を判定できないことを明示する。
+    /// 同じバナー文言へ混ぜず、管理対象スタックの状態を判定できないことを明示する。
     var managedHintError: String? {
         let messages = managedHintFailures
             .sorted { $0.key.uuidString < $1.key.uuidString }
@@ -460,19 +474,30 @@ final class AppState {
 
     private var discardableManagedHintIDs: Set<UUID> {
         Set(pendingManagedHints.values.compactMap { hint in
-            guard let service = project(hint.projectID)?.service(id: hint.serviceID),
-                  service.kind == .supabase else {
-                return hint.serviceID
+            guard let (_, service, definition) = registeredStack(for: hint),
+                  let resolved = try? ResolvedManagedStack(
+                      environmentID: hint.projectID,
+                      definition: definition,
+                      workingDirectory: service.start.workingDirectory
+                  ) else {
+                return hint.stackID
             }
-            guard let configuration = service.supabaseConfiguration,
-                  let currentProjectID = try? configuration.resolveProjectID() else {
-                return hint.serviceID
-            }
-            return hint.matchesConfiguration(
-                of: service,
-                currentProjectID: currentProjectID
-            ) ? nil : hint.serviceID
+            return hint.matches(resolved) ? nil : hint.stackID
         })
+    }
+
+    /// 手掛かりに対応する登録中の開発環境・プロセス・スタック定義。
+    /// どれかが見つからないか、種類が手掛かりと違えば nil。
+    private func registeredStack(
+        for hint: ManagedStackHint
+    ) -> (project: ProjectDefinition, service: ServiceDefinition, definition: ManagedStackDefinition)? {
+        guard let project = project(hint.projectID),
+              let service = project.service(id: hint.stackID),
+              let definition = service.managedStackDefinition,
+              definition.type == hint.type else {
+            return nil
+        }
+        return (project, service, definition)
     }
 
     var canStartServices: Bool {
@@ -572,7 +597,7 @@ final class AppState {
                     pendingLegacyHints[legacy.serviceID] = legacy
                 }
                 for managed in load.managed {
-                    pendingManagedHints[managed.serviceID] = managed
+                    pendingManagedHints[managed.stackID] = managed
                 }
                 hintLoadState = .loaded
                 hintStorageFailure = nil
@@ -715,7 +740,7 @@ final class AppState {
     /// アプリがフォアグラウンドへ戻ったときの再観測。
     ///
     /// 表示更新と手掛かりの自動再検証だけを行い、確認表示・引き継ぎ・停止はしない
-    /// （`MVP_SPEC.md` 11、`DESIGN.md` 決定 j）。
+    /// （`docs/SPEC.md` 11、6.5、6.3）。
     func applicationDidBecomeActive() async {
         guard !isTerminating, activityKind == nil else { return }
         guard let token = beginActivity(.review) else { return }
@@ -790,21 +815,21 @@ final class AppState {
         )
     }
 
-    /// Supabaseの手掛かりを、保存値ではなく実測（Docker inventory＋status）で再検証する。
+    /// 管理対象スタックの手掛かりを、保存値ではなく実測で再検証する。
     ///
     /// 確認表示も引き継ぎも停止もしない。一致したものだけを`restored`として管理下へ戻し、
-    /// 判定できないものは捨てずに理由とともに残す（`MVP_SPEC.md` 11）。
+    /// 判定できないものは捨てずに理由とともに残す（docs/SPEC.md 11、6.5）。
     private func restoreManagedHints() async {
         guard projectLoadState == .loaded,
               case .ready = environmentState else { return }
 
-        // 管理下のSupabaseは、手掛かりが無くてもフォアグラウンド復帰のたび実測し直す。
-        let managedBeforeObservation = await registry.managedSupabaseProjectIDs()
-        _ = await coordinator.observeSupabaseStacks(registeredProjects: projects)
+        // 管理下のスタックは、手掛かりが無くてもフォアグラウンド復帰のたび実測し直す。
+        let managedBeforeObservation = await registry.managedStackIdentities()
+        _ = await coordinator.observeManagedStacks(registeredProjects: projects)
         guard hintLoadState == .loaded, !pendingManagedHints.isEmpty else {
             await refreshPhases()
             if hintLoadState == .loaded,
-               await registry.managedSupabaseProjectIDs() != managedBeforeObservation {
+               await registry.managedStackIdentities() != managedBeforeObservation {
                 // 停止確認で失効した手掛かりをディスクにも残さず、次回の自動復元を防ぐ。
                 _ = await saveCompleteHintSnapshot(
                     pendingHints: pendingHints,
@@ -817,12 +842,10 @@ final class AppState {
         var remaining = pendingManagedHints
         var failures: [UUID: String] = [:]
         for hint in pendingManagedHints.values.sorted(by: {
-            $0.serviceID.uuidString < $1.serviceID.uuidString
+            $0.stackID.uuidString < $1.stackID.uuidString
         }) {
-            guard let project = project(hint.projectID),
-                  let service = project.service(id: hint.serviceID),
-                  service.kind == .supabase else {
-                failures[hint.serviceID] = "\(hint.serviceName): 対応するSupabase設定が見つからないため状態を確認できません。"
+            guard let (project, service, _) = registeredStack(for: hint) else {
+                failures[hint.stackID] = "\(hint.stackName): 対応する\(hint.type.displayName)設定が見つからないため状態を確認できません。"
                 continue
             }
             switch await coordinator.restoreManagedStack(
@@ -832,16 +855,16 @@ final class AppState {
                 registeredProjects: projects
             ) {
             case .restored, .notRunning:
-                remaining[hint.serviceID] = nil
+                remaining[hint.stackID] = nil
             case let .skipped(reason):
-                failures[hint.serviceID] = "\(service.name): \(reason)"
+                failures[hint.stackID] = "\(service.name): \(reason)"
             }
         }
         pendingManagedHints = remaining
         managedHintFailures = failures
         await refreshPhases()
 
-        let managedAfterObservation = await registry.managedSupabaseProjectIDs()
+        let managedAfterObservation = await registry.managedStackIdentities()
         if failures.isEmpty || managedBeforeObservation != managedAfterObservation {
             _ = await saveCompleteHintSnapshot(
                 pendingHints: pendingHints,
@@ -1364,7 +1387,7 @@ final class AppState {
     var configurationBlockedReason: String? {
         if isTerminating { return "アプリの終了処理を実行中です。" }
         if let activityKind { return activityKind.blockingDescription }
-        if supabaseConfirmation != nil {
+        if managedStackConfirmation != nil {
             return "既存のSupabaseスタックをどう扱うか決まっていません。シートで選んでください。"
         }
         if let reason = projectLoadBlockedReason { return reason }
@@ -1376,7 +1399,7 @@ final class AppState {
     /// そのプロジェクトの定義を変更できない理由。
     ///
     /// 稼働中の変更を UI の無効化だけで防がない。API 境界で拒否しないと、
-    /// ゲートが検証する設定ポートと実際に握っている実測ポートがずれる（DESIGN.md I-9）。
+    /// ゲートが検証する設定ポートと実際に握っている実測ポートがずれる（`docs/SPEC.md` 16.2 I-9）。
     /// Milestone 2 ではフィールド単位の差分を検証できないため、稼働中は全編集を拒否する。
     func configurationBlockedReason(for project: ProjectDefinition) -> String? {
         if let reason = configurationBlockedReason { return reason }
@@ -1422,7 +1445,7 @@ final class AppState {
     var stopBlockedReason: String? {
         if isTerminating { return "アプリの終了処理を実行中です。" }
         if let activityKind { return activityKind.blockingDescription }
-        if supabaseConfirmation != nil {
+        if managedStackConfirmation != nil {
             return "既存のSupabaseスタックをどう扱うか決まっていません。シートで選んでください。"
         }
         if handoffPresentation != nil {
@@ -1445,8 +1468,8 @@ final class AppState {
               project.service(id: service.id) == service else {
             return "対象のプロセス設定が現在の登録内容と一致しません。"
         }
-        guard service.kind != .supabase else {
-            return "Supabaseは専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
+        if let definition = service.managedStackDefinition {
+            return "\(definition.type.displayName)は専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
         }
         guard service.usesProcessGroupStop else {
             return RuntimeError.stopCommandUnsupported(service: service.name).description
@@ -1568,12 +1591,12 @@ final class AppState {
 
     /// 停止中のプロジェクトを起動する。稼働中の別プロジェクトがあれば切替として実行する。
     func startOrSwitch(to target: ProjectDefinition) {
-        startOrSwitch(to: target, supabaseApproval: nil)
+        startOrSwitch(to: target, approval: nil)
     }
 
     private func startOrSwitch(
         to target: ProjectDefinition,
-        supabaseApproval: SupabaseApproval?
+        approval: ManagedStackApproval?
     ) {
         let source = activeProject
         guard source?.id != target.id, canStart else { return }
@@ -1615,7 +1638,7 @@ final class AppState {
                         from: source,
                         to: target,
                         registeredProjects: projects,
-                        supabaseApproval: supabaseApproval,
+                        approval: approval,
                         progress: progressSink(for: token),
                         events: eventSink
                     )
@@ -1623,7 +1646,7 @@ final class AppState {
                     _ = try await coordinator.start(
                         target,
                         registeredProjects: projects,
-                        supabaseApproval: supabaseApproval,
+                        approval: approval,
                         progress: progressSink(for: token),
                         events: eventSink
                     )
@@ -1631,9 +1654,9 @@ final class AppState {
                 switchPresentation = nil
             } catch let failure as SwitchFailure {
                 switchPresentation = nil
-                if case let .supabaseConfirmationRequired(plan) = failure.reason {
+                if case let .managedStackConfirmationRequired(plan) = failure.reason {
                     // 承認するまで既存スタックへコマンドを送っていない。判断を求め直す。
-                    supabaseConfirmation = SupabaseConfirmationPresentation(
+                    managedStackConfirmation = ManagedStackConfirmationPresentation(
                         projectID: target.id,
                         plan: plan
                     )
@@ -1655,17 +1678,17 @@ final class AppState {
     }
 
     /// 確認を閉じるだけ。既存スタック、切替元、切替先のいずれも変更しない。
-    func cancelSupabaseConfirmation() {
-        supabaseConfirmation = nil
+    func cancelManagedStackConfirmation() {
+        managedStackConfirmation = nil
     }
 
     /// 利用者が全対象を確認したあとにだけ、承認内容を付けて起動を再試行する。
     /// 実行直前の再観測で内容が変わっていれば、Coordinatorが確認を出し直す。
-    func approveSupabaseConfirmation(_ presentation: SupabaseConfirmationPresentation) {
-        guard supabaseConfirmation?.id == presentation.id,
+    func approveManagedStackConfirmation(_ presentation: ManagedStackConfirmationPresentation) {
+        guard managedStackConfirmation?.id == presentation.id,
               let target = project(presentation.projectID) else { return }
-        supabaseConfirmation = nil
-        startOrSwitch(to: target, supabaseApproval: presentation.plan.approval)
+        managedStackConfirmation = nil
+        startOrSwitch(to: target, approval: presentation.plan.approval)
     }
 
     /// 起動後に手掛かりを保存できなかったときの補償。
@@ -1983,7 +2006,7 @@ final class AppState {
     /// 稼働中なのに PID もポートも空欄のままになる。`ObservedRuntime` まで反映する。
     private func refreshPhases() async {
         var managedProjectIDs = Set<UUID>()
-        var displayedSupabaseIDs = Set<SupabaseProjectID>()
+        var displayedStackIDs = Set<ManagedStackIdentity>()
         for project in projects {
             let fact = await coordinator.projectFact(project)
             projectPhases[project.id] = fact.phase
@@ -1998,11 +2021,11 @@ final class AppState {
                 guard let service = project.service(id: serviceFact.serviceID) else {
                     preconditionFailure("観測結果に登録のないサービスが含まれています。")
                 }
-                let supabase = await supabaseUIState(for: service)
-                if let projectID = supabase?.projectID { displayedSupabaseIDs.insert(projectID) }
+                let managedStack = await managedStackUIState(for: service)
+                if let identity = managedStack?.identity { displayedStackIDs.insert(identity) }
                 update(serviceFact.serviceID) { current in
                     current.phase = serviceFact.phase
-                    current.supabase = supabase
+                    current.managedStack = managedStack
                     guard serviceFact.phase.isActive else {
                         current.observedPortRecord = .observed([])
                         current.observedPorts = []
@@ -2016,7 +2039,7 @@ final class AppState {
                     current.observedPortRecord = snapshot.observedPortRecord
                     current.observedPorts = snapshot.observedPorts
                     let portWarning = "listen ポートを取得できません。取得できるまで「ポートなし」とは判断しません。"
-                    let isManaged = project.service(id: serviceFact.serviceID)?.kind == .supabase
+                    let isManaged = service.managedStackDefinition != nil
                     if snapshot.observedPortRecord == .unavailable, !isManaged {
                         current.warning = portWarning
                     } else if current.warning == portWarning {
@@ -2032,42 +2055,47 @@ final class AppState {
         }
         // まとめて置き換え、定義から消えたプロジェクトIDも残さない。
         projectIDsWithManagedResources = managedProjectIDs
-        let supabaseSnapshot = await registry.latestSupabaseSnapshot()
-        supabaseObservationError = supabaseSnapshot?.inventoryFailure
-        unregisteredSupabaseObservations = supabaseSnapshot?.observations.filter {
-            !displayedSupabaseIDs.contains($0.projectID)
+        let stackSnapshot = await registry.latestManagedStackSnapshot()
+        managedStackObservationFailures = ManagedStackType.allCases.compactMap { type in
+            stackSnapshot?.failure(of: type).map {
+                ManagedStackObservationFailure(type: type, reason: $0)
+            }
+        }
+        unregisteredManagedStackObservations = stackSnapshot?.observations.filter {
+            !displayedStackIDs.contains($0.identity)
         } ?? []
     }
 
-    private func supabaseUIState(for service: ServiceDefinition) async -> SupabaseUIState? {
-        guard service.kind == .supabase else { return nil }
-        if let observed = await registry.managedObservation(serviceID: service.id) {
-            return SupabaseUIState(
-                projectID: observed.projectID, state: observed.state,
-                relationship: await registry.managedRelationship(serviceID: service.id),
+    private func managedStackUIState(for service: ServiceDefinition) async -> ManagedStackUIState? {
+        guard let definition = service.managedStackDefinition else { return nil }
+        if let observed = await registry.managedObservation(stackID: service.id) {
+            return ManagedStackUIState(
+                identity: observed.identity, state: observed.state,
+                relationship: await registry.managedRelationship(stackID: service.id),
                 detail: observed.detail
             )
         }
-        let projectID: SupabaseProjectID
+        let identity: ManagedStackIdentity
         do {
-            guard let configuration = service.supabaseConfiguration else {
-                throw RuntimeError.managedCommandInvalid(
-                    service: service.name, reason: service.supabaseConfigurationFailureReason
-                )
-            }
-            projectID = try configuration.resolveProjectID()
+            identity = try definition.configuration
+                .resolve(workingDirectory: service.start.workingDirectory).identity
+        } catch let ManagedStackConfigurationError.invalid(issue) {
+            return ManagedStackUIState(
+                identity: nil, state: .unknown, relationship: nil,
+                detail: "\(RuntimeError.managedCommandInvalid(service: service.name, reason: issue.failureReason))"
+            )
         } catch {
-            return SupabaseUIState(projectID: nil, state: .unknown, relationship: nil, detail: "\(error)")
+            return ManagedStackUIState(identity: nil, state: .unknown, relationship: nil, detail: "\(error)")
         }
-        guard let snapshot = await registry.latestSupabaseSnapshot() else {
-            return SupabaseUIState(
-                projectID: projectID, state: .unknown, relationship: nil,
-                detail: "Supabaseの状態をまだ観測できていません。"
+        guard let snapshot = await registry.latestManagedStackSnapshot() else {
+            return ManagedStackUIState(
+                identity: identity, state: .unknown, relationship: nil,
+                detail: ManagedStackSnapshot.unobservedDetail(definition.type)
             )
         }
-        let observation = snapshot.observation(of: projectID)
-        return SupabaseUIState(
-            projectID: projectID, state: observation.state, relationship: nil, detail: observation.detail
+        let observation = snapshot.observation(of: identity)
+        return ManagedStackUIState(
+            identity: identity, state: observation.state, relationship: nil, detail: observation.detail
         )
     }
 
@@ -2116,7 +2144,7 @@ final class AppState {
     private func saveCompleteHintSnapshot(
         pendingHints: [UUID: RuntimeHint],
         pendingLegacyHints: [UUID: LegacyRuntimeHint],
-        pendingManagedHints: [UUID: ManagedRuntimeHint]? = nil
+        pendingManagedHints: [UUID: ManagedStackHint]? = nil
     ) async -> Bool {
         guard case let .available(hintStore) = hintStorage else { return false }
         do {
@@ -2133,10 +2161,10 @@ final class AppState {
 
             var managed = pendingManagedHints ?? self.pendingManagedHints
             for hint in try await registry.managedRuntimeHints() {
-                managed[hint.serviceID] = hint
+                managed[hint.stackID] = hint
             }
             let managedHints = managed.values.sorted {
-                $0.serviceID.uuidString < $1.serviceID.uuidString
+                $0.stackID.uuidString < $1.stackID.uuidString
             }
 
             try hintStore.save(hints, legacy: legacy, managed: managedHints)

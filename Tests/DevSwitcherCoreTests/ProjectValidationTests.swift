@@ -340,7 +340,7 @@ struct ProjectValidationTests {
             makeProject(directory: directory, services: [service])
         )
 
-        #expect(errors.contains(.supabaseStartSubcommandMissing(service: "Supabase")))
+        #expect(errors.contains(.managedStackConfigurationInvalid(stack: "Supabase", issue: .supabase(.startSubcommandMissing))))
     }
 
     @Test("ラッパーのscript名startをSupabaseサブコマンドとして受け付けない")
@@ -359,8 +359,8 @@ struct ProjectValidationTests {
             makeProject(directory: directory, services: [service])
         )
 
-        #expect(errors.contains(.supabaseCommandUnsupported(service: "Supabase")))
-        #expect(service.supabaseConfiguration == nil)
+        #expect(errors.contains(.managedStackConfigurationInvalid(stack: "Supabase", issue: .supabase(.commandUnsupported))))
+        #expect(service.derivedSupabaseConfiguration == nil)
     }
 
     @Test("Supabaseのラッパー引数を維持してstatusとstopを導出する")
@@ -375,7 +375,7 @@ struct ProjectValidationTests {
             workingDirectory: directory
         )
 
-        let configuration = try #require(service.supabaseConfiguration)
+        let configuration = try #require(service.derivedSupabaseConfiguration)
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
 
         #expect(configuration.configDirectory == directory.standardizedFileURL)
@@ -404,7 +404,7 @@ struct ProjectValidationTests {
             arguments: ["start"],
             workingDirectory: directory
         )
-        let configuration = try #require(service.supabaseConfiguration)
+        let configuration = try #require(service.derivedSupabaseConfiguration)
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
 
         for command in [configuration.statusCommand, configuration.stopCommand(projectID: projectID)] {
@@ -430,9 +430,9 @@ struct ProjectValidationTests {
         )
 
         #expect(errors.contains(
-            .supabaseForbiddenStopOption(service: "Supabase", option: "--no-backup")
+            .managedStackConfigurationInvalid(stack: "Supabase", issue: .supabase(.forbiddenStopOption("--no-backup")))
         ))
-        #expect(service.supabaseConfiguration == nil)
+        #expect(service.derivedSupabaseConfiguration == nil)
     }
 
     @Test("startより後ろのSupabase workdirをstatusとstopへ引き継ぐ")
@@ -451,7 +451,7 @@ struct ProjectValidationTests {
             workingDirectory: directory
         )
 
-        let configuration = try #require(service.supabaseConfiguration)
+        let configuration = try #require(service.derivedSupabaseConfiguration)
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
 
         // `--workdir`があれば、そこが`project_id`を読む設定ディレクトリになる。
@@ -482,7 +482,7 @@ struct ProjectValidationTests {
             makeProject(directory: directory, services: [service])
         )
 
-        #expect(errors.contains(.supabaseWorkdirValueMissing(service: "Supabase")))
+        #expect(errors.contains(.managedStackConfigurationInvalid(stack: "Supabase", issue: .supabase(.workdirValueMissing))))
     }
 
     @Test("Supabaseのカスタム終了コマンドを拒否する")
@@ -506,7 +506,7 @@ struct ProjectValidationTests {
             makeProject(directory: directory, services: [service])
         )
 
-        #expect(errors.contains(.supabaseCustomStopUnsupported(service: "Supabase")))
-        #expect(service.supabaseConfiguration == nil)
+        #expect(errors.contains(.managedStackConfigurationInvalid(stack: "Supabase", issue: .supabase(.customStopUnsupported))))
+        #expect(service.derivedSupabaseConfiguration == nil)
     }
 }

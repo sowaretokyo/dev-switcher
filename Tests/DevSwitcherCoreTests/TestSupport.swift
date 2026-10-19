@@ -113,7 +113,7 @@ func makeFailingService(
 ///
 /// 実Dockerにも利用者のSupabaseにも触れず、状態遷移と実行コマンドだけを検証する。
 /// `start`と`stop`はこの世界の状態を変えるので、CLIの契約どおりの順序も確かめられる。
-actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
+actor FakeSupabaseWorld: SupabaseInventoryProbing, ManagedStackCommandRunning {
     struct CommandRecord: Equatable, Sendable {
         let executable: String
         let arguments: [String]
@@ -138,6 +138,8 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
     /// `stop`が終了コード0を返してもコンテナを残す。停止確認の検証に使う。
     private var stopLeavesStackRunning = false
     private(set) var commands: [CommandRecord] = []
+    /// `run`に渡された実行境界の規則。`commands`と同じ順で記録する。
+    private(set) var policies: [ManagedStackCommandPolicy] = []
 
     init(stacks: [String: SupabaseContainerObservation] = [:]) {
         var initial: [SupabaseProjectID: SupabaseContainerObservation] = [:]
@@ -173,7 +175,10 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
         stackAppearingOnStart = (projectID, observation)
     }
     func keepStackAfterStop(_ keep: Bool) { stopLeavesStackRunning = keep }
-    func resetCommands() { commands.removeAll() }
+    func resetCommands() {
+        commands.removeAll()
+        policies.removeAll()
+    }
 
     var commandLines: [String] { commands.map(\.line) }
 
@@ -188,15 +193,19 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
         return .observed(stacks)
     }
 
-    // MARK: - SupabaseCommandRunning
+    // MARK: - ManagedStackCommandRunning
 
-    func run(_ command: CommandSpec) async throws -> SupabaseCommandResult {
+    func run(
+        _ command: CommandSpec,
+        policy: ManagedStackCommandPolicy
+    ) async throws -> ManagedStackCommandResult {
         commands.append(
             CommandRecord(executable: command.executable, arguments: command.arguments)
         )
+        policies.append(policy)
         // 生成側が変わっても、危険なオプションが実行境界へ届かないことを確かめる。
         for forbidden in ["--all", "--no-backup"] where command.arguments.contains(forbidden) {
-            throw SupabaseCommandError.forbiddenOption(
+            throw ManagedStackCommandError.forbiddenOption(
                 command: command.displayCommandLine,
                 option: forbidden
             )
@@ -211,40 +220,40 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
         if command.arguments.contains("status") {
             return try runStatus(command)
         }
-        return SupabaseCommandResult(
+        return ManagedStackCommandResult(
             status: .exited(code: 64),
             standardOutput: "",
             standardError: "unexpected command"
         )
     }
 
-    private func runStart(_ command: CommandSpec) throws -> SupabaseCommandResult {
+    private func runStart(_ command: CommandSpec) throws -> ManagedStackCommandResult {
         if let appearing = stackAppearingOnStart {
             stacks[appearing.0] = appearing.1
             stackAppearingOnStart = nil
         }
         if let failure = startFailure { return try result(for: failure, command: command) }
         guard let projectID = try? projectID(for: command) else {
-            return SupabaseCommandResult(
+            return ManagedStackCommandResult(
                 status: .exited(code: 1),
                 standardOutput: "",
                 standardError: "config.toml を読めません"
             )
         }
         stacks[projectID] = .databaseHealthy
-        return SupabaseCommandResult(
+        return ManagedStackCommandResult(
             status: .exited(code: 0),
             standardOutput: "Started supabase local development setup.",
             standardError: ""
         )
     }
 
-    private func runStop(_ command: CommandSpec) throws -> SupabaseCommandResult {
+    private func runStop(_ command: CommandSpec) throws -> ManagedStackCommandResult {
         if let failure = stopFailure { return try result(for: failure, command: command) }
         guard let index = command.arguments.firstIndex(of: "--project-id"),
               command.arguments.indices.contains(index + 1),
               let projectID = SupabaseProjectID(rawValue: command.arguments[index + 1]) else {
-            return SupabaseCommandResult(
+            return ManagedStackCommandResult(
                 status: .exited(code: 2),
                 standardOutput: "",
                 standardError: "--project-id が指定されていません"
@@ -253,24 +262,24 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
         if !stopLeavesStackRunning {
             stacks[projectID] = nil
         }
-        return SupabaseCommandResult(
+        return ManagedStackCommandResult(
             status: .exited(code: 0),
             standardOutput: "Stopped supabase local development setup.",
             standardError: ""
         )
     }
 
-    private func runStatus(_ command: CommandSpec) throws -> SupabaseCommandResult {
+    private func runStatus(_ command: CommandSpec) throws -> ManagedStackCommandResult {
         if let failure = statusFailure { return try result(for: failure, command: command) }
         guard let projectID = try? projectID(for: command),
               stacks[projectID] == .databaseHealthy else {
-            return SupabaseCommandResult(
+            return ManagedStackCommandResult(
                 status: .exited(code: 1),
                 standardOutput: "",
                 standardError: "supabase local development setup is not running."
             )
         }
-        return SupabaseCommandResult(
+        return ManagedStackCommandResult(
             status: .exited(code: 0),
             standardOutput: "{}",
             standardError: ""
@@ -280,16 +289,16 @@ actor FakeSupabaseWorld: SupabaseInventoryProbing, SupabaseCommandRunning {
     private func result(
         for failure: CommandFailure,
         command: CommandSpec
-    ) throws -> SupabaseCommandResult {
+    ) throws -> ManagedStackCommandResult {
         switch failure {
         case let .exit(code):
-            return SupabaseCommandResult(
+            return ManagedStackCommandResult(
                 status: .exited(code: code),
                 standardOutput: "",
                 standardError: "failed"
             )
         case let .unavailable(reason):
-            throw SupabaseCommandError.unresolvable(
+            throw ManagedStackCommandError.unresolvable(
                 command: command.displayCommandLine,
                 reason: reason
             )
@@ -704,5 +713,149 @@ actor EventLog {
             if case let .warning(message) = event { return message }
             return nil
         }
+    }
+}
+
+struct TestSupportError: Error, CustomStringConvertible {
+    let description: String
+}
+
+/// 設定ファイルを読まずに、`kind: "supabase"`のサービスから解決済みのスタックを作る。
+/// `project_id`は引数の値をそのまま使う。
+func makeResolvedSupabaseStack(
+    _ service: ServiceDefinition,
+    projectID: SupabaseProjectID,
+    environmentID: UUID = UUID()
+) throws -> ResolvedManagedStack {
+    guard let configuration = service.derivedSupabaseConfiguration else {
+        throw TestSupportError(description: "「\(service.name)」から Supabase の設定を導出できません。")
+    }
+    return ResolvedManagedStack(
+        environmentID: environmentID,
+        stackID: service.id,
+        stackName: service.name,
+        configuration: .supabase(
+            SupabaseResolvedConfiguration(derived: configuration, projectID: projectID)
+        ),
+        sourceConfiguration: .supabase(
+            SupabaseStackConfiguration(start: service.start, stop: service.stop)
+        )
+    )
+}
+
+/// 種類が`supabase`の`ManagedStackIdentity`を作る。値が不正なら throw する。
+func makeSupabaseIdentity(_ value: String) throws -> ManagedStackIdentity {
+    try ManagedStackIdentity(type: .supabase, value: value)
+}
+
+/// `SupabaseProjectID`を作る。値が不正なら throw する。
+func makeSupabaseProjectID(_ value: String) throws -> SupabaseProjectID {
+    guard let projectID = SupabaseProjectID(rawValue: value) else {
+        throw TestSupportError(description: "テスト用の project_id が不正です: \(value)")
+    }
+    return projectID
+}
+
+/// 起動コマンド`supabase start`を`directory`で実行する構成の同一性。
+func makeSupabaseFingerprint(_ directory: String = "/tmp/bell") -> SupabaseLifecycleFingerprint {
+    SupabaseLifecycleFingerprint(
+        start: CommandSpec(
+            executable: "supabase",
+            arguments: ["start"],
+            workingDirectory: URL(fileURLWithPath: directory)
+        ),
+        configDirectory: URL(fileURLWithPath: directory)
+    )
+}
+
+/// 種類共通の契約だけで Registry・Coordinator を動かすためのフェイク driver。
+///
+/// 外部コマンドを実行せず、呼び出しを記録する。`start`と`stop`はこの driver の状態を変える。
+actor FakeManagedStackDriver: ManagedStackDriver {
+    enum Call: Equatable, Sendable {
+        case observe(known: [ManagedStackIdentity])
+        case start(ManagedStackIdentity, known: [ManagedStackIdentity])
+        case stop(ManagedStackIdentity, context: ManagedStackIdentity, known: [ManagedStackIdentity])
+    }
+
+    nonisolated let type: ManagedStackType
+    private var states: [ManagedStackIdentity: ManagedStackState]
+    private var observationFailure: String?
+    private(set) var calls: [Call] = []
+    private(set) var latestSnapshot: ManagedStackSnapshot?
+
+    init(type: ManagedStackType, states: [ManagedStackIdentity: ManagedStackState] = [:]) {
+        precondition(
+            states.keys.allSatisfy { $0.type == type },
+            "\(type.rawValue) の driver に別の種類の状態が含まれています。"
+        )
+        self.type = type
+        self.states = states
+    }
+
+    func setState(_ identity: ManagedStackIdentity, _ state: ManagedStackState?) {
+        precondition(identity.type == type, "\(type.rawValue) の driver に別の種類の状態を設定しました。")
+        states[identity] = state
+    }
+
+    func failObservation(_ reason: String?) { observationFailure = reason }
+    func resetCalls() { calls.removeAll() }
+
+    func observe(known: [ResolvedManagedStack]) async -> ManagedStackSnapshot {
+        calls.append(.observe(known: known.map(\.identity)))
+        let snapshot: ManagedStackSnapshot
+        if let observationFailure {
+            snapshot = ManagedStackSnapshot(type: type, unobservable: observationFailure)
+        } else {
+            snapshot = ManagedStackSnapshot(
+                type: type,
+                observations: states.map { ManagedStackObservation(identity: $0.key, state: $0.value) }
+            )
+        }
+        latestSnapshot = snapshot
+        return snapshot
+    }
+
+    func start(_ stack: ResolvedManagedStack, known: [ResolvedManagedStack]) async throws -> [LogLine] {
+        calls.append(.start(stack.identity, known: known.map(\.identity)))
+        states[stack.identity] = .running
+        return []
+    }
+
+    func stop(
+        _ identity: ManagedStackIdentity,
+        using context: ResolvedManagedStack,
+        known: [ResolvedManagedStack]
+    ) async throws -> [LogLine] {
+        calls.append(.stop(identity, context: context.identity, known: known.map(\.identity)))
+        states[identity] = nil
+        return []
+    }
+}
+
+/// 管理下へ入ったSupabaseの手掛かりを、設定ファイルを読まずに作る。構成を導出できないサービスなら throw する。
+func makeManagedStackHint(
+    projectID: UUID,
+    service: ServiceDefinition,
+    supabaseProjectID: SupabaseProjectID,
+    relationship: ManagedStackRelationship
+) throws -> ManagedStackHint {
+    let stack = try makeResolvedSupabaseStack(
+        service,
+        projectID: supabaseProjectID,
+        environmentID: projectID
+    )
+    return ManagedStackHint(stack, relationship: relationship)
+}
+
+extension ServiceDefinition {
+    /// アダプタ経由で導出した Supabase の設定。導出できなければ nil。
+    var derivedSupabaseConfiguration: SupabaseDerivedConfiguration? {
+        guard let definition = managedStackDefinition,
+              case let .supabase(configuration)? = definition.configuration
+                  .derived(workingDirectory: start.workingDirectory) else {
+            return nil
+        }
+        return configuration
     }
 }

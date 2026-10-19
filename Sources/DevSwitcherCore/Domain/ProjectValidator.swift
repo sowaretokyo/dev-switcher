@@ -9,7 +9,7 @@ public enum ProjectValidator {
     ) -> [ValidationError] {
         structuralErrors(project, existingProjects: existingProjects)
             + filesystemErrors(project)
-            + supabaseStackErrors(project, existingProjects: existingProjects)
+            + managedStackIdentityErrors(project, existingProjects: existingProjects)
     }
 
     public static func check(
@@ -133,21 +133,11 @@ public enum ProjectValidator {
             where argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errors.append(.emptyArgument(service: label, argumentIndex: argumentIndex))
             }
-            if service.kind == .supabase {
-                if service.stop != nil {
-                    errors.append(.supabaseCustomStopUnsupported(service: label))
-                } else if !service.hasSupportedSupabaseInvocation {
-                    errors.append(.supabaseCommandUnsupported(service: label))
-                } else if !service.hasSupabaseStartSubcommand {
-                    errors.append(.supabaseStartSubcommandMissing(service: label))
-                } else if let forbidden = ServiceDefinition.forbiddenStopOptions
-                    .sorted()
-                    .first(where: service.start.arguments.contains) {
-                    errors.append(
-                        .supabaseForbiddenStopOption(service: label, option: forbidden)
-                    )
-                } else if service.supabaseConfiguration == nil {
-                    errors.append(.supabaseWorkdirValueMissing(service: label))
+            if let definition = service.managedStackDefinition {
+                for issue in definition.configuration.structuralIssues(
+                    workingDirectory: service.start.workingDirectory
+                ) {
+                    errors.append(.managedStackConfigurationInvalid(stack: label, issue: issue))
                 }
             }
 
@@ -167,12 +157,16 @@ public enum ProjectValidator {
             errors.append(contentsOf: portErrors(for: service.ports, serviceLabel: label))
         }
 
-        // `enabled`にかかわらず、1開発環境に登録できるSupabaseは1件まで。
-        let supabaseServices = project.services.filter { $0.kind == .supabase }
-        if supabaseServices.count > 1 {
-            errors.append(
-                .multipleSupabaseServices(services: supabaseServices.map(\.name))
-            )
+        // `enabled`にかかわらず、種類ごとの上限（1開発環境あたりの件数）を超えた登録を拒否する。
+        let definitions = project.services.compactMap(\.managedStackDefinition)
+        for type in ManagedStackType.allCases {
+            guard let limit = type.policy.maximumPerEnvironment else { continue }
+            let stacks = definitions.filter { $0.type == type }
+            if stacks.count > limit {
+                errors.append(
+                    .managedStackLimitExceeded(type: type, limit: limit, stacks: stacks.map(\.name))
+                )
+            }
         }
 
         errors.append(contentsOf: orderErrors(project))
@@ -180,49 +174,50 @@ public enum ProjectValidator {
         return errors
     }
 
-    /// 登録済み開発環境全体で`project_id`が一意かを確認する。
+    /// 登録済み開発環境全体で管理対象スタックのIDが一意かを確認する。
     ///
     /// 1件でも解決できない場合は「重複なし」と扱わず、保存を失敗させる。
-    /// ディレクトリ名やコンテナ名から`project_id`を補完しない。
-    public static func supabaseStackErrors(
+    /// ディレクトリ名やコンテナ名からIDを補完しない。
+    public static func managedStackIdentityErrors(
         _ project: ProjectDefinition,
         existingProjects: [ProjectDefinition]
     ) -> [ValidationError] {
         var errors: [ValidationError] = []
-        var owners: [SupabaseProjectID: String] = [:]
+        var owners: [ManagedStackIdentity: String] = [:]
 
         // 候補を含む全開発環境を、名前順ではなく登録順で解決する。
         let candidates = existingProjects.filter { $0.id != project.id } + [project]
         for candidate in candidates {
-            for service in candidate.services where service.kind == .supabase {
-                guard let configuration = service.supabaseConfiguration else {
-                    // 起動コマンドの形式エラーは構造検証が出す。ここでは重複判定だけを止める。
-                    if candidate.id == project.id {
-                        errors.append(
-                            .supabaseProjectIDUnresolved(
-                                service: service.name,
-                                reason: service.supabaseConfigurationFailureReason
-                            )
-                        )
-                    }
-                    continue
-                }
+            for service in candidate.services {
+                guard let definition = service.managedStackDefinition else { continue }
+                let workingDirectory = service.start.workingDirectory
                 do {
-                    let projectID = try configuration.resolveProjectID()
-                    if let owner = owners[projectID], owner != candidate.name {
+                    let identity = try definition.configuration
+                        .resolve(workingDirectory: workingDirectory).identity
+                    if let owner = owners[identity], owner != candidate.name {
                         errors.append(
-                            .duplicateSupabaseProjectID(
-                                projectID: projectID.rawValue,
-                                otherProject: owner
-                            )
+                            .duplicateManagedStackIdentity(identity: identity, otherProject: owner)
                         )
                     } else {
-                        owners[projectID] = candidate.name
+                        owners[identity] = candidate.name
+                    }
+                } catch let ManagedStackConfigurationError.invalid(issue) {
+                    // 起動コマンドの形式エラーは構造検証が出す。ここでは重複判定を止め、
+                    // 候補の開発環境に属するものだけを解決失敗として示す。
+                    if candidate.id == project.id {
+                        errors.append(
+                            .managedStackIdentityUnresolved(
+                                stack: service.name,
+                                type: definition.type,
+                                reason: issue.failureReason
+                            )
+                        )
                     }
                 } catch {
                     errors.append(
-                        .supabaseProjectIDUnresolved(
-                            service: service.name,
+                        .managedStackIdentityUnresolved(
+                            stack: service.name,
+                            type: definition.type,
                             reason: "\(error)"
                         )
                     )

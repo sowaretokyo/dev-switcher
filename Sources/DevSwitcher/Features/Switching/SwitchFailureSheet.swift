@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 切替失敗のシート。
 ///
-/// 必ず「現在の状態」を書く（DESIGN.md I-5）。両方のプロジェクトが今どうなっているかを
+/// 必ず「現在の状態」を書く（`docs/SPEC.md` 16.2 I-5）。両方のプロジェクトが今どうなっているかを
 /// 断言しないと、利用者は次に何をすればよいか決められない。
 /// 破壊的な選択肢は既定ボタンにしない（I-6）。
 struct SwitchFailureSheet: View {
@@ -82,7 +82,7 @@ struct SwitchFailureSheet: View {
         }
         .padding(Spacing.xl)
         .frame(width: Metrics.sheetWidth)
-        // 強制終了の前に必ず再確認する（MVP_SPEC 12章）。
+        // 強制終了の前に必ず再確認する（`docs/SPEC.md` 7、12）。
         .confirmationDialog(
             "強制終了しますか？",
             isPresented: $isConfirmingForceStop,

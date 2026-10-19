@@ -114,8 +114,8 @@ struct SupabaseStackTests {
             return
         }
         #expect(result.isEmpty)
-        #expect(SupabaseStackSnapshot([]).state(
-            of: try #require(SupabaseProjectID(rawValue: "bell"))
+        #expect(ManagedStackSnapshot(type: .supabase, observations: []).state(
+            of: ManagedStackIdentity(try #require(SupabaseProjectID(rawValue: "bell")))
         ) == .notRunning)
     }
 
@@ -207,11 +207,11 @@ struct SupabaseStackTests {
 
     // MARK: - 実測状態の組み立て
 
-    private func makeController(_ world: FakeSupabaseWorld) -> SupabaseStackController {
-        SupabaseStackController(
+    private func makeDriver(_ world: FakeSupabaseWorld) -> SupabaseStackDriver {
+        SupabaseStackDriver(
             inventory: world,
             runner: world,
-            options: SupabaseStackController.Options(
+            options: SupabaseStackDriver.Options(
                 startConfirmationWindow: .milliseconds(200),
                 stopConfirmationWindow: .milliseconds(200),
                 pollInterval: .milliseconds(10)
@@ -225,22 +225,22 @@ struct SupabaseStackTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeSupabaseConfig(projectID: "bell", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let configuration = try #require(service.supabaseConfiguration)
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
-        let controller = makeController(world)
+        let driver = makeDriver(world)
 
-        let running = await controller.observe(known: [projectID: configuration])
-        #expect(running.state(of: projectID) == .running)
+        let running = await driver.observe(known: [stack])
+        #expect(running.state(of: ManagedStackIdentity(projectID)) == .running)
 
         // DBはhealthyでもstatusが失敗するなら確定できない。停止中へ倒さない。
         await world.failStatus(.exit(code: 1))
-        let unknown = await controller.observe(known: [projectID: configuration])
-        #expect(unknown.state(of: projectID) == .unknown)
+        let unknown = await driver.observe(known: [stack])
+        #expect(unknown.state(of: ManagedStackIdentity(projectID)) == .unknown)
 
         // 設定ディレクトリが不明な外部スタックは、DBの実測だけで稼働中とする。
-        let external = await controller.observe(known: [:])
-        #expect(external.state(of: projectID) == .running)
+        let external = await driver.observe(known: [])
+        #expect(external.state(of: ManagedStackIdentity(projectID)) == .running)
     }
 
     @Test("Dockerを読めないときは既知のスタックをunknownにする")
@@ -249,14 +249,14 @@ struct SupabaseStackTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeSupabaseConfig(projectID: "bell", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let configuration = try #require(service.supabaseConfiguration)
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
         let world = FakeSupabaseWorld()
         await world.failInventory("docker daemon が応答しません。")
 
-        let snapshot = await makeController(world).observe(known: [projectID: configuration])
+        let snapshot = await makeDriver(world).observe(known: [stack])
 
-        #expect(snapshot.state(of: projectID) == .unknown)
+        #expect(snapshot.state(of: ManagedStackIdentity(projectID)) == .unknown)
         #expect(snapshot.hasUnknown)
     }
 
@@ -266,17 +266,17 @@ struct SupabaseStackTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeSupabaseConfig(projectID: "bell", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let configuration = try #require(service.supabaseConfiguration)
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
         let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
         await world.keepStackAfterStop(true)
-        let controller = makeController(world)
+        let driver = makeDriver(world)
 
-        await #expect(throws: SupabaseOperationError.self) {
-            _ = try await controller.stop(
-                using: configuration,
-                projectID: projectID,
-                known: [projectID: configuration]
+        await #expect(throws: ManagedStackOperationError.self) {
+            _ = try await driver.stop(
+                ManagedStackIdentity(projectID),
+                using: stack,
+                known: [stack]
             )
         }
         #expect(await world.commandLines.contains { $0.contains("--project-id bell") })
@@ -286,13 +286,13 @@ struct SupabaseStackTests {
     func unknownInventoryDoesNotImplyAbsentExternalStack() async throws {
         let world = FakeSupabaseWorld(stacks: ["external": .databaseHealthy])
         await world.failInventory("Docker unavailable")
-        let controller = makeController(world)
+        let driver = makeDriver(world)
         let projectID = try #require(SupabaseProjectID(rawValue: "external"))
 
-        let snapshot = await controller.observe(known: [:])
+        let snapshot = await driver.observe(known: [])
         #expect(snapshot.hasUnknown)
-        #expect(snapshot.state(of: projectID) == .unknown)
-        let observation = await controller.observe(projectID: projectID, known: [:])
+        #expect(snapshot.state(of: ManagedStackIdentity(projectID)) == .unknown)
+        let observation = await driver.observe(ManagedStackIdentity(projectID), known: [])
         #expect(observation.state == .unknown)
         #expect(observation.detail == "Docker unavailable")
     }
@@ -301,15 +301,17 @@ struct SupabaseStackTests {
     func externalStopRequiresObservableInventory() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let configuration = try #require(makeSupabaseService(workingDirectory: directory).supabaseConfiguration)
+        let stack = try makeResolvedSupabaseStack(
+            makeSupabaseService(workingDirectory: directory), projectID: makeSupabaseProjectID("external")
+        )
         let projectID = try #require(SupabaseProjectID(rawValue: "external"))
         let world = FakeSupabaseWorld(stacks: ["external": .databaseHealthy])
         await world.keepStackAfterStop(true)
         await world.failInventory("Docker unavailable")
 
-        await #expect(throws: SupabaseOperationError.self) {
-            _ = try await makeController(world).stop(
-                using: configuration, projectID: projectID, known: [:]
+        await #expect(throws: ManagedStackOperationError.self) {
+            _ = try await makeDriver(world).stop(
+                ManagedStackIdentity(projectID), using: stack, known: []
             )
         }
         #expect(await world.runningProjectIDs == ["external"])

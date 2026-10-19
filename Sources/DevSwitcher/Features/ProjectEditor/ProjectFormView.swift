@@ -2,7 +2,7 @@ import AppKit
 import DevSwitcherCore
 import SwiftUI
 
-/// 追加と編集で同じ単一シートを使う。ウィザードやタブへ分割しない（DESIGN.md 決定 i）。
+/// 追加と編集で同じ単一シートを使う。ウィザードやタブへ分割しない（`docs/SPEC.md` 15.1、15.3）。
 ///
 /// 入力行はすべて `FormRow` に統一する。`LabeledContent` はコンテナごとにラベル列幅を
 /// 計算するため、シート直下の欄とサービスカードの中の欄で右端が揃わない。

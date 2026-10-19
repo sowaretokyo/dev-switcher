@@ -19,7 +19,7 @@ struct RootViewLayoutTests {
         )
         try ProjectStore(directory: directory).save([project])
         let stackID = try #require(SupabaseProjectID(rawValue: "layout-test"))
-        let hint = try #require(ManagedRuntimeHint(
+        let hint = try #require(makeManagedStackHint(
             projectID: project.id, service: service,
             supabaseProjectID: stackID, relationship: .launched
         ))

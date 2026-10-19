@@ -30,7 +30,7 @@ struct RootView: View {
         // ウィンドウ自体の題名は `WindowGroup` に残るので、ウィンドウメニューと
         // Mission Control では引き続き名前で探せる。
         .toolbar(removing: .title)
-        // 稼働中の開発環境の識別と操作はツールバーが持つ（DESIGN.md 7章）。
+        // 稼働中の開発環境の識別と操作はツールバーが持つ（`docs/SPEC.md` 16.1）。
         .toolbar {
             // 読むだけの項目なので、押せるものに見えるガラスの背景を外す。
             ToolbarItem(placement: .navigation) {
@@ -73,11 +73,11 @@ struct RootView: View {
         }
         .sheet(
             item: Binding(
-                get: { state.supabaseConfirmation },
-                set: { if $0 == nil { state.cancelSupabaseConfirmation() } }
+                get: { state.managedStackConfirmation },
+                set: { if $0 == nil { state.cancelManagedStackConfirmation() } }
             )
         ) { presentation in
-            SupabaseConfirmationSheet(presentation: presentation)
+            ManagedStackConfirmationSheet(presentation: presentation)
         }
         // 引き継ぎシートを閉じる・差し替えるのは AppState だけ。ビュー側の dismiss を
         // 許すと、決着していない手掛かりを抱えたまま画面から消える。
@@ -108,23 +108,28 @@ private struct BannerArea: View {
 
     private var banners: some View {
         VStack(spacing: 0) {
-            if let error = state.supabaseObservationError {
-                Banner(title: "Supabaseを観測できません", message: error, tint: .orange) {
+            ForEach(state.managedStackObservationFailures, id: \.type) { failure in
+                Banner(title: "\(failure.type.displayName)を観測できません", message: failure.reason, tint: .orange) {
                     Button("再観測") {
                         Task { await state.applicationDidBecomeActive() }
                     }
                 }
             }
-            if !state.unregisteredSupabaseObservations.isEmpty {
-                Banner(
-                    title: "未登録の外部Supabase",
-                    message: state.unregisteredSupabaseObservations.map {
-                        let label = "\($0.projectID): \($0.state.label)"
-                        return $0.detail.map { label + "\n" + $0 } ?? label
-                    }.joined(separator: "\n"),
-                    tint: .secondary
-                ) {
-                    EmptyView()
+            ForEach(ManagedStackType.allCases, id: \.self) { type in
+                let observations = state.unregisteredManagedStackObservations.filter {
+                    $0.identity.type == type
+                }
+                if !observations.isEmpty {
+                    Banner(
+                        title: "未登録の外部\(type.displayName)",
+                        message: observations.map {
+                            let label = "\($0.identity): \($0.state.label)"
+                            return $0.detail.map { label + "\n" + $0 } ?? label
+                        }.joined(separator: "\n"),
+                        tint: .secondary
+                    ) {
+                        EmptyView()
+                    }
                 }
             }
             if let incident = state.runtimeIncident {
@@ -203,7 +208,7 @@ private struct BannerArea: View {
             case .loading:
                 Banner(
                     title: "ログインシェルの環境を取得しています",
-                    message: "\(LoginShellEnvironment.executable.path) \(LoginShellEnvironment.arguments.joined(separator: " "))",
+                    message: loginShellCommandMessage,
                     tint: .accentColor
                 ) {
                     ProgressView().controlSize(.small)
@@ -221,6 +226,15 @@ private struct BannerArea: View {
             case .ready:
                 EmptyView()
             }
+        }
+    }
+
+    /// 解決できない場合はエラー文をそのまま表示する（取得処理側も同じ理由で失敗表示に切り替わる）。
+    private var loginShellCommandMessage: String {
+        do {
+            return try LoginShellEnvironment.commandDescription()
+        } catch {
+            return String(describing: error)
         }
     }
 

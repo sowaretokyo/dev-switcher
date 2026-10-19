@@ -4,7 +4,7 @@ import SwiftUI
 /// 登録解除の確認。
 ///
 /// 破壊的に見える操作なので、何が消えて何が消えないのかを実行前に断言する。
-/// 破壊的な選択肢を既定ボタンにしない（DESIGN.md I-6）。⏎ では実行しない。
+/// 破壊的な選択肢を既定ボタンにしない（`docs/SPEC.md` 16.2 I-6）。⏎ では実行しない。
 struct UnregisterConfirmationSheet: View {
     @Environment(AppState.self) private var state
     let presentation: AppState.UnregisterPresentation

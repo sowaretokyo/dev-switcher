@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// セクション見出し。`DESIGN.md` 8章の 9.5 / 700 / +0.07em。
+/// セクション見出し。方針は `docs/SPEC.md` 16.3、数値は DesignTokens.swift が正。
 struct SectionLabel: View {
     let text: String
     var tint: HierarchicalShapeStyle

@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// ポート解放ゲートの進捗と、起動フェーズ前だけ受け付ける中止のためのUI。
 /// 多重操作を止めているのは `AppState` の `ActivityToken` であり、このシートではない
-/// （DESIGN.md I-1）。単純な起動・停止では出さない。
+/// （`docs/SPEC.md` 16.2 I-1）。単純な起動・停止では出さない。
 struct SwitchSheet: View {
     @Environment(AppState.self) private var state
     /// 提示された時点の値。同一性の判定にだけ使う。

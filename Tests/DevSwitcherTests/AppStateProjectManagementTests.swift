@@ -189,7 +189,7 @@ struct AppStateProjectManagementTests {
         var renamed = fixture.project
         renamed.name = "Renamed"
 
-        // UI の無効化に依存せず、API 境界で拒否する（DESIGN.md I-1 / I-9）。
+        // UI の無効化に依存せず、API 境界で拒否する（`docs/SPEC.md` 16.2 I-1 / I-9）。
         #expect(throws: AppError.self) { try state.updateProject(renamed) }
         #expect(throws: AppError.self) { try state.unregisterProject(fixture.project) }
         #expect(state.canEdit(fixture.project) == false)

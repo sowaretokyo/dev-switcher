@@ -21,10 +21,10 @@ struct SupabaseCommandRunnerTests {
             "SUPABASE_WORKDIR": "/unexpected/project",
             "TEST_KEEP": "preserved",
         ])
-        let runner = SupabaseProcessCommandRunner(environmentProvider: { environment })
+        let runner = ManagedStackProcessCommandRunner(environmentProvider: { environment })
         let result = try await runner.run(CommandSpec(
             executable: "supabase", arguments: arguments, workingDirectory: directory
-        ))
+        ), policy: SupabaseStackDriver.commandPolicy)
 
         #expect(result.isSuccess)
         let lines = result.standardOutput.split(separator: "\n").map(String.init)

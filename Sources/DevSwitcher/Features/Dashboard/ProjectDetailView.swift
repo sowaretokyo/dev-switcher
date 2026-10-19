@@ -44,7 +44,7 @@ struct ProjectDetailView: View {
         }
     }
 
-    /// 編集と登録解除の導線（DESIGN.md 決定 i）。複製はPost-MVPなので出さない。
+    /// 編集と登録解除の導線（`docs/SPEC.md` 15.1、15.3）。複製はPost-MVPなので出さない。
     private var moreMenu: some View {
         Menu {
             Button("編集…") {
@@ -349,7 +349,7 @@ struct ServiceSummaryRow: View {
             if let warning = uiState.warning {
                 NoteText(warning, tint: .orange, indent: Metrics.checkboxIndent)
             }
-            if let detail = uiState.supabase?.detail {
+            if let detail = uiState.managedStack?.detail {
                 NoteText(detail, tint: .orange, indent: Metrics.checkboxIndent)
             }
             if case let .failed(reason) = uiState.phase {

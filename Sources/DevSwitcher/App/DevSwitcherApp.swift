@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// フォアグラウンド復帰時はSupabaseを再観測する（`MVP_SPEC.md` 11）。
+    /// フォアグラウンド復帰時はSupabaseを再観測する（`docs/SPEC.md` 11、6.5）。
     /// 確認表示・引き継ぎ・停止はここでは行わない。定期ポーリングも足さない。
     func applicationDidBecomeActive(_ notification: Notification) {
         Task { await appState.applicationDidBecomeActive() }

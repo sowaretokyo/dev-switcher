@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// `DESIGN.md` 8章のデザイントークン。
+/// `docs/SPEC.md` 16.3 のデザイントークン。
 ///
 /// サイズ・余白・角丸の生数値をここだけに置く。ビュー側で数値を直接書くと、
 /// 同じ役割の文字が画面ごとに違うサイズになり、見た目が揃わなくなる。
@@ -21,11 +21,11 @@ enum Typography {
     static let monoSmall = Font.system(size: 10.5, design: .monospaced)
     /// 9.5 / 700。セクション見出しと値ラベル。字送りは `SectionLabel` が付ける。
     static let sectionLabel = Font.system(size: 9.5, weight: .bold)
-    /// セクション見出しの字送り（DESIGN.md 8章の +0.07em）。
+    /// セクション見出しの字送り。方針は docs/SPEC.md 16.3、数値はここが正。
     static let sectionLabelKerning: CGFloat = 0.7
 }
 
-/// 4pt グリッド（DESIGN.md 8章）。グリッド外の値を新しく足さない。
+/// 4pt グリッド（docs/SPEC.md 16.3）。グリッド外の値を新しく足さない。
 enum Spacing {
     /// 記号と値の行間。`mock.html` が密な縦積みに使う 2〜5px に対応する、
     /// グリッドの例外。ラベルと値のように「1つの塊」に見せたい箇所だけで使う。
@@ -42,7 +42,7 @@ enum Spacing {
     static let indent: CGFloat = 24
 }
 
-/// 角丸 10 / 7 / 6（DESIGN.md 8章）。
+/// 角丸 10 / 7 / 6（docs/SPEC.md 16.3）。
 enum Radius {
     /// カード・ゲート。
     static let card: CGFloat = 7
@@ -54,7 +54,7 @@ enum Radius {
 
 /// 寸法。役割ごとに名前を付け、同じ数値でも意味が違うものは分ける。
 enum Metrics {
-    /// ウィンドウ既定。サイドバー＋ログが同時に成立する最小（DESIGN.md 8章）。
+    /// ウィンドウ既定。サイドバー＋ログが同時に成立する最小（docs/SPEC.md 16.1）。
     static let windowWidth: CGFloat = 880
     static let windowHeight: CGFloat = 544
     static let windowMinWidth: CGFloat = 720
@@ -100,7 +100,7 @@ enum Metrics {
     static let disclosureIcon: CGFloat = 9
     /// ステージ行のアイコン。
     static let stageIcon: CGFloat = 11
-    /// ログ本文（DESIGN.md 8章の 10.5 / SF Mono）。`NSFont` へ渡すので数値で持つ。
+    /// ログ本文（SF Mono）。方針は docs/SPEC.md 16.3、数値はここが正。`NSFont` へ渡すので数値で持つ。
     static let logFontSize: CGFloat = 10.5
     /// 空状態のアイコン。
     static let emptyStateIcon: CGFloat = 34

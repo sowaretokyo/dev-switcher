@@ -31,8 +31,8 @@ struct AppStateRelaunchTests {
     }
 
     @Test("再起動直後にDockerが未起動でも、再観測で復旧して操作を再開できる",
-          arguments: [SupabaseStackState.notRunning, .running, .degraded])
-    func dockerRecoveryAfterReboot(recoveredState: SupabaseStackState) async throws {
+          arguments: [ManagedStackState.notRunning, .running, .degraded])
+    func dockerRecoveryAfterReboot(recoveredState: ManagedStackState) async throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeSupabaseConfig(projectID: "relaunch", in: directory)
@@ -44,7 +44,7 @@ struct AppStateRelaunchTests {
         )
         try ProjectStore(directory: directory).save([project])
         let hints = RuntimeHintStore(directory: directory)
-        let managed = try #require(ManagedRuntimeHint(
+        let managed = try #require(makeManagedStackHint(
             projectID: project.id, service: supabase,
             supabaseProjectID: stackID, relationship: .launched
         ))
@@ -62,7 +62,7 @@ struct AppStateRelaunchTests {
 
         #expect(state.handoffPresentation == nil)
         #expect(state.managedHintError != nil)
-        #expect(state.supabaseObservationError != nil)
+        #expect(state.managedStackObservationError != nil)
         #expect(!state.canStart)
         #expect(try hints.load().hints.isEmpty)
         #expect(try hints.load().managed == [managed])
@@ -79,17 +79,17 @@ struct AppStateRelaunchTests {
         await state.applicationDidBecomeActive()
 
         #expect(state.managedHintError == nil)
-        #expect(state.supabaseObservationError == nil)
+        #expect(state.managedStackObservationError == nil)
         #expect(state.handoffPresentation == nil)
-        #expect(state.supabaseConfirmation == nil)
+        #expect(state.managedStackConfirmation == nil)
         #expect(state.canStart)
-        #expect(state.state(of: supabase.id).supabase?.state == recoveredState)
+        #expect(state.state(of: supabase.id).managedStack?.state == recoveredState)
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
         if recoveredState == .notRunning {
             #expect(try hints.load().isEmpty)
             #expect(state.activeProject == nil)
         } else {
-            #expect(state.state(of: supabase.id).supabase?.relationship == .restored)
+            #expect(state.state(of: supabase.id).managedStack?.relationship == .restored)
             #expect(state.hasManagedResources(in: project))
             #expect(state.canStop)
             #expect(try hints.load().managed.count == 1)

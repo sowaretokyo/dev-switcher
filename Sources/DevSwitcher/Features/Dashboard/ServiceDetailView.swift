@@ -59,7 +59,7 @@ struct ServiceDetailView: View {
                     }
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
-                } else if service.kind != .supabase {
+                } else if service.managedStackDefinition == nil {
                     if uiState.phase == .excluded || uiState.phase == .stopped {
                         Button {
                             state.startService(service, in: project)
@@ -95,7 +95,7 @@ struct ServiceDetailView: View {
                 NoteText(serviceOperation.state.label, tint: .secondary)
             }
 
-            if service.kind != .supabase, !project.isEnabledNow(service.id) {
+            if service.managedStackDefinition == nil, !project.isEnabledNow(service.id) {
                 NoteText("一括起動の対象外です。追加起動しても、次回の一括起動には含まれません。", tint: .secondary)
             }
 
@@ -114,17 +114,8 @@ struct ServiceDetailView: View {
             LabeledValue(label: "起動確認", value: startupObservationDescription, lineLimit: 3)
             // プロジェクト詳細から退避してきた。実行内容を確かめる場所はここ1か所にする。
             LabeledValue(label: "起動コマンド", value: service.start.displayCommandLine, lineLimit: 3)
-            if let configuration = service.supabaseConfiguration {
-                LabeledValue(
-                    label: "状態確認",
-                    value: configuration.statusCommand.displayCommandLine,
-                    lineLimit: 3
-                )
-                LabeledValue(
-                    label: "設定ファイル",
-                    value: configuration.configFileURL.path,
-                    lineLimit: 2
-                )
+            ForEach(ManagedStackTypePresentation.detailRows(for: service), id: \.label) { row in
+                LabeledValue(label: row.label, value: row.value, lineLimit: row.lineLimit)
             }
 
             if let warning = uiState.warning {
@@ -133,17 +124,20 @@ struct ServiceDetailView: View {
             if let logError = uiState.logError {
                 NoteText(logError, tint: .orange)
             }
-            if let supabase = uiState.supabase {
-                LabeledValue(label: "スタックの実測状態", value: supabase.state.label)
-                if let projectID = supabase.projectID {
-                    LabeledValue(label: "project_id", value: projectID.rawValue)
-                }
-                if supabase.isExternal {
-                    NoteText("外部で起動されたSupabaseです。開発環境の起動時に引き継ぎを確認します。", tint: .secondary)
-                } else if let relationship = supabase.relationship {
+            if let managedStack = uiState.managedStack {
+                LabeledValue(label: "スタックの実測状態", value: managedStack.state.label)
+                if let identity = managedStack.identity {
+                    let presentation = ManagedStackTypePresentation(identity.type)
+                    LabeledValue(label: presentation.identityFieldLabel, value: identity.value)
+                    if managedStack.isExternal {
+                        NoteText(presentation.externalStackNote, tint: .secondary)
+                    } else if let relationship = managedStack.relationship {
+                        LabeledValue(label: "管理関係", value: relationship.label)
+                    }
+                } else if let relationship = managedStack.relationship {
                     LabeledValue(label: "管理関係", value: relationship.label)
                 }
-                if let detail = supabase.detail {
+                if let detail = managedStack.detail {
                     NoteText(detail, tint: .orange)
                 }
             }
@@ -188,8 +182,8 @@ struct ServiceDetailView: View {
     /// 何を見て起動成功と判断しているかを表示する。
     /// HTTP は投げないので、応答するかどうかまでは保証しないことが分かる文言にする。
     private var startupObservationDescription: String {
-        if service.kind == .supabase {
-            return "Dockerの実測でDBコンテナがhealthyになり、対象workdirの `supabase status` も成功すること"
+        if let definition = service.managedStackDefinition {
+            return ManagedStackTypePresentation(definition.type).startupObservationDescription
         }
         do {
             return try StartupObservationPolicy.spec(for: service).description
@@ -199,8 +193,8 @@ struct ServiceDetailView: View {
     }
 
     private func observedPortsText(_ uiState: AppState.ServiceUIState) -> String {
-        if service.kind == .supabase, uiState.observedPortRecord == .unavailable {
-            return "Supabase CLI で管理"
+        if let definition = service.managedStackDefinition, uiState.observedPortRecord == .unavailable {
+            return ManagedStackTypePresentation(definition.type).portsManagedByText
         }
         if let text = uiState.observedPortsAvailabilityText { return text }
         guard case let .observed(ports) = uiState.observedPortRecord else {

@@ -78,7 +78,7 @@ public actor RuntimeRegistry {
         case launched(ServiceSupervisor)
         case adopted(AdoptedSupervisor)
         case residualGroup(ResidualGroupSupervisor)
-        case managed(ManagedCommandSupervisor)
+        case managed(ManagedStackSupervisor)
     }
 
     private var handles: [UUID: Handle] = [:]
@@ -96,11 +96,11 @@ public actor RuntimeRegistry {
     private let groupStateProbe: ServiceSupervisor.ProcessGroupStateProbe
     private let startAbstimeProbe: ServiceSupervisor.StartAbstimeProbe
     private let bootSessionProbe: ServiceSupervisor.BootSessionProbe
-    /// Supabaseスタックの観測・起動・停止。Dockerの読み取りとCLI実行はここへ集約する。
-    private let supabaseController: SupabaseStackController
-    /// 設定ディレクトリが既知のスタック。`supabase status`まで確認する対象を決める。
+    /// 管理対象スタックの種類ごとの観測・起動・停止。外部コマンドの実行は driver へ集約する。
+    private let stackDrivers: [ManagedStackType: any ManagedStackDriver]
+    /// 設定が既知のスタック。driver が観測の精度を上げる対象を決める。
     /// 登録済み開発環境の変更に追従するため、操作の直前に呼び出し側が入れ替える。
-    private var knownSupabaseConfigurations: [SupabaseProjectID: SupabaseServiceConfiguration] = [:]
+    private var knownStacks: [ManagedStackIdentity: ResolvedManagedStack] = [:]
 
     /// テストごとにログインシェルを起動しないよう、取得処理を差し替え可能にする。
     public typealias ShellEnvironmentLoader = @Sendable () async throws -> ShellEnvironment
@@ -125,7 +125,7 @@ public actor RuntimeRegistry {
         bootSessionProbe: @escaping ServiceSupervisor.BootSessionProbe = {
             ProcessInspector.bootSessionID()
         },
-        supabaseController: SupabaseStackController? = nil
+        stackDrivers: [ManagedStackType: any ManagedStackDriver]? = nil
     ) {
         self.portPollInterval = portPollInterval
         self.logDirectoryOverride = logDirectory
@@ -136,11 +136,18 @@ public actor RuntimeRegistry {
         self.groupStateProbe = groupStateProbe
         self.startAbstimeProbe = startAbstimeProbe
         self.bootSessionProbe = bootSessionProbe
-        // 実装を渡されない場合だけ、実Docker・実CLIを使う既定の観測系を組み立てる。
-        self.supabaseController = supabaseController ?? SupabaseStackController(
-            inventory: SupabaseDockerInventory(environmentProvider: environmentLoader),
-            runner: SupabaseProcessCommandRunner(environmentProvider: environmentLoader)
-        )
+        // 実装を渡されない場合だけ、実Docker・実CLIを使う既定の driver を組み立てる。
+        let drivers = stackDrivers ?? [
+            .supabase: SupabaseStackDriver(
+                inventory: SupabaseDockerInventory(environmentProvider: environmentLoader),
+                runner: ManagedStackProcessCommandRunner(environmentProvider: environmentLoader)
+            ),
+        ]
+        // キーと driver の種類がずれていると、別の種類のスタックへコマンドを送る。
+        for (type, driver) in drivers where driver.type != type {
+            preconditionFailure("\(type.rawValue) のキーに \(driver.type.rawValue) の driver が登録されています。")
+        }
+        self.stackDrivers = drivers
     }
 
     /// 取得失敗時に意図しない実行ファイルを選ばないよう、最小PATHへフォールバックしない。
@@ -164,11 +171,11 @@ public actor RuntimeRegistry {
         operationInFlight = true
         defer { operationInFlight = false }
 
-        // Supabaseは実測と確認を伴う専用経路から起動する。
-        guard service.kind != .supabase else {
+        // 管理対象スタックは実測と確認を伴う専用経路から起動する。
+        if let definition = service.managedStackDefinition {
             throw RuntimeError.managedCommandInvalid(
                 service: service.name,
-                reason: "Supabaseは既存スタックの実測と確認を伴う専用経路から起動します。"
+                reason: "\(definition.type.displayName)は既存スタックの実測と確認を伴う専用経路から起動します。"
             )
         }
         // カスタム終了コマンドは状態確認方法が定義されていない。
@@ -229,68 +236,118 @@ public actor RuntimeRegistry {
         return try await supervisor.start(environment: environment.variables)
     }
 
-    // MARK: - Supabaseスタック
+    // MARK: - 管理対象スタック
 
-    /// 登録済みSupabaseの設定ディレクトリを入れ替える。観測の精度だけに影響する。
-    public func setKnownSupabaseConfigurations(
-        _ configurations: [SupabaseProjectID: SupabaseServiceConfiguration]
-    ) {
-        knownSupabaseConfigurations = configurations
+    /// 登録済みスタックの解決済み設定を入れ替える。観測の精度だけに影響する。
+    public func setKnownStacks(_ stacks: [ManagedStackIdentity: ResolvedManagedStack]) {
+        knownStacks = stacks
     }
 
-    /// 全スタックを実測する。停止済みの管理関係は解除し、新しい管理関係は取得しない。
-    public func observeSupabaseStacks() async -> SupabaseStackSnapshot {
-        let snapshot = await supabaseController.observe(known: knownSupabaseConfigurations)
+    /// 観測対象の種類。登録済みまたは管理下のスタックがある種類だけ。
+    /// スタックを使っていない利用者の操作ごとに外部コマンドを実行しないため。
+    private func typesToObserve() -> [ManagedStackType] {
+        var types = Set(knownStacks.keys.map(\.type))
+        for handle in handles.values {
+            guard case let .managed(supervisor) = handle else { continue }
+            types.insert(supervisor.identity.type)
+        }
+        return types.sorted { $0.rawValue < $1.rawValue }
+    }
+
+    /// driver へ渡す、同じ種類の既知スタック。
+    private func knownStacks(of type: ManagedStackType) -> [ResolvedManagedStack] {
+        Handle.known(knownStacks, of: type)
+    }
+
+    /// 1種類を実測する。driver が無い種類は観測全体の失敗として返し、停止中へ倒さない。
+    private func observe(type: ManagedStackType) async -> ManagedStackSnapshot {
+        guard let driver = stackDrivers[type] else {
+            return ManagedStackSnapshot(
+                type: type,
+                unobservable: "\(type.displayName)を観測する手段が登録されていません。"
+            )
+        }
+        return await driver.observe(known: knownStacks(of: type))
+    }
+
+    /// 1スタックだけの再観測。同じ種類の全スタックを実測したうえで対象を取り出す。
+    private func observe(_ identity: ManagedStackIdentity) async -> ManagedStackObservation {
+        await observe(type: identity.type).observation(of: identity)
+    }
+
+    private func driver(
+        for type: ManagedStackType,
+        stackName: String
+    ) throws -> any ManagedStackDriver {
+        guard let driver = stackDrivers[type] else {
+            throw RuntimeError.managedCommandInvalid(
+                service: stackName,
+                reason: "\(type.displayName)を操作する手段が登録されていません。"
+            )
+        }
+        return driver
+    }
+
+    /// 登録済みまたは管理下のスタックがある種類を実測する。
+    /// 停止済みの管理関係は解除し、新しい管理関係は取得しない。
+    public func observeManagedStacks() async -> ManagedStackSnapshot {
+        var snapshot = ManagedStackSnapshot()
+        for type in typesToObserve() {
+            snapshot = snapshot.merging(await observe(type: type))
+        }
         for (serviceID, handle) in handles {
             guard case let .managed(supervisor) = handle else { continue }
-            await supervisor.update(observation: snapshot.observation(of: supervisor.projectID))
+            await supervisor.update(observation: snapshot.observation(of: supervisor.identity))
             await releaseStoppedManagedHandle(serviceID: serviceID, handle: handle)
         }
         return snapshot
     }
 
-    /// 表示用の最新実測値。読み出すだけではDocker/CLIを実行しない。
-    public func latestSupabaseSnapshot() async -> SupabaseStackSnapshot? {
-        await supabaseController.latestSnapshot
+    /// 表示用の最新実測値。読み出すだけでは外部コマンドを実行しない。
+    /// 種類ごとの最新値を合わせ、最新値の無い種類は未観測とする。どの種類にも無ければ nil。
+    public func latestManagedStackSnapshot() async -> ManagedStackSnapshot? {
+        var snapshot: ManagedStackSnapshot?
+        for type in stackDrivers.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let driver = stackDrivers[type],
+                  let latest = await driver.latestSnapshot else { continue }
+            snapshot = snapshot.map { $0.merging(latest) } ?? latest
+        }
+        return snapshot
     }
 
-    /// 管理下のSupabaseの実測結果を、1回の観測でまとめて更新する。
+    /// 管理下のスタックの実測結果を、1回の観測でまとめて更新する。
     ///
-    /// 登録済みSupabaseも管理下のスタックも無い場合はDockerを呼ばない。
-    /// Supabaseを使っていない利用者の操作へ、毎回の`docker ps`を足さないため。
+    /// 登録済みのスタックも管理下のスタックも無い場合は外部コマンドを実行しない。
+    /// スタックを使っていない利用者の操作へ、毎回の`docker ps`を足さないため。
     @discardableResult
-    public func refreshManagedObservations() async -> SupabaseStackSnapshot {
-        guard !knownSupabaseConfigurations.isEmpty
+    public func refreshManagedObservations() async -> ManagedStackSnapshot {
+        guard !knownStacks.isEmpty
             || handles.values.contains(where: \.isManaged)
         else {
-            return SupabaseStackSnapshot([])
+            return ManagedStackSnapshot()
         }
-        return await observeSupabaseStacks()
+        return await observeManagedStacks()
     }
 
     /// 今回Dev Switcherが起動する経路。開始コマンドと`running`確認の成功後だけ`launched`として登録する。
     public func startManagedStack(
-        service: ServiceDefinition,
-        in project: ProjectDefinition,
-        configuration: SupabaseServiceConfiguration,
-        projectID: SupabaseProjectID
+        _ stack: ResolvedManagedStack,
+        in project: ProjectDefinition
     ) async throws -> AsyncStream<ServiceSupervisor.Event> {
         guard !operationInFlight else { throw RuntimeError.operationInProgress }
         operationInFlight = true
         defer { operationInFlight = false }
 
-        try await checkManagedPreconditions(service: service, in: project)
+        try await checkManagedPreconditions(stackID: stack.stackID, stackName: stack.stackName, in: project)
+        let driver = try driver(for: stack.type, stackName: stack.stackName)
 
         // preflight後に別ターミナルから起動される競合を縮める。
         // ここで占有が見つかっても、Dev Switcher由来とはみなさない。
-        let beforeStart = await supabaseController.observe(
-            projectID: projectID,
-            known: knownSupabaseConfigurations
-        )
+        let beforeStart = await observe(stack.identity)
         guard beforeStart.state == .notRunning else {
             throw RuntimeError.managedStartOwnershipUnconfirmed(
-                service: service.name,
-                projectID: projectID,
+                stack: stack.stackName,
+                identity: stack.identity,
                 state: beforeStart.state,
                 reason: beforeStart.detail ?? "開始コマンドの実行直前に既存スタックを検出しました。"
             )
@@ -298,16 +355,9 @@ public actor RuntimeRegistry {
 
         let logs: [LogLine]
         do {
-            logs = try await supabaseController.start(
-                configuration: configuration,
-                projectID: projectID,
-                known: knownSupabaseConfigurations
-            )
+            logs = try await driver.start(stack, known: knownStacks(of: stack.type))
         } catch {
-            let afterFailure = await supabaseController.observe(
-                projectID: projectID,
-                known: knownSupabaseConfigurations
-            )
+            let afterFailure = await observe(stack.identity)
             guard afterFailure.state == .notRunning else {
                 let failureDetail = [
                     "開始処理の失敗: \(error)",
@@ -316,8 +366,8 @@ public actor RuntimeRegistry {
                     .compactMap { $0 }
                     .joined(separator: "\n")
                 throw RuntimeError.managedStartOwnershipUnconfirmed(
-                    service: service.name,
-                    projectID: projectID,
+                    stack: stack.stackName,
+                    identity: stack.identity,
                     state: afterFailure.state,
                     reason: failureDetail
                 )
@@ -327,27 +377,24 @@ public actor RuntimeRegistry {
 
         // コマンド成功とrunning確認が揃ったこの時点で初めて停止権限を取得する。
         let supervisor = registerManaged(
-            service: service,
+            stack,
             in: project,
-            configuration: configuration,
-            projectID: projectID,
             relationship: .launched,
-            observation: SupabaseStackObservation(projectID: projectID, state: .running)
+            observation: ManagedStackObservation(identity: stack.identity, state: .running),
+            driver: driver
         )
         let stream = await supervisor.makeEventStream()
         await supervisor.emit(logs: logs)
         return stream
     }
 
-    /// 既存スタックを引き継ぐ経路。`supabase start`は実行しない。
+    /// 既存スタックを引き継ぐ経路。起動コマンドは実行しない。
     /// 利用者の承認、または保存済み手掛かりの再検証を通った場合にだけ呼ぶ。
     public func adoptManagedStack(
-        service: ServiceDefinition,
+        _ stack: ResolvedManagedStack,
         in project: ProjectDefinition,
-        configuration: SupabaseServiceConfiguration,
-        projectID: SupabaseProjectID,
-        relationship: SupabaseManagementRelationship,
-        observation: SupabaseStackObservation
+        relationship: ManagedStackRelationship,
+        observation: ManagedStackObservation
     ) async throws -> AsyncStream<ServiceSupervisor.Event> {
         guard !operationInFlight else { throw RuntimeError.operationInProgress }
         operationInFlight = true
@@ -355,45 +402,46 @@ public actor RuntimeRegistry {
 
         guard relationship != .launched else {
             throw RuntimeError.managedCommandInvalid(
-                service: service.name,
+                service: stack.stackName,
                 reason: "引き継ぎ経路では `launched` として登録できません。"
             )
         }
-        try await checkManagedPreconditions(service: service, in: project)
+        try await checkManagedPreconditions(stackID: stack.stackID, stackName: stack.stackName, in: project)
+        let driver = try driver(for: stack.type, stackName: stack.stackName)
 
         let supervisor = registerManaged(
-            service: service,
+            stack,
             in: project,
-            configuration: configuration,
-            projectID: projectID,
             relationship: relationship,
-            observation: observation
+            observation: observation,
+            driver: driver
         )
         return await supervisor.makeEventStream()
     }
 
-    /// 承認済みの既存スタックを、対象`project_id`だけ指定して停止する。
+    /// 承認済みの既存スタックを、対象のIDだけ指定して停止する。
     ///
     /// 管理下に無いスタックへ実行できる唯一の経路。承認内容の照合は呼び出し側が行い、
-    /// ここでは排他と「対象限定stop＋停止確認」だけを担当する。
+    /// ここでは排他と「対象限定の停止＋停止確認」だけを担当する。
+    /// `context`はコマンドの実行に使う設定で、`identity`と同じ種類でなければならない。
     public func stopUnmanagedStack(
-        using configuration: SupabaseServiceConfiguration,
-        projectID: SupabaseProjectID
+        _ identity: ManagedStackIdentity,
+        using context: ResolvedManagedStack
     ) async throws {
         guard !operationInFlight else { throw RuntimeError.operationInProgress }
         operationInFlight = true
         defer { operationInFlight = false }
 
-        _ = try await supabaseController.stop(
-            using: configuration,
-            projectID: projectID,
-            known: knownSupabaseConfigurations
-        )
+        guard context.type == identity.type else {
+            throw ManagedStackIdentityError.typeMismatch(expected: context.type, actual: identity.type)
+        }
+        let driver = try driver(for: identity.type, stackName: context.stackName)
+        _ = try await driver.stop(identity, using: context, known: knownStacks(of: identity.type))
         // 同じスタックを管理していたhandleが残っていたら、実測に合わせて外す。
         for (serviceID, handle) in handles {
             guard case let .managed(supervisor) = handle,
-                  supervisor.projectID == projectID else { continue }
-            await supervisor.update(observation: SupabaseStackObservation(projectID: projectID, state: .notRunning))
+                  supervisor.identity == identity else { continue }
+            await supervisor.update(observation: ManagedStackObservation(identity: identity, state: .notRunning))
             await releaseStoppedManagedHandle(serviceID: serviceID, handle: handle)
         }
     }
@@ -409,57 +457,56 @@ public actor RuntimeRegistry {
         await supervisor.finishEvents()
     }
 
-    public func managedRelationship(serviceID: UUID) async -> SupabaseManagementRelationship? {
-        guard case let .managed(supervisor) = handles[serviceID] else { return nil }
+    public func managedRelationship(stackID: UUID) async -> ManagedStackRelationship? {
+        guard case let .managed(supervisor) = handles[stackID] else { return nil }
         return supervisor.relationship
     }
 
-    public func managedObservation(serviceID: UUID) async -> SupabaseStackObservation? {
-        guard case let .managed(supervisor) = handles[serviceID] else { return nil }
+    public func managedObservation(stackID: UUID) async -> ManagedStackObservation? {
+        guard case let .managed(supervisor) = handles[stackID] else { return nil }
         return await supervisor.observation
     }
 
-    /// 管理下のSupabaseの`project_id`。停止対象の重複判定に使う。
-    public func managedSupabaseProjectIDs() async -> [UUID: SupabaseProjectID] {
-        var result: [UUID: SupabaseProjectID] = [:]
+    /// 管理下のスタックのID。停止対象の重複判定に使う。
+    public func managedStackIdentities() async -> [UUID: ManagedStackIdentity] {
+        var result: [UUID: ManagedStackIdentity] = [:]
         for (serviceID, handle) in handles {
             guard case let .managed(supervisor) = handle else { continue }
-            result[serviceID] = supervisor.projectID
+            result[serviceID] = supervisor.identity
         }
         return result
     }
 
     private func registerManaged(
-        service: ServiceDefinition,
+        _ stack: ResolvedManagedStack,
         in project: ProjectDefinition,
-        configuration: SupabaseServiceConfiguration,
-        projectID: SupabaseProjectID,
-        relationship: SupabaseManagementRelationship,
-        observation: SupabaseStackObservation
-    ) -> ManagedCommandSupervisor {
-        let supervisor = ManagedCommandSupervisor(
-            configuration: configuration,
-            projectID: projectID,
+        relationship: ManagedStackRelationship,
+        observation: ManagedStackObservation,
+        driver: any ManagedStackDriver
+    ) -> ManagedStackSupervisor {
+        let supervisor = ManagedStackSupervisor(
+            stack: stack,
             relationship: relationship,
             observation: observation,
-            controller: supabaseController
+            driver: driver
         )
-        handles[service.id] = .managed(supervisor)
-        residualHints[service.id] = nil
-        owners[service.id] = ServiceOwner(
+        handles[stack.stackID] = .managed(supervisor)
+        residualHints[stack.stackID] = nil
+        owners[stack.stackID] = ServiceOwner(
             projectID: project.id,
             projectName: project.name,
-            serviceName: service.name
+            serviceName: stack.stackName
         )
         return supervisor
     }
 
     private func checkManagedPreconditions(
-        service: ServiceDefinition,
+        stackID: UUID,
+        stackName: String,
         in project: ProjectDefinition
     ) async throws {
-        if let existing = handles[service.id], await existing.isOccupyingResources() {
-            throw RuntimeError.alreadyRunning(service: service.name)
+        if let existing = handles[stackID], await existing.isOccupyingResources() {
+            throw RuntimeError.alreadyRunning(service: stackName)
         }
         if let running = await runningProject(), running.projectID != project.id {
             throw RuntimeError.otherProjectRunning(
@@ -698,9 +745,9 @@ public actor RuntimeRegistry {
         }
         do {
             let outcome = if force {
-                try await handle.forceStop(grace: grace, known: knownSupabaseConfigurations)
+                try await handle.forceStop(grace: grace, known: knownStacks)
             } else {
-                try await handle.stop(grace: grace, known: knownSupabaseConfigurations)
+                try await handle.stop(grace: grace, known: knownStacks)
             }
             await releaseStoppedManagedHandle(serviceID: service.id, handle: handle)
             return outcome
@@ -873,31 +920,28 @@ public actor RuntimeRegistry {
         return hints.sorted { $0.serviceID.uuidString < $1.serviceID.uuidString }
     }
 
-    /// SupabaseはPIDを持たないため、次回再検証する対象だけを別形式で返す。
-    /// 稼働状態ではなく、`project_id`・設定ディレクトリ・構成同一性・管理関係を保存する。
-    public func managedRuntimeHints() async throws -> [ManagedRuntimeHint] {
-        var hints: [ManagedRuntimeHint] = []
+    /// 管理対象スタックはPIDを持たないため、次回再検証する対象だけを別形式で返す。
+    /// 稼働状態ではなく、種類・ID・構成同一性・管理関係を保存する。
+    public func managedRuntimeHints() async throws -> [ManagedStackHint] {
+        var hints: [ManagedStackHint] = []
         for (serviceID, handle) in handles {
             guard case let .managed(supervisor) = handle else { continue }
             guard await handle.isOccupyingResources() else { continue }
             guard let owner = owners[serviceID] else {
                 throw RuntimeHintSnapshotError.ownerUnavailable(serviceID: serviceID)
             }
-            let configuration = supervisor.configuration
             hints.append(
-                ManagedRuntimeHint(
+                ManagedStackHint(
                     projectID: owner.projectID,
-                    serviceID: serviceID,
-                    serviceName: owner.serviceName,
-                    supabaseProjectID: supervisor.projectID,
-                    configDirectory: configuration.configDirectory,
-                    fingerprint: configuration.fingerprint,
+                    stackID: serviceID,
+                    stackName: owner.serviceName,
+                    configuration: supervisor.stack.configuration,
                     // 再検証で復元したものも、次回はやはり実測で確かめる。
                     relationship: supervisor.relationship
                 )
             )
         }
-        return hints.sorted { $0.serviceID.uuidString < $1.serviceID.uuidString }
+        return hints.sorted { $0.stackID.uuidString < $1.stackID.uuidString }
     }
 
     private func runningProject() async -> ServiceOwner? {
@@ -912,6 +956,16 @@ public actor RuntimeRegistry {
 }
 
 fileprivate extension RuntimeRegistry.Handle {
+    /// driver へ渡す、同じ種類の既知スタック。
+    static func known(
+        _ stacks: [ManagedStackIdentity: ResolvedManagedStack],
+        of type: ManagedStackType
+    ) -> [ResolvedManagedStack] {
+        stacks.values
+            .filter { $0.type == type }
+            .sorted { $0.identity < $1.identity }
+    }
+
     func isRunning() async -> Bool {
         switch self {
         case let .launched(supervisor): await supervisor.isRunning
@@ -1057,7 +1111,7 @@ fileprivate extension RuntimeRegistry.Handle {
 
     func stop(
         grace: Duration,
-        known: [SupabaseProjectID: SupabaseServiceConfiguration]
+        known: [ManagedStackIdentity: ResolvedManagedStack]
     ) async throws -> ServiceStopOutcome {
         switch self {
         case let .launched(supervisor):
@@ -1079,13 +1133,13 @@ fileprivate extension RuntimeRegistry.Handle {
         case let .residualGroup(supervisor):
             return await supervisor.stop(grace: grace)
         case let .managed(supervisor):
-            return try await supervisor.stop(known: known)
+            return try await supervisor.stop(known: Self.known(known, of: supervisor.identity.type))
         }
     }
 
     func forceStop(
         grace: Duration,
-        known: [SupabaseProjectID: SupabaseServiceConfiguration]
+        known: [ManagedStackIdentity: ResolvedManagedStack]
     ) async throws -> ServiceStopOutcome {
         switch self {
         case let .launched(supervisor):
@@ -1108,7 +1162,7 @@ fileprivate extension RuntimeRegistry.Handle {
             return await supervisor.forceStop(grace: grace)
         case let .managed(supervisor):
             // 外部リソースにSIGKILLは対応しない。対象限定の停止コマンドを再試行する。
-            return try await supervisor.stop(known: known)
+            return try await supervisor.stop(known: Self.known(known, of: supervisor.identity.type))
         }
     }
 }
