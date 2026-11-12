@@ -35,6 +35,9 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     public var workingDirectories: [WorkingDirectoryDefinition]
     /// 配列順が起動順。
     public var services: [ServiceDefinition]
+    public var managedStacks: [ManagedStackDefinition]
+    /// 旧形式から順序が変わった場合に、次の保存まで表示する。保存しない。
+    public var migrationNotice: String?
     /// 既定の終了順（起動順の逆）を上書きするときだけ設定する。
     /// 設定する場合は全サービスIDを過不足なく含める必要があり、検証で保証する。
     public var stopOrder: [UUID]?
@@ -47,6 +50,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         color: ProjectColor,
         workingDirectories: [WorkingDirectoryDefinition],
         services: [ServiceDefinition],
+        managedStacks: [ManagedStackDefinition] = [],
         stopOrder: [UUID]? = nil,
         enabledNow: [UUID: Bool] = [:]
     ) {
@@ -55,6 +59,8 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         self.color = color
         self.workingDirectories = workingDirectories
         self.services = services
+        self.managedStacks = managedStacks
+        self.migrationNotice = nil
         self.stopOrder = stopOrder
         self.enabledNow = enabledNow
     }
@@ -67,6 +73,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         color: ProjectColor,
         directory: URL,
         services: [ServiceDefinition],
+        managedStacks: [ManagedStackDefinition] = [],
         stopOrder: [UUID]? = nil,
         enabledNow: [UUID: Bool] = [:]
     ) {
@@ -79,6 +86,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
                 fallbackDirectory: directory
             ),
             services: services,
+            managedStacks: managedStacks,
             stopOrder: stopOrder,
             enabledNow: enabledNow
         )
@@ -113,10 +121,10 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
 
     /// 今回そのサービスを起動するか。`enabledNow`が未設定なら`enabledByDefault`に従う。
     public func isEnabledNow(_ serviceID: UUID) -> Bool {
-        guard let service = service(id: serviceID) else {
-            preconditionFailure("存在しないプロセスの起動対象は取得できません。")
+        guard let unit = entry(id: serviceID) else {
+            preconditionFailure("存在しないプロセス・スタックの起動対象は取得できません。")
         }
-        return enabledNow[serviceID] ?? service.enabledByDefault
+        return enabledNow[serviceID] ?? unit.enabledByDefault
     }
 
     /// 今回起動するサービスを起動順で返す。
@@ -145,12 +153,13 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
 
     // MARK: - Codable
 
-    private enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case name
         case color
         case workingDirectories
         case services
+        case managedStacks
         case stopOrder
         case enabledNow
     }
@@ -158,6 +167,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     /// `[UUID: Bool]`をそのままエンコードするとJSONが配列になり、人が読めなくなる。
     /// キーをUUID文字列へ明示変換し、解釈できないキーは既定値へ倒さずエラーにする。
     public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.allCases.map(\.rawValue))
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
@@ -167,9 +177,11 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
             forKey: .workingDirectories
         )
         services = try container.decode([ServiceDefinition].self, forKey: .services)
-        stopOrder = try container.decodeIfPresent([UUID].self, forKey: .stopOrder)
+        managedStacks = try container.decode([ManagedStackDefinition].self, forKey: .managedStacks)
+        migrationNotice = nil
+        stopOrder = try container.optional([UUID].self, forKey: .stopOrder)
 
-        let rawEnabledNow = try container.decodeIfPresent(
+        let rawEnabledNow = try container.optional(
             [String: Bool].self,
             forKey: .enabledNow
         ) ?? [:]
@@ -181,6 +193,9 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
                     in: container,
                     debugDescription: "起動対象のキー「\(key)」をサービス ID として解釈できません。"
                 )
+            }
+            guard parsed[serviceID] == nil else {
+                throw DecodingError.dataCorruptedError(forKey: .enabledNow, in: container, debugDescription: "起動対象の ID が重複しています。")
             }
             parsed[serviceID] = value
         }
@@ -194,6 +209,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         try container.encode(color, forKey: .color)
         try container.encode(workingDirectories, forKey: .workingDirectories)
         try container.encode(services, forKey: .services)
+        try container.encode(managedStacks, forKey: .managedStacks)
         try container.encodeIfPresent(stopOrder, forKey: .stopOrder)
         let rawEnabledNow = Dictionary(
             uniqueKeysWithValues: enabledNow.map { ($0.key.uuidString, $0.value) }
@@ -205,6 +221,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     /// 同じ末尾名が複数ある場合だけ番号を付け、名前重複による読み込み失敗を避ける。
     private static func groupedWorkingDirectories(
         services: [ServiceDefinition],
+        managedStacks: [ManagedStackDefinition] = [],
         fallbackDirectory: URL
     ) -> [WorkingDirectoryDefinition] {
         guard !services.isEmpty else {

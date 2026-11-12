@@ -7,7 +7,7 @@ import Testing
 struct LaunchUnitTests {
     private let directory = URL(fileURLWithPath: "/tmp/devswitcher-launch-unit-tests", isDirectory: true)
 
-    private func makeServices() -> (web: ServiceDefinition, supabase: ServiceDefinition, worker: ServiceDefinition) {
+    private func makeServices() -> (web: LaunchUnit, supabase: LaunchUnit, worker: LaunchUnit) {
         (
             web: makeService(name: "Web", kind: .web, workingDirectory: directory),
             supabase: makeSupabaseService(name: "DB", workingDirectory: directory),
@@ -25,12 +25,12 @@ struct LaunchUnitTests {
 
         let definition = try #require(services.supabase.managedStackDefinition)
         #expect(project.launchUnits == [
-            .process(services.web),
             .stack(definition, workingDirectory: services.supabase.start.workingDirectory),
+            .process(services.web),
             .process(services.worker),
         ])
-        #expect(project.launchUnits.map(\.id) == project.startupOrder.map(\.id))
-        #expect(project.launchUnits.map(\.name) == project.startupOrder.map(\.name))
+        #expect(project.launchUnits.dropFirst().map(\.id) == project.startupOrder.map(\.id))
+        #expect(project.launchUnits.dropFirst().map(\.name) == project.startupOrder.map(\.name))
     }
 
     @Test("enabledLaunchUnitsはenabledStartupOrderと同じ対象・同じ順になる")
@@ -44,7 +44,7 @@ struct LaunchUnitTests {
             enabledNow: [services.web.id: false]
         )
 
-        #expect(project.enabledLaunchUnits.map(\.id) == project.enabledStartupOrder.map(\.id))
+        #expect(project.enabledLaunchUnits.filter { $0.processDefinition != nil }.map(\.id) == project.enabledStartupOrder.map(\.id))
         #expect(project.enabledLaunchUnits.map(\.id) == [services.supabase.id, services.worker.id])
     }
 
@@ -57,7 +57,7 @@ struct LaunchUnitTests {
             enabledNow: [services.supabase.id: false]
         )
 
-        #expect(project.enabledLaunchUnits.map(\.id) == project.enabledStartupOrder.map(\.id))
+        #expect(project.enabledLaunchUnits.filter { $0.processDefinition != nil }.map(\.id) == project.enabledStartupOrder.map(\.id))
         #expect(project.enabledLaunchUnits.map(\.id) == [services.web.id, services.worker.id])
         #expect(project.enabledLaunchUnits.allSatisfy {
             if case .process = $0 { true } else { false }
@@ -72,8 +72,8 @@ struct LaunchUnitTests {
             services: [services.web, services.supabase, services.worker]
         )
 
-        #expect(project.shutdownUnits.map(\.id) == project.shutdownOrder.map(\.id))
-        #expect(project.shutdownUnits.map(\.id) == [services.worker.id, services.supabase.id, services.web.id])
+        #expect(project.shutdownUnits.dropLast().map(\.id) == project.shutdownOrder.map(\.id))
+        #expect(project.shutdownUnits.map(\.id) == [services.worker.id, services.web.id, services.supabase.id])
     }
 
     @Test("shutdownUnitsはstopOrderの指定順に従う")
@@ -86,8 +86,8 @@ struct LaunchUnitTests {
             stopOrder: stopOrder
         )
 
-        #expect(project.shutdownUnits.map(\.id) == project.shutdownOrder.map(\.id))
-        #expect(project.shutdownUnits.map(\.id) == stopOrder)
+        #expect(project.shutdownUnits.dropLast().map(\.id) == project.shutdownOrder.map(\.id))
+        #expect(project.shutdownUnits.map(\.id) == [services.web.id, services.worker.id, services.supabase.id])
     }
 
     @Test("supabase以外の種類は、すべて通常プロセスの起動単位になる")

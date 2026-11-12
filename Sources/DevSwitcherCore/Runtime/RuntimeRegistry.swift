@@ -31,7 +31,7 @@ public struct ServiceRuntimeSnapshot: Equatable, Sendable {
 /// 「止まらなかった」とだけ返すと、利用者が次に何をすればよいか決められない。
 public enum ServiceStopOutcome: Equatable, Sendable {
     /// 停止した。引き継いだプロセスは子ではないため終了状態を取得できず nil になる。
-    case stopped(ExitStatus?)
+    case stopped(ExitStatus?, warning: String? = nil)
     case residual(processGroupID: pid_t, reason: String)
     /// 未回収リーダーによるPGID予約を失った。古いPGIDへは送信もdrain待ちもしない。
     case ownershipLost(reason: String)
@@ -82,6 +82,10 @@ public actor RuntimeRegistry {
     }
 
     private var handles: [UUID: Handle] = [:]
+    private var stopWarningMessages: [UUID: String] = [:]
+    private var processDefinitions: [UUID: ServiceDefinition] = [:]
+    private var stopCommandParents: [UUID: UUID] = [:]
+    private let stopCommandTimeout: Duration
     /// 残存グループの手掛かり。同定条件を広げないため、記録時刻を書き換えずに持ち回る。
     private var residualHints: [UUID: RuntimeHint] = [:]
     private var owners: [UUID: ServiceOwner] = [:]
@@ -107,6 +111,7 @@ public actor RuntimeRegistry {
 
     public init(
         portPollInterval: Duration = .seconds(2),
+        stopCommandTimeout: Duration = .seconds(30),
         logDirectory: URL? = nil,
         environmentLoader: @escaping ShellEnvironmentLoader = { try await LoginShellEnvironment.load() },
         identityProbe: @escaping ServiceSupervisor.ProcessIdentityProbe = { pid, workingDirectory in
@@ -128,6 +133,7 @@ public actor RuntimeRegistry {
         stackDrivers: [ManagedStackType: any ManagedStackDriver]? = nil
     ) {
         self.portPollInterval = portPollInterval
+        self.stopCommandTimeout = stopCommandTimeout
         self.logDirectoryOverride = logDirectory
         self.environmentLoader = environmentLoader
         self.identityProbe = identityProbe
@@ -138,6 +144,7 @@ public actor RuntimeRegistry {
         self.bootSessionProbe = bootSessionProbe
         // 実装を渡されない場合だけ、実Docker・実CLIを使う既定の driver を組み立てる。
         let drivers = stackDrivers ?? [
+            .dockerCompose: DockerComposeStackDriver(runner: ManagedStackProcessCommandRunner(environmentProvider: environmentLoader)),
             .supabase: SupabaseStackDriver(
                 inventory: SupabaseDockerInventory(environmentProvider: environmentLoader),
                 runner: ManagedStackProcessCommandRunner(environmentProvider: environmentLoader)
@@ -171,19 +178,10 @@ public actor RuntimeRegistry {
         operationInFlight = true
         defer { operationInFlight = false }
 
+        if ProcessCommandClassification.supabaseStart(service.start) == .certain {
+            throw RuntimeError.managedCommandInvalid(service: service.name, reason: "Supabase の起動は管理対象スタックとして登録してください。")
+        }
         // 管理対象スタックは実測と確認を伴う専用経路から起動する。
-        if let definition = service.managedStackDefinition {
-            throw RuntimeError.managedCommandInvalid(
-                service: service.name,
-                reason: "\(definition.type.displayName)は既存スタックの実測と確認を伴う専用経路から起動します。"
-            )
-        }
-        // カスタム終了コマンドは状態確認方法が定義されていない。
-        // プロセスグループ停止へ黙って倒すと、停止したつもりでリソースが残る。
-        guard service.usesProcessGroupStop else {
-            throw RuntimeError.stopCommandUnsupported(service: service.name)
-        }
-
         if let existing = handles[service.id] {
             if await existing.isRunning() {
                 throw RuntimeError.alreadyRunning(service: service.name)
@@ -197,6 +195,10 @@ public actor RuntimeRegistry {
                     processGroupID: processGroupID
                 )
             }
+        }
+
+        if await isOccupyingResources(serviceID: service.id), let pgid = await occupiedProcessGroup(serviceID: service.id) {
+            throw RuntimeError.residualProcessesRemain(service: service.name, processGroupID: pgid)
         }
 
         // 保存状態は古くなりうるため、プロジェクト間の排他は実プロセスから判断する。
@@ -227,6 +229,8 @@ public actor RuntimeRegistry {
             startAbstimeProbe: startAbstimeProbe,
             bootSessionProbe: bootSessionProbe
         )
+        processDefinitions[service.id] = service
+        stopWarningMessages[service.id] = nil
         handles[service.id] = .launched(supervisor)
         owners[service.id] = ServiceOwner(
             projectID: project.id,
@@ -531,6 +535,7 @@ public actor RuntimeRegistry {
             service: service,
             in: project
         )
+        if let parent = candidate.hint.stopCommandFor { stopCommandParents[service.id] = parent }
     }
 
     func adopt(
@@ -574,6 +579,7 @@ public actor RuntimeRegistry {
                 pid: identity.pid
             )
         }
+        processDefinitions[service.id] = service
         handles[service.id] = .adopted(supervisor)
         residualHints[service.id] = nil
         owners[service.id] = ServiceOwner(
@@ -643,6 +649,8 @@ public actor RuntimeRegistry {
             signalSender: signalSender,
             portProbe: portProbe
         )
+        processDefinitions[service.id] = service
+        if let parent = hint.stopCommandFor { stopCommandParents[service.id] = parent }
         handles[service.id] = .residualGroup(supervisor)
         residualHints[service.id] = hint.updatingGroupEvidence(verifiedEvidence)
         owners[service.id] = ServiceOwner(
@@ -719,7 +727,7 @@ public actor RuntimeRegistry {
         service: ServiceDefinition,
         grace: Duration = .seconds(10)
     ) async throws -> ServiceStopOutcome {
-        try await stop(service: service, grace: grace, force: false)
+        try await stop(id: service.id, name: service.name, grace: grace, force: false)
     }
 
     /// 強制終了。利用者が対象を確認して明示的に選んだ場合にのみ呼ぶ。
@@ -727,21 +735,48 @@ public actor RuntimeRegistry {
         service: ServiceDefinition,
         grace: Duration = .seconds(5)
     ) async throws -> ServiceStopOutcome {
-        try await stop(service: service, grace: grace, force: true)
+        try await stop(id: service.id, name: service.name, grace: grace, force: true)
     }
 
     /// 停止方法によらず、排他と停止後の管理解除を同じ経路で行う。
     private func stop(
-        service: ServiceDefinition,
+        id: UUID,
+        name: String,
         grace: Duration,
         force: Bool
     ) async throws -> ServiceStopOutcome {
         guard !operationInFlight else { throw RuntimeError.operationInProgress }
         operationInFlight = true
         defer { operationInFlight = false }
+        stopWarningMessages[id] = nil
 
-        guard let handle = handles[service.id] else {
-            throw RuntimeError.notRunning(service: service.name)
+        let auxiliary = stopCommandParents.filter { $0.value == id }.map(\.key)
+        for commandID in auxiliary {
+            guard let commandHandle = handles[commandID], await commandHandle.isOccupyingResources() else { continue }
+            let result = force ? try await commandHandle.forceStop(grace: grace, known: knownStacks) : try await commandHandle.stop(grace: grace, known: knownStacks)
+            if !result.isStopped { return result }
+        }
+        guard let handle = handles[id] else {
+            if !auxiliary.isEmpty { return .stopped(nil) }
+            throw RuntimeError.notRunning(service: name)
+        }
+        if !auxiliary.isEmpty, await handle.isOccupyingResources() == false {
+            await handle.completeCommandStopObservation()
+            return .stopped(nil)
+        }
+        if !force, case let .command(stopCommand)? = processDefinitions[id]?.stopMethod {
+            do {
+                let result = try await stopUsingCommand(stopCommand, id: id, name: name, handle: handle, grace: grace)
+                var auxiliaryRemains = false
+                for (commandID, parent) in stopCommandParents where parent == id {
+                    if let child = handles[commandID], await child.isOccupyingResources() { auxiliaryRemains = true }
+                }
+                if !auxiliaryRemains { await handle.completeCommandStopObservation() }
+                return result
+            } catch {
+                await handle.completeCommandStopObservation()
+                throw error
+            }
         }
         do {
             let outcome = if force {
@@ -749,13 +784,88 @@ public actor RuntimeRegistry {
             } else {
                 try await handle.stop(grace: grace, known: knownStacks)
             }
-            await releaseStoppedManagedHandle(serviceID: service.id, handle: handle)
+            await handle.completeCommandStopObservation()
+            await releaseStoppedManagedHandle(serviceID: id, handle: handle)
             return outcome
         } catch {
             // コマンドが失敗しても、再観測で停止を確認できた場合は管理を解除する。
-            await releaseStoppedManagedHandle(serviceID: service.id, handle: handle)
+            await releaseStoppedManagedHandle(serviceID: id, handle: handle)
             throw error
         }
+    }
+
+    private func stopUsingCommand(_ command: CommandSpec, id: UUID, name: String, handle: Handle, grace: Duration) async throws -> ServiceStopOutcome {
+        guard try await handle.prepareCommandStop() else { return .stopped(nil) }
+        let shell = try await environment()
+        let resolved = try ExecutableResolver.resolve(command, searchPath: shell.searchPath)
+        let commandID = UUID()
+        let logDirectory = try logDirectoryOverride ?? ApplicationPaths.logDirectory()
+        let files = ServiceLogFiles(directory: logDirectory, serviceID: id)
+        let supervisor = ServiceSupervisor(serviceID: commandID, serviceName: name + " の停止コマンド", command: resolved,
+            logDirectory: logDirectory, sharedLogFiles: files, appendOutput: true,
+            identityProbe: identityProbe, groupStateProbe: groupStateProbe, signalSender: signalSender,
+            portProbe: portProbe, startAbstimeProbe: startAbstimeProbe, bootSessionProbe: bootSessionProbe)
+        handles[commandID] = .launched(supervisor)
+        processDefinitions[commandID] = ServiceDefinition(id: commandID, name: name + " の停止コマンド", ports: [], start: command, enabledByDefault: false, failurePolicy: .block)
+        stopCommandParents[commandID] = id
+        guard let owner = owners[id] else { throw RuntimeHintSnapshotError.ownerUnavailable(serviceID: id) }
+        owners[commandID] = ServiceOwner(projectID: owner.projectID, projectName: owner.projectName, serviceName: name + " の停止コマンド")
+        _ = try await supervisor.start(environment: shell.variables)
+        var warning: String?
+        if let status = await supervisor.waitForCommandExit(timeout: stopCommandTimeout) {
+            if !status.isSuccess { warning = "停止コマンドが失敗しました（\(status.description)）。" }
+        } else {
+            warning = "停止コマンドが \(Int(stopCommandTimeout.seconds)) 秒以内に終了しませんでした。停止コマンドのグループへ SIGTERM を送りました。"
+            _ = try await supervisor.stop(grace: grace)
+        }
+        if let message = warning {
+            do {
+                let output = try FileHandle(forWritingTo: files.standardError)
+                defer { try? output.close() }
+                try output.seekToEnd()
+                try output.write(contentsOf: Data(("\n[Dev Switcher] " + message + "\n").utf8))
+            } catch {
+                warning = message + "\n停止コマンドの結果をログへ書き込めません。\n\(error)"
+            }
+        }
+        stopWarningMessages[id] = warning
+        let outcome = await handle.waitForCommandStop(grace: grace)
+        if await supervisor.isOccupyingResources(), let pgid = await supervisor.processGroupID {
+            return .residual(processGroupID: pgid, reason: (warning.map { $0 + "\n" } ?? "") + "停止コマンドのプロセスグループが残っています。対象グループと停止コマンドを保持しています。")
+        }
+        switch outcome {
+        case let .stopped(status, _): return .stopped(status, warning: warning)
+        case let .residual(pgid, reason): return .residual(processGroupID: pgid, reason: (warning.map { $0 + "\n" } ?? "") + reason)
+        case .ownershipLost: return outcome
+        }
+    }
+
+    public func stopWarnings(projectID: UUID) -> [String] {
+        stopWarningMessages.keys.sorted { $0.uuidString < $1.uuidString }.compactMap { id in
+            guard let owner = owners[id], owner.projectID == projectID, let warning = stopWarningMessages[id] else { return nil }
+            return "\(owner.serviceName): \(warning)"
+        }
+    }
+
+    func registerStopCommandRole(_ hint: RuntimeHint) throws {
+        guard let parent = hint.stopCommandFor else { return }
+        guard parent != hint.serviceID, let command = hint.stopCommand, processDefinitions[hint.serviceID]?.start == command else {
+            throw RuntimeError.invalidHandoff(service: hint.serviceName, reason: "停止コマンドの設定が一致しません。")
+        }
+        stopCommandParents[hint.serviceID] = parent
+    }
+
+    public func start(service: LaunchUnit, in project: ProjectDefinition) async throws -> AsyncStream<ServiceSupervisor.Event> {
+        guard let process = service.processDefinition else {
+            throw RuntimeError.managedCommandInvalid(service: service.name, reason: "スタックは専用の起動処理を使用してください。")
+        }
+        return try await start(service: process, in: project)
+    }
+    public func stop(service: LaunchUnit, grace: Duration = .seconds(10)) async throws -> ServiceStopOutcome {
+        try await stop(id: service.id, name: service.name, grace: grace, force: false)
+    }
+    public func forceStop(service: LaunchUnit, grace: Duration = .seconds(5)) async throws -> ServiceStopOutcome {
+        try await stop(id: service.id, name: service.name, grace: grace, force: true)
     }
 
     // MARK: - 観測
@@ -772,8 +882,11 @@ public actor RuntimeRegistry {
     }
 
     public func isOccupyingResources(serviceID: UUID) async -> Bool {
-        guard let handle = handles[serviceID] else { return false }
-        return await handle.isOccupyingResources()
+        if let handle = handles[serviceID], await handle.isOccupyingResources() { return true }
+        for (id, parent) in stopCommandParents where parent == serviceID {
+            if let handle = handles[id], await handle.isOccupyingResources() { return true }
+        }
+        return false
     }
 
     public func observedRuntime(serviceID: UUID) async -> ObservedRuntime? {
@@ -787,15 +900,30 @@ public actor RuntimeRegistry {
     /// 残存グループでは作れない。それでもプロセスグループと実測ポートは分かるので、
     /// 表示できる情報を落とさないよう別の型で返す。
     public func runtimeSnapshot(serviceID: UUID) async -> ServiceRuntimeSnapshot? {
-        guard let handle = handles[serviceID] else { return nil }
-        return await handle.runtimeSnapshot()
+        var auxiliary: [ServiceRuntimeSnapshot] = []
+        for (id, parent) in stopCommandParents.sorted(by: { $0.key.uuidString < $1.key.uuidString }) where parent == serviceID {
+            guard let handle = handles[id], await handle.isOccupyingResources(), let snapshot = await handle.runtimeSnapshot() else { continue }
+            auxiliary.append(snapshot)
+        }
+        let original = await handles[serviceID]?.runtimeSnapshot()
+        guard !auxiliary.isEmpty else { return original }
+        let originalActive = await handles[serviceID]?.isOccupyingResources() == true
+        let snapshots = (originalActive ? original.map { [$0] } ?? [] : []) + auxiliary
+        let representative = originalActive ? original : auxiliary.first
+        let ports = snapshots.flatMap(\.observedPorts)
+        let record: ObservedPortRecord = snapshots.allSatisfy { $0.observedPortRecord.observed != nil }
+            ? .observed(Array(Set(snapshots.flatMap { $0.observedPortRecord.observed! })).sorted()) : .unavailable
+        return ServiceRuntimeSnapshot(processID: originalActive ? original?.processID : nil, processGroupID: representative?.processGroupID,
+            observedPortRecord: record, observedPorts: ports, startedAt: originalActive ? original?.startedAt : nil)
     }
 
     /// ポートを今すぐ実測し直す。停止前のゲート用スナップショットを取る直前に呼ぶ。
     /// 失敗は握りつぶさず送出する。「ポートなし」と扱ってはいけない。
     public func refreshPorts(serviceID: UUID) async throws {
-        guard let handle = handles[serviceID] else { return }
-        try await handle.refreshPorts()
+        if let handle = handles[serviceID] { try await handle.refreshPorts() }
+        for (id, parent) in stopCommandParents where parent == serviceID {
+            if let handle = handles[id], await handle.isOccupyingResources() { try await handle.refreshPorts() }
+        }
     }
 
     public func runningServiceIDs() async -> Set<UUID> {
@@ -824,7 +952,7 @@ public actor RuntimeRegistry {
         var ids: Set<UUID> = []
         for (serviceID, handle) in handles {
             guard owners[serviceID]?.projectID == projectID else { continue }
-            if await handle.isOccupyingResources() { ids.insert(serviceID) }
+            if await handle.isOccupyingResources() { ids.insert(stopCommandParents[serviceID] ?? serviceID) }
         }
         return ids
     }
@@ -838,10 +966,11 @@ public actor RuntimeRegistry {
     }
 
     public func occupiedProcessGroup(serviceID: UUID) async -> pid_t? {
-        guard let handle = handles[serviceID],
-              await handle.isOccupyingResources()
-        else { return nil }
-        return await handle.processGroupID()
+        if let handle = handles[serviceID], await handle.isOccupyingResources() { return await handle.processGroupID() }
+        for (id, parent) in stopCommandParents where parent == serviceID {
+            if let handle = handles[id], await handle.isOccupyingResources() { return await handle.processGroupID() }
+        }
+        return nil
     }
 
     /// ポート番号から「それが自分の管理下のサービスか」を引く。
@@ -916,6 +1045,12 @@ public actor RuntimeRegistry {
                     observedPorts: await handle.observedPortRecord()
                 )
             )
+        }
+        for index in hints.indices {
+            if let parent = stopCommandParents[hints[index].serviceID] {
+                hints[index].stopCommandFor = parent
+                hints[index].stopCommand = processDefinitions[hints[index].serviceID]?.start
+            }
         }
         return hints.sorted { $0.serviceID.uuidString < $1.serviceID.uuidString }
     }
@@ -1106,6 +1241,31 @@ fileprivate extension RuntimeRegistry.Handle {
                 observedPorts: [],
                 startedAt: nil
             )
+        }
+    }
+
+    func completeCommandStopObservation() async {
+        switch self {
+        case let .launched(supervisor): await supervisor.completeCommandStopObservation()
+        case let .adopted(supervisor): await supervisor.completeCommandStopObservation()
+        case .residualGroup, .managed: break
+        }
+    }
+
+    func prepareCommandStop() async throws -> Bool {
+        switch self {
+        case let .launched(supervisor): try await supervisor.prepareCommandStop()
+        case let .adopted(supervisor): try await supervisor.prepareCommandStop()
+        case let .residualGroup(supervisor): try await supervisor.prepareCommandStop()
+        case .managed: throw RuntimeError.operationInProgress
+        }
+    }
+    func waitForCommandStop(grace: Duration) async -> ServiceStopOutcome {
+        switch self {
+        case let .launched(supervisor): await supervisor.waitForCommandStop(grace: grace)
+        case let .adopted(supervisor): await supervisor.waitForCommandStop(grace: grace)
+        case let .residualGroup(supervisor): await supervisor.waitForCommandStop(grace: grace)
+        case .managed: .ownershipLost(reason: "スタックは通常プロセスとして停止できません。")
         }
     }
 

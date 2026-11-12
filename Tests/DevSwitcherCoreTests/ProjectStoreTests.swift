@@ -221,8 +221,8 @@ struct ProjectStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let serviceID = UUID()
-        func service(named name: String) -> ServiceDefinition {
-            ServiceDefinition(
+        func service(named name: String) -> LaunchUnit {
+            LaunchUnit(
                 id: serviceID,
                 name: name,
                 kind: .worker,

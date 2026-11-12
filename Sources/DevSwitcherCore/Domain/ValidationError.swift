@@ -2,6 +2,9 @@ import Foundation
 
 /// 必須値の欠落を補完せず、入力元まで特定できるエラーとして返す。
 public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible {
+    case invalidCommandDirectory(service: String)
+    case invalidTag(service: String)
+    case processUsesManagedStackCommand(service: String, type: ManagedStackType)
     case projectNameEmpty
     case duplicateProjectName(String)
     case duplicateProjectID(UUID)
@@ -49,6 +52,9 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
 
     public var description: String {
         switch self {
+        case let .invalidCommandDirectory(service): "プロセス「\(service)」のコマンドの作業ディレクトリは絶対パスの file URL で指定してください。"
+        case let .invalidTag(service): "プロセス「\(service)」のタグは空でない32文字以内の文字列で指定してください。"
+        case let .processUsesManagedStackCommand(service, type): "プロセス「\(service)」のコマンドは \(type.displayName) のスタックとして登録してください。"
         case .projectNameEmpty:
             "開発環境名が空です。"
         case let .duplicateProjectName(name):

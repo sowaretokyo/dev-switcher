@@ -24,7 +24,7 @@ enum ProjectSchemaV1 {
     struct Service: Decodable {
         let id: UUID
         let name: String
-        let kind: ServiceKind
+        let kind: ProjectSchemaV3.ServiceKind
         let ports: [PortSpec]
         let start: CommandSpec
         let enabledByDefault: Bool
@@ -38,28 +38,19 @@ enum ProjectSchemaV1 {
     /// - `stop`: v1 に終了コマンドが無かったため、プロセスグループ停止を意味する nil にする。
     ///
     /// いずれも「値が無いから既定」ではなく「v1 の意味を現行形式で表すとこうなる」という変換として書く。
-    static func migrate(_ document: Document) -> [ProjectDefinition] {
-        document.projects.map { project in
-            ProjectDefinition(
-                id: project.id,
-                name: project.name,
-                color: project.color,
-                directory: project.directory,
-                services: project.services.map { service in
-                    ServiceDefinition(
-                        id: service.id,
-                        name: service.name,
-                        kind: service.kind,
-                        ports: service.ports,
-                        start: service.start,
-                        stop: nil,
-                        enabledByDefault: service.enabledByDefault,
-                        failurePolicy: service.failurePolicy
-                    )
-                },
-                stopOrder: nil,
-                enabledNow: [:]
-            )
+    static func migrate(_ document: Document) throws -> [ProjectDefinition] {
+        try document.projects.map { project in
+            let services = project.services.map {
+                ProjectSchemaV3.Service(id: $0.id, name: $0.name, kind: $0.kind, ports: $0.ports,
+                    start: $0.start, stop: nil, enabledByDefault: $0.enabledByDefault, failurePolicy: $0.failurePolicy)
+            }
+            let grouping = ProjectDefinition(id: project.id, name: project.name, color: project.color,
+                directory: project.directory, services: services.map {
+                    ServiceDefinition(id: $0.id, name: $0.name, ports: $0.ports, start: $0.start,
+                        enabledByDefault: $0.enabledByDefault, failurePolicy: $0.failurePolicy)
+                })
+            return try ProjectSchemaV3.convert(id: project.id, name: project.name, color: project.color,
+                directories: grouping.workingDirectories, services: services, stopOrder: nil, enabledNow: nil)
         }
     }
 }

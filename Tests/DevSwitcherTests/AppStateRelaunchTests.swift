@@ -40,7 +40,7 @@ struct AppStateRelaunchTests {
         let supabase = makeAppStateSupabaseService(workingDirectory: directory)
         let worker = try #require(makeWorkerProject(directory: directory).services.first)
         let project = ProjectDefinition(
-            name: "Bell", color: .blue, directory: directory, services: [supabase, worker]
+            name: "Bell", color: .blue, directory: directory, services: [supabase, LaunchUnit(worker)]
         )
         try ProjectStore(directory: directory).save([project])
         let hints = RuntimeHintStore(directory: directory)

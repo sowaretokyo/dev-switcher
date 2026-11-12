@@ -13,7 +13,7 @@ struct AppStateServiceStartTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         var project = makeWorkerProject(directory: directory, serviceNames: ["Web", "Inngest"])
-        project.services[1].kind = .inngest
+        project.services[1].tag = "inngest"
         project.services[1].enabledByDefault = false
         project.services[1].failurePolicy = .continue
         try ProjectStore(directory: directory).save([project])

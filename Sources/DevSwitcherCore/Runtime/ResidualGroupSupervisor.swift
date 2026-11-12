@@ -89,6 +89,24 @@ actor ResidualGroupSupervisor {
         return result
     }
 
+    func prepareCommandStop() throws -> Bool {
+        switch identify() {
+        case .empty: released = true; return false
+        case .matched: return true
+        case let .notIdentified(reason), let .unobservable(reason):
+            throw RuntimeError.invalidHandoff(service: "停止対象", reason: reason)
+        }
+    }
+    func waitForCommandStop(grace: Duration) async -> ServiceStopOutcome {
+        let deadline = ContinuousClock.now + grace
+        repeat {
+            if case .empty = identify() { released = true; return .stopped(nil) }
+            if ContinuousClock.now >= deadline { break }
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { break }
+        } while true
+        return .residual(processGroupID: processGroupIdentifier, reason: "停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。")
+    }
+
     public func stop(grace: Duration = .seconds(10)) async -> ServiceStopOutcome {
         await terminate(signal: SIGTERM, grace: grace)
     }

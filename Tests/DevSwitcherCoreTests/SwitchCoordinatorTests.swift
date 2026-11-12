@@ -769,101 +769,38 @@ struct SwitchCoordinatorTests {
         _ = try await coordinator.stop(project)
     }
 
-    @Test("状態確認方法のないカスタム終了コマンドは、停止を始める前に失敗させる")
-    func unsupportedConfigurationFailsBeforeStopping() async throws {
+    @Test("停止コマンドのある通常プロセスへ切り替え、停止時にそのコマンドを実行する")
+    func customStopCommandWorksAcrossSwitch() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
-
-        let sourceService = makeOrderedService(
-            name: "Source",
-            workingDirectory: directory,
-            startLog: startLog,
-            stopLog: stopLog
-        )
+        let sourceService = makeOrderedService(name: "Source", workingDirectory: directory, startLog: startLog, stopLog: stopLog)
         let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
-
-        // Supabase以外の任意managed commandには、まだ状態確認方法が無い。
-        let managed = makeService(
-            name: "Custom managed command",
-            kind: .other,
-            ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
-            executable: "/bin/sh",
-            arguments: ["-c", "while true; do sleep 0.1; done"],
-            workingDirectory: directory,
-            stop: CommandSpec(
-                executable: "/bin/echo",
-                arguments: ["stop"],
-                workingDirectory: directory
-            )
-        )
-        let target = makeProject(name: "Penta", directory: directory, services: [managed])
-        let (_, coordinator) = makeStack(logDirectory: directory)
-
+        let process = makeService(name: "Custom", kind: .other, ports: [], executable: "/bin/sh", arguments: ["-c", "while [ ! -f finished ]; do sleep 0.02; done"], workingDirectory: directory,
+            stop: CommandSpec(executable: "/usr/bin/touch", arguments: ["finished"], workingDirectory: directory))
+        let target = makeProject(name: "Penta", directory: directory, services: [process])
+        let (registry, coordinator) = makeStack(logDirectory: directory)
         _ = try await coordinator.start(source)
-
-        let failure = await #expect(throws: SwitchFailure.self) {
-            _ = try await coordinator.switchProject(from: source, to: target)
-        }
-        if let failure {
-            guard case .unsupportedConfiguration = failure.reason else {
-                Issue.record("未対応設定として扱われなかった: \(failure.reason)")
-                return
-            }
-        }
-
-        // 停止を始める前に落としているので、切替元は動いたまま。
-        #expect(readLines(stopLog).isEmpty)
-
-        _ = try await coordinator.stop(source)
+        _ = try await coordinator.switchProject(from: source, to: target)
+        #expect(readLines(stopLog) == ["Source"])
+        #expect(await registry.isRunning(serviceID: process.id))
+        _ = try await coordinator.stop(target)
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("finished").path))
+        #expect(await registry.isOccupyingResources(serviceID: process.id) == false)
     }
 
-    @Test("Docker 種別は Post-MVP として起動前に明示的に拒否する")
-    func dockerKindIsRejectedBeforeStart() async throws {
+    @Test("docker タグの通常プロセスをポートの有無によらず起動できる", arguments: [false, true])
+    func dockerTagDoesNotChangeProcessLifecycle(hasPort: Bool) async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-
-        let docker = makeService(
-            name: "Docker",
-            kind: .docker,
-            ports: [PortSpec(port: 5432, isPrimary: true)],
-            executable: "/bin/sh",
-            arguments: ["-c", "while true; do sleep 0.1; done"],
-            workingDirectory: directory
-        )
-        let project = makeProject(directory: directory, services: [docker])
+        let process = makeService(name: "Docker tagged process", kind: .docker, ports: hasPort ? [PortSpec(port: 5432, isPrimary: true)] : [], executable: "/bin/sleep", arguments: ["30"], workingDirectory: directory)
+        let project = makeProject(directory: directory, services: [process])
         let (registry, coordinator) = makeStack(logDirectory: directory)
-
-        let failure = await #expect(throws: SwitchFailure.self) {
-            _ = try await coordinator.start(project)
-        }
-        if let failure {
-            guard case .unsupportedConfiguration = failure.reason else {
-                Issue.record("未対応設定として扱われなかった: \(failure.reason)")
-                return
-            }
-        }
-        #expect(await registry.isRunning(serviceID: docker.id) == false)
-
-        // ポートを外しても拒否は変わらない。ポートの有無が理由ではない。
-        let withoutPort = makeService(
-            name: "Docker",
-            kind: .docker,
-            ports: [],
-            executable: "/bin/sh",
-            arguments: ["-c", "while true; do sleep 0.1; done"],
-            workingDirectory: directory
-        )
-        let portless = makeProject(
-            name: "Penta",
-            directory: directory,
-            services: [withoutPort]
-        )
-        await #expect(throws: SwitchFailure.self) {
-            _ = try await coordinator.start(portless)
-        }
-        #expect(await registry.isRunning(serviceID: withoutPort.id) == false)
+        _ = try await coordinator.start(project)
+        #expect(await registry.isRunning(serviceID: process.id))
+        _ = try await coordinator.stop(project)
+        #expect(await registry.isOccupyingResources(serviceID: process.id) == false)
     }
 
     @Test("一部停止のまま明示的に停止したら、停止中になる")
@@ -1574,7 +1511,7 @@ struct ServiceRestartTests {
         var failingWeb = web
         failingWeb.start.executable = "/path/that/does/not/exist"
         var currentProject = runningProject
-        currentProject.services = [failingWeb, worker]
+        currentProject.services = [try #require(failingWeb.processDefinition), try #require(worker.processDefinition)]
         world.clearSignals()
 
         await #expect(throws: SwitchFailure.self) {

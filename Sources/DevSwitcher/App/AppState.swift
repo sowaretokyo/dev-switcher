@@ -220,7 +220,8 @@ final class AppState {
         private var typeName: String { plan.primaryEntry.identity.type.displayName }
 
         var title: String {
-            switch plan.primaryEntry.action {
+            if plan.entries.filter({ $0.action != .stop }).count > 1 { return "管理対象スタックの操作を確認" }
+            return switch plan.primaryEntry.action {
             case .adopt: "既存の\(typeName)を引き継ぎますか？"
             case .restart: "既存の\(typeName)を復旧しますか？"
             case .start, .stop: "既存の\(typeName)を停止して切り替えますか？"
@@ -228,7 +229,8 @@ final class AppState {
         }
 
         var confirmButtonTitle: String {
-            switch plan.primaryEntry.action {
+            if plan.entries.filter({ $0.action != .stop }).count > 1 { return "確認した操作を実行" }
+            return switch plan.primaryEntry.action {
             case .adopt: "引き継ぐ"
             case .restart: "停止して起動し直す"
             case .start, .stop: "停止して切り替える"
@@ -353,6 +355,7 @@ final class AppState {
     var projectFormPresentation: ProjectFormPresentation?
     var isProjectImportPresented = false
     var unregisterPresentation: UnregisterPresentation?
+    var runtimeWarnings: [String] = []
     var operationError: String?
     var failurePresentation: FailurePresentation?
 
@@ -478,7 +481,7 @@ final class AppState {
                   let resolved = try? ResolvedManagedStack(
                       environmentID: hint.projectID,
                       definition: definition,
-                      workingDirectory: service.start.workingDirectory
+                      workingDirectory: service.workingDirectory
                   ) else {
                 return hint.stackID
             }
@@ -490,9 +493,9 @@ final class AppState {
     /// どれかが見つからないか、種類が手掛かりと違えば nil。
     private func registeredStack(
         for hint: ManagedStackHint
-    ) -> (project: ProjectDefinition, service: ServiceDefinition, definition: ManagedStackDefinition)? {
+    ) -> (project: ProjectDefinition, service: LaunchUnit, definition: ManagedStackDefinition)? {
         guard let project = project(hint.projectID),
-              let service = project.service(id: hint.stackID),
+              let service = project.entry(id: hint.stackID),
               let definition = service.managedStackDefinition,
               definition.type == hint.type else {
             return nil
@@ -776,7 +779,7 @@ final class AppState {
 
         // 定義が無い手掛かりは、プロセス不存在を意味しない。照合対象から分けるが破棄しない。
         let knownHints = pendingHints.values.filter { hint in
-            project(hint.projectID)?.service(id: hint.serviceID) != nil
+            project(hint.projectID)?.runtimeEntry(for: hint) != nil
         }
         let knownLegacy = pendingLegacyHints.values.filter { legacy in
             project(legacy.projectID)?.service(id: legacy.serviceID) != nil
@@ -784,7 +787,7 @@ final class AppState {
         guard !pendingHints.isEmpty || !pendingLegacyHints.isEmpty else { return }
 
         let missingCurrent = pendingHints.values
-            .filter { hint in project(hint.projectID)?.service(id: hint.serviceID) == nil }
+            .filter { hint in project(hint.projectID)?.runtimeEntry(for: hint) == nil }
             .map { hint in
                 HandoffRejectionRecord.current(
                     hint: hint,
@@ -1000,7 +1003,7 @@ final class AppState {
         var failures: [String] = []
         for candidate in candidates {
             guard let project = project(candidate.hint.projectID),
-                  let service = project.service(id: candidate.hint.serviceID)
+                  let service = project.runtimeEntry(for: candidate.hint)
             else { continue }
             do {
                 try await coordinator.adopt(candidate, service: service, in: project, events: eventSink)
@@ -1033,7 +1036,7 @@ final class AppState {
         var failures: [String] = []
         for candidate in candidates {
             guard let project = project(candidate.hint.projectID),
-                  let service = project.service(id: candidate.hint.serviceID)
+                  let service = project.runtimeEntry(for: candidate.hint)
             else { continue }
             do {
                 let outcome = try await coordinator.stopAdopted(
@@ -1054,7 +1057,7 @@ final class AppState {
 
         for finding in stoppable {
             guard let project = project(finding.hint.projectID),
-                  let service = project.service(id: finding.hint.serviceID)
+                  let service = project.runtimeEntry(for: finding.hint)
             else { continue }
             do {
                 let outcome = try await coordinator.stopWithoutAdopting(
@@ -1124,6 +1127,10 @@ final class AppState {
         projects.first { $0.id == id }
     }
 
+    private func clearMigrationNotices() {
+        for index in projects.indices { projects[index].migrationNotice = nil }
+    }
+
     func addProject(_ project: ProjectDefinition) throws {
         if let reason = configurationBlockedReason { throw AppError.busy(reason) }
         guard let store else {
@@ -1131,6 +1138,7 @@ final class AppState {
         }
         try store.save(projects + [project])
         projects.append(project)
+        clearMigrationNotices()
         expandedProjectIDs.insert(project.id)
         selection = .project(project.id)
     }
@@ -1159,6 +1167,7 @@ final class AppState {
         let updated = projects + imported
         try store.save(updated)
         projects = updated
+        clearMigrationNotices()
         expandedProjectIDs.formUnion(imported.map(\.id))
         selection = .project(first.id)
         isProjectImportPresented = false
@@ -1182,10 +1191,11 @@ final class AppState {
         updatedProjects[index] = project
         try store.save(updatedProjects)
         projects = updatedProjects
+        clearMigrationNotices()
 
         // 編集で消えたサービスの画面状態を残さない。ログの実ファイルには触らない。
-        let remaining = Set(project.services.map(\.id))
-        for service in previous.services where !remaining.contains(service.id) {
+        let remaining = Set(project.launchUnits.map(\.id))
+        for service in previous.launchUnits where !remaining.contains(service.id) {
             serviceStates[service.id] = nil
             logBuffers[service.id] = nil
             if case let .service(_, serviceID) = selection, serviceID == service.id {
@@ -1211,12 +1221,13 @@ final class AppState {
         let removed = updatedProjects.remove(at: index)
         try store.save(updatedProjects)
         projects = updatedProjects
+        clearMigrationNotices()
 
         // 消えたプロジェクトを指す画面状態を残さない。
         expandedProjectIDs.remove(removed.id)
         projectPhases[removed.id] = nil
         projectIDsWithManagedResources.remove(removed.id)
-        for service in removed.services {
+        for service in removed.launchUnits {
             serviceStates[service.id] = nil
             logBuffers[service.id] = nil
         }
@@ -1257,7 +1268,7 @@ final class AppState {
     }
 
     /// 今回の起動対象を切り替える。設定なので永続化する（稼働状態ではない）。
-    func setEnabledNow(_ enabled: Bool, for service: ServiceDefinition, in project: ProjectDefinition) {
+    func setEnabledNow(_ enabled: Bool, for service: LaunchUnit, in project: ProjectDefinition) {
         applyProjectChange(project.settingEnabledNow(service.id, to: enabled))
     }
 
@@ -1377,7 +1388,7 @@ final class AppState {
                 + "「再検証の手掛かりを扱えません」の再試行から再検証してください。"
         }
         if !pendingManagedHints.isEmpty {
-            return "状態を判定できないSupabaseの手掛かりが残っています。"
+            return "状態を判定できない管理対象スタックの手掛かりが残っています。"
                 + "画面上部の案内から再試行するか、設定が無い手掛かりを破棄してください。"
         }
         return nil
@@ -1388,7 +1399,7 @@ final class AppState {
         if isTerminating { return "アプリの終了処理を実行中です。" }
         if let activityKind { return activityKind.blockingDescription }
         if managedStackConfirmation != nil {
-            return "既存のSupabaseスタックをどう扱うか決まっていません。シートで選んでください。"
+            return "既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。"
         }
         if let reason = projectLoadBlockedReason { return reason }
         if let reason = unresolvedHandoffReason { return reason }
@@ -1446,7 +1457,7 @@ final class AppState {
         if isTerminating { return "アプリの終了処理を実行中です。" }
         if let activityKind { return activityKind.blockingDescription }
         if managedStackConfirmation != nil {
-            return "既存のSupabaseスタックをどう扱うか決まっていません。シートで選んでください。"
+            return "既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。"
         }
         if handoffPresentation != nil {
             return "検出した既存プロセスの扱いが決まっていません。"
@@ -1461,19 +1472,17 @@ final class AppState {
 
     /// 1件の操作も、保存・環境・排他条件を満たす起動済み開発環境に限定する。
     private func serviceOperationBlockedReason(
-        for service: ServiceDefinition,
+        for service: LaunchUnit,
         in project: ProjectDefinition
     ) -> String? {
         guard self.project(project.id) == project,
-              project.service(id: service.id) == service else {
+              project.entry(id: service.id) == service else {
             return "対象のプロセス設定が現在の登録内容と一致しません。"
         }
         if let definition = service.managedStackDefinition {
             return "\(definition.type.displayName)は専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
         }
-        guard service.usesProcessGroupStop else {
-            return RuntimeError.stopCommandUnsupported(service: service.name).description
-        }
+
         if let reason = startBlockedReason { return reason }
 
         guard hasManagedResources(in: project) else {
@@ -1483,7 +1492,7 @@ final class AppState {
     }
 
     func serviceStartBlockedReason(
-        for service: ServiceDefinition,
+        for service: LaunchUnit,
         in project: ProjectDefinition
     ) -> String? {
         if let reason = serviceOperationBlockedReason(for: service, in: project) { return reason }
@@ -1497,12 +1506,12 @@ final class AppState {
         }
     }
 
-    func canStartService(_ service: ServiceDefinition, in project: ProjectDefinition) -> Bool {
+    func canStartService(_ service: LaunchUnit, in project: ProjectDefinition) -> Bool {
         serviceStartBlockedReason(for: service, in: project) == nil
     }
 
     func restartBlockedReason(
-        for service: ServiceDefinition,
+        for service: LaunchUnit,
         in project: ProjectDefinition
     ) -> String? {
         if let reason = serviceOperationBlockedReason(for: service, in: project) { return reason }
@@ -1516,20 +1525,20 @@ final class AppState {
         }
     }
 
-    func canRestart(_ service: ServiceDefinition, in project: ProjectDefinition) -> Bool {
+    func canRestart(_ service: LaunchUnit, in project: ProjectDefinition) -> Bool {
         restartBlockedReason(for: service, in: project) == nil
     }
 
-    func restart(_ service: ServiceDefinition, in project: ProjectDefinition) {
+    func restart(_ service: LaunchUnit, in project: ProjectDefinition) {
         runServiceOperation(service, in: project, kind: .restarting)
     }
 
-    func startService(_ service: ServiceDefinition, in project: ProjectDefinition) {
+    func startService(_ service: LaunchUnit, in project: ProjectDefinition) {
         runServiceOperation(service, in: project, kind: .starting)
     }
 
     private func runServiceOperation(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         kind: ServiceOperation.Kind
     ) {
@@ -1738,7 +1747,7 @@ final class AppState {
 
         let hasRemainingResources = await registry.occupyingServiceIDs(projectID: target.id).isEmpty == false
         if hasRemainingResources, !compensationFailed {
-            messages.append("引き継いだSupabaseと操作前から管理していたサービスは稼働を維持しています。")
+            messages.append("引き継いだスタックと操作前から管理していたサービスは稼働を維持しています。")
         }
         if !compensationFailed {
             if await persistRuntimeHints(refreshingPorts: false) {
@@ -1763,7 +1772,7 @@ final class AppState {
 
     /// 1件の起動・再起動後の手掛かりを保存できない場合、今回起動した1件だけを停止する。
     private func compensateUnsavedServiceStart(
-        of service: ServiceDefinition,
+        of service: LaunchUnit,
         in project: ProjectDefinition,
         kind: ServiceOperation.Kind,
         token: ActivityToken
@@ -1847,7 +1856,7 @@ final class AppState {
                     in: project
                 )
                 let remaining = outcomes.compactMap { serviceID, outcome -> String? in
-                    let name = project.service(id: serviceID)?.name ?? serviceID.uuidString
+                    let name = project.entry(id: serviceID)?.name ?? serviceID.uuidString
                     switch outcome {
                     case .stopped:
                         return nil
@@ -1975,7 +1984,7 @@ final class AppState {
         if case let .startFailed(serviceName, _) = failure.reason,
            let projectID = failure.facts.target?.projectID,
            let project = project(projectID),
-           let service = project.services.first(where: { $0.name == serviceName }) {
+           let service = project.launchUnits.first(where: { $0.name == serviceName }) {
             logTarget = .service(projectID: projectID, serviceID: service.id)
         }
         failurePresentation = FailurePresentation(failure: failure, logTarget: logTarget)
@@ -2007,8 +2016,10 @@ final class AppState {
     private func refreshPhases() async {
         var managedProjectIDs = Set<UUID>()
         var displayedStackIDs = Set<ManagedStackIdentity>()
+        runtimeWarnings = []
         for project in projects {
             let fact = await coordinator.projectFact(project)
+            runtimeWarnings += fact.warnings
             projectPhases[project.id] = fact.phase
             let occupyingServiceIDs = await registry.occupyingServiceIDs(projectID: project.id)
             if !occupyingServiceIDs.isEmpty {
@@ -2018,7 +2029,7 @@ final class AppState {
                 // `ObservedRuntime` は本体の同一性を前提にしており、再起動後に登録した
                 // 残存グループでは作れない。表示できる情報を落とさないよう snapshot を使う。
                 let snapshot = await registry.runtimeSnapshot(serviceID: serviceFact.serviceID)
-                guard let service = project.service(id: serviceFact.serviceID) else {
+                guard let service = project.entry(id: serviceFact.serviceID) else {
                     preconditionFailure("観測結果に登録のないサービスが含まれています。")
                 }
                 let managedStack = await managedStackUIState(for: service)
@@ -2066,7 +2077,7 @@ final class AppState {
         } ?? []
     }
 
-    private func managedStackUIState(for service: ServiceDefinition) async -> ManagedStackUIState? {
+    private func managedStackUIState(for service: LaunchUnit) async -> ManagedStackUIState? {
         guard let definition = service.managedStackDefinition else { return nil }
         if let observed = await registry.managedObservation(stackID: service.id) {
             return ManagedStackUIState(
@@ -2078,7 +2089,7 @@ final class AppState {
         let identity: ManagedStackIdentity
         do {
             identity = try definition.configuration
-                .resolve(workingDirectory: service.start.workingDirectory).identity
+                .resolve(workingDirectory: service.workingDirectory).identity
         } catch let ManagedStackConfigurationError.invalid(issue) {
             return ManagedStackUIState(
                 identity: nil, state: .unknown, relationship: nil,
@@ -2121,7 +2132,7 @@ final class AppState {
                     do {
                         try await registry.refreshPorts(serviceID: serviceID)
                     } catch {
-                        let serviceName = project.service(id: serviceID)?.name ?? serviceID.uuidString
+                        let serviceName = project.entry(id: serviceID)?.name ?? serviceID.uuidString
                         failures.append("\(serviceName): \(error)")
                     }
                 }
@@ -2224,7 +2235,7 @@ final class AppState {
             }
             if !requestedByUser, startupConfirmed,
                let project = projects.first(where: { $0.service(id: serviceID) != nil }),
-               let service = project.service(id: serviceID) {
+               let service = project.entry(id: serviceID) {
                 runtimeIncident = RuntimeIncident(
                     projectID: project.id,
                     serviceID: serviceID,

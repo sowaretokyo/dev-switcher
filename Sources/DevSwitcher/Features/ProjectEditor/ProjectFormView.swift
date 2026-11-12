@@ -210,12 +210,24 @@ private struct WorkingDirectoryCard: View {
                 .controlSize(.small)
             }
 
-            if workingDirectory.services.isEmpty {
-                Text("プロセスが1件もありません。1件以上追加してください。")
+            if workingDirectory.services.isEmpty && workingDirectory.stacks.isEmpty {
+                Text("プロセスまたはスタックを1件以上追加してください。")
                     .font(Typography.support)
                     .foregroundStyle(.orange)
             }
 
+            HStack {
+                SectionLabel("管理対象スタック（プロセスより先に起動）")
+                Spacer()
+                Menu("スタックを追加") {
+                    ForEach(ManagedStackType.allCases, id: \.self) { type in
+                        Button(type.displayName) { model.addStack(type, to: workingDirectory.id) }
+                    }
+                }
+            }
+            ForEach($workingDirectory.stacks) { $stack in
+                StackCard(model: model, stack: $stack)
+            }
             ForEach($workingDirectory.services) { $service in
                 if let position = model.positionIfPresent(of: service.id) {
                     ServiceCard(model: model, service: $service, position: position)
@@ -279,22 +291,8 @@ private struct ServiceCard: View {
                 TextField("Web", text: $service.name)
                     .textFieldStyle(.roundedBorder)
             }
-            FormRow(
-                "種別",
-                note: service.kind == .supabase
-                    ? "開始後に supabase status で確認し、開発環境の停止時に supabase stop を実行します。"
-                    : nil
-            ) {
-                Picker("", selection: Binding(
-                    get: { service.kind },
-                    set: { model.setKind($0, for: service.id) }
-                )) {
-                    ForEach(ServiceKind.allCases, id: \.self) { kind in
-                        Text(kind.displayName).tag(kind)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
+            FormRow("タグ（任意）", note: "表示用の32文字以内のタグです。起動・停止の挙動は変わりません。") {
+                TextField("web / worker", text: $service.tag).textFieldStyle(.roundedBorder)
             }
             FormRow(
                 "実行ファイル（必須）",
@@ -322,6 +320,27 @@ private struct ServiceCard: View {
                         RoundedRectangle(cornerRadius: Radius.control).strokeBorder(.separator)
                     }
             }
+            FormRow("停止コマンド（任意）", note: "指定すると SIGTERM の代わりにこのコマンドを実行します。") {
+                Toggle("停止コマンドを使う", isOn: $service.hasStopCommand)
+                if service.hasStopCommand {
+                    TextField("実行ファイル", text: $service.stopExecutable).textFieldStyle(.roundedBorder)
+                    TextField("引数（JSON配列）", text: $service.stopArgumentsJSON).textFieldStyle(.roundedBorder)
+                    HStack {
+                        Text(service.stopDirectory?.path ?? "起動コマンドと同じ作業ディレクトリ").font(Typography.caption)
+                        Button("場所を選択…") {
+                            guard let url = chooseDirectory(
+                                message: "停止コマンドの作業ディレクトリ",
+                                startingAt: service.stopDirectory
+                            ) else { return }
+                            service.stopDirectory = url
+                        }
+                        Button("起動と同じ") { service.stopDirectory = nil }
+                    }
+                }
+            }
+            ForEach(service.commandWarnings, id: \.self) { warning in
+                Text(warning).font(Typography.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             FormRow("起動対象") {
                 Toggle("既定で起動する", isOn: $service.enabledByDefault)
                 Picker("起動に失敗したとき", selection: $service.failurePolicy) {
@@ -329,7 +348,6 @@ private struct ServiceCard: View {
                         Text(policy.displayName).tag(policy)
                     }
                 }
-                .disabled(!service.enabledByDefault)
                 .fixedSize()
             }
             portSection
@@ -443,4 +461,60 @@ private func chooseDirectory(message: String, startingAt: URL?) -> URL? {
 
     guard panel.runModal() == .OK else { return nil }
     return panel.url
+}
+
+private struct StackCard: View {
+    let model: ProjectFormModel
+    @Binding var stack: ProjectFormModel.StackDraft
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            HStack {
+                Text("スタック \(model.stackPosition(stack.id) ?? 0)・\(stack.type.displayName)").font(Typography.heading)
+                Spacer()
+                Button { model.moveStack(stack.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                Button { model.moveStack(stack.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                Button(role: .destructive) { model.removeStack(stack.id) } label: { Image(systemName: "trash") }
+            }.buttonStyle(.borderless)
+            FormRow("名前（必須）") { TextField("名前", text: $stack.name).textFieldStyle(.roundedBorder) }
+            if stack.type == .supabase {
+                FormRow("実行ファイル") { TextField("supabase", text: $stack.executable).textFieldStyle(.roundedBorder) }
+                FormRow("引数（JSON配列）") { TextField("[\"start\"]", text: $stack.argumentsJSON).textFieldStyle(.roundedBorder) }
+            } else {
+                FormRow("プロジェクト名（任意）", note: "省略時は name:、最初の Compose ファイルのディレクトリ名の順で決定します。") {
+                    TextField("my-project", text: $stack.projectName).textFieldStyle(.roundedBorder)
+                }
+                FormRow("ファイル（JSON配列）", note: "相対パスの配列。空欄なら作業ディレクトリ直下の既定ファイルを使います。") {
+                    TextField("[\"compose.yaml\"]", text: $stack.filesJSON).textFieldStyle(.roundedBorder)
+                }
+                FormRow("profiles（JSON配列）", note: "起動・観測に使います。空欄なら省略し、停止時は全 profile を対象にします。") {
+                    TextField("[\"dev\"]", text: $stack.profilesJSON).textFieldStyle(.roundedBorder)
+                }
+                FormRow("起動追加引数（JSON配列）", note: "up -d の後に渡します。追加なしは []。") {
+                    TextField("[]", text: $stack.upArgumentsJSON).textFieldStyle(.roundedBorder)
+                }
+                Text("停止は同じプロジェクト名の全 profile が対象です。設定外の profile も停止します。コンテナやボリュームは削除しません。正常終了する one-shot サービスが混在すると一部異常として扱います。")
+                    .font(Typography.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            FormRow("起動対象") {
+                Toggle("既定で起動する", isOn: $stack.enabledByDefault)
+                Picker("起動に失敗したとき", selection: $stack.failurePolicy) {
+                    ForEach(FailurePolicy.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+            }
+            FormRow("ポート（任意）") {
+                Button("ポートを追加") { stack.ports.append(.init(isPrimary: stack.ports.isEmpty)) }
+                ForEach($stack.ports) { $port in
+                    HStack {
+                        TextField("ラベル", text: $port.label).frame(width: Metrics.portLabelFieldWidth)
+                        TextField("5432", text: $port.port).frame(width: Metrics.portNumberFieldWidth)
+                        TextField("http://localhost:5432", text: $port.openURL)
+                        Toggle("代表", isOn: Binding(get: { port.isPrimary }, set: { _ in
+                            for index in stack.ports.indices { stack.ports[index].isPrimary = stack.ports[index].id == port.id }
+                        })).toggleStyle(.checkbox)
+                        Button { stack.ports.removeAll { $0.id == port.id } } label: { Image(systemName: "minus.circle") }
+                    }.textFieldStyle(.roundedBorder)
+                }
+            }
+        }.padding(Spacing.m).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card))
+    }
 }

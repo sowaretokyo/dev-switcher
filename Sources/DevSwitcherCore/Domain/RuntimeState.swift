@@ -24,7 +24,7 @@ public enum ServicePhase: Equatable, Sendable {
         case .starting: "起動処理中"
         case .running: "起動中"
         case .healthy: "起動済み"
-        case .stopping: "終了中"
+        case .stopping: "停止処理中"
         case .failed: "失敗"
         case .residual: "残存あり"
         }
@@ -57,7 +57,7 @@ public enum ProjectPhase: Equatable, Sendable {
         case .starting: "起動中"
         case .running: "起動済み"
         case .degraded: "一部停止"
-        case .stopping: "終了中"
+        case .stopping: "停止処理中"
         case .switching: "切替中"
         case .failed: "失敗"
         case .residual: "残存あり"

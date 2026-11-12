@@ -61,7 +61,7 @@ struct ToolbarActions: View {
         if let project = state.toolbarProject {
             if project.hasOpenableURLs {
                 Menu {
-                    ForEach(project.services) { service in
+                    ForEach(project.launchUnits) { service in
                         ForEach(service.ports.filter { $0.openURL != nil }) { port in
                             Button("\(service.name) — \(port.displayName)") {
                                 state.open(port)
@@ -112,7 +112,7 @@ extension ProjectDefinition {
     /// `openURL` を持つポートが1つもなければ「開く」を出さない。
     /// 空のメニューを置くと、開けるものがあるように見える。
     var hasOpenableURLs: Bool {
-        services.contains { service in
+        launchUnits.contains { service in
             service.ports.contains { $0.openURL != nil }
         }
     }

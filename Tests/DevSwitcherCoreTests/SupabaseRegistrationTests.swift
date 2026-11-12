@@ -8,7 +8,7 @@ struct SupabaseRegistrationTests {
         name: String,
         projectID: String,
         directory: URL,
-        extraServices: [ServiceDefinition] = []
+        extraServices: [LaunchUnit] = []
     ) throws -> ProjectDefinition {
         try writeSupabaseConfig(projectID: projectID, in: directory)
         return makeProject(
@@ -108,7 +108,7 @@ struct SupabaseRegistrationTests {
         })
     }
 
-    @Test("既存の開発環境のSupabase構成が構造不備でも、候補の保存結果には現れない")
+    @Test("既存の開発環境のSupabase構成が構造不備なら、一意性を確認できず保存を拒否する")
     func ignoresStructuralIssuesOfExistingProjectsForCandidate() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -141,6 +141,6 @@ struct SupabaseRegistrationTests {
 
         let errors = ProjectValidator.validate(candidate, existingProjects: [broken])
 
-        #expect(errors.isEmpty)
+        #expect(errors.contains { if case .managedStackIdentityUnresolved = $0 { true } else { false } })
     }
 }

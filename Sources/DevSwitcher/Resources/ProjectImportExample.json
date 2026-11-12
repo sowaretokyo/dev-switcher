@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "projects": [
     {
       "id": "233F0046-5A31-4BA9-8622-78392125C5ED",
@@ -13,17 +13,19 @@
           "serviceIDs": [
             "83EC0330-994B-45F3-AFD1-CECB8B4DCC83",
             "F691046F-42EA-4A22-A30D-D4A1E40C80F8"
-          ]
+          ],
+          "stackIDs": []
         }
       ],
       "services": [
         {
           "id": "83EC0330-994B-45F3-AFD1-CECB8B4DCC83",
           "name": "Web",
-          "kind": "web",
           "start": {
             "executable": "pnpm",
-            "arguments": ["dev"],
+            "arguments": [
+              "dev"
+            ],
             "workingDirectory": "file:///ABSOLUTE/PATH/TO/web/"
           },
           "ports": [
@@ -35,23 +37,27 @@
             }
           ],
           "enabledByDefault": true,
-          "failurePolicy": "block"
+          "failurePolicy": "block",
+          "tag": "web"
         },
         {
           "id": "F691046F-42EA-4A22-A30D-D4A1E40C80F8",
           "name": "Worker",
-          "kind": "worker",
           "start": {
             "executable": "pnpm",
-            "arguments": ["worker"],
+            "arguments": [
+              "worker"
+            ],
             "workingDirectory": "file:///ABSOLUTE/PATH/TO/web/"
           },
           "ports": [],
           "enabledByDefault": false,
-          "failurePolicy": "continue"
+          "failurePolicy": "continue",
+          "tag": "worker"
         }
       ],
-      "enabledNow": {}
+      "enabledNow": {},
+      "managedStacks": []
     }
   ]
 }

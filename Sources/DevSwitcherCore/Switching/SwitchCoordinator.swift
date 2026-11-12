@@ -210,7 +210,7 @@ public actor SwitchCoordinator {
     /// 起動済みプロジェクトへ通常プロセス1件を追加する。保存済みの起動対象は変更しない。
     @discardableResult
     public func startService(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
@@ -224,7 +224,7 @@ public actor SwitchCoordinator {
     /// 起動直後の観測だけを同じ排他境界で行う。管理対象スタックは専用lifecycleを持つため対象外。
     @discardableResult
     public func restart(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         progress: @escaping ProgressSink = { _ in },
         events: @escaping EventSink = { _, _ in }
@@ -234,7 +234,7 @@ public actor SwitchCoordinator {
 
     /// 追加起動と再起動で、初期観測・ログ・失敗時の停止を共有する。
     private func runServiceOperation(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         restarting: Bool,
         progress: @escaping ProgressSink,
@@ -249,7 +249,7 @@ public actor SwitchCoordinator {
         inFlight = true
         defer { inFlight = false }
 
-        guard project.service(id: service.id) == service else {
+        guard project.entry(id: service.id) == service else {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
                     "サービス「\(service.name)」の設定がプロジェクト「\(project.name)」の登録内容と一致しません。"
@@ -257,18 +257,10 @@ public actor SwitchCoordinator {
                 facts: await facts(source: project, target: nil)
             )
         }
-        if case let .stack(definition, _) = LaunchUnit(service) {
+        if case let .stack(definition, _) = service {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
                     "\(definition.type.displayName)は通常プロセスと停止・状態確認の方法が異なるため、単体の起動・再起動はできません。"
-                ),
-                facts: await facts(source: project, target: nil)
-            )
-        }
-        guard service.usesProcessGroupStop else {
-            throw SwitchFailure(
-                reason: .unsupportedConfiguration(
-                    RuntimeError.stopCommandUnsupported(service: service.name).description
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -307,7 +299,7 @@ public actor SwitchCoordinator {
         let spec: StartupObservationSpec
         do {
             spec = try StartupObservationPolicy.spec(
-                for: service,
+                for: try Self.process(service),
                 observationWindow: options.startupObservationWindow,
                 pollInterval: options.startupPollInterval
             )
@@ -390,7 +382,7 @@ public actor SwitchCoordinator {
     /// 追加起動・再起動後の手掛かりを保存できなかった場合に、今回起動した1件だけを戻す。
     /// UIから通常の単体停止としては公開しない。
     public func stopAfterUnsavedServiceStart(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         progress: @escaping ProgressSink = { _ in }
     ) async throws {
@@ -398,7 +390,7 @@ public actor SwitchCoordinator {
         inFlight = true
         defer { inFlight = false }
 
-        guard project.service(id: service.id) != nil else {
+        guard project.entry(id: service.id) != nil else {
             throw RuntimeError.notRunning(service: service.name)
         }
         guard await registry.occupiedProcessGroup(serviceID: service.id) != nil else {
@@ -851,7 +843,7 @@ public actor SwitchCoordinator {
     ) async -> Set<ManagedStackIdentity> {
         guard let source else { return [] }
         let managed = await registry.managedStackIdentities()
-        let sourceServiceIDs = Set(source.services.map(\.id))
+        let sourceServiceIDs = Set(source.launchUnits.map(\.id))
         return Set(managed.filter { sourceServiceIDs.contains($0.key) }.values)
     }
 
@@ -1012,7 +1004,7 @@ public actor SwitchCoordinator {
     /// 保存値だけで稼働中へは戻さない。一致しなければコマンドを実行しない。
     public func restoreManagedStack(
         hint: ManagedStackHint,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         in project: ProjectDefinition,
         registeredProjects: [ProjectDefinition]
     ) async -> ManagedRestoreOutcome {
@@ -1108,10 +1100,7 @@ public actor SwitchCoordinator {
 
         // 1開発環境あたりのスタック数は種類ごとの上限まで。設定検証と同じ制約をここでも守る。
         // ここで数えるのは今回起動するスタック。
-        let stacks = units.compactMap { unit -> ManagedStackDefinition? in
-            guard case let .stack(definition, _) = unit else { return nil }
-            return definition
-        }
+        let stacks = target.managedStacks
         for type in ManagedStackType.allCases {
             guard let limit = type.policy.maximumPerEnvironment else { continue }
             let stacksOfType = stacks.filter { $0.type == type }
@@ -1130,7 +1119,7 @@ public actor SwitchCoordinator {
         }
 
         for unit in units {
-            let service: ServiceDefinition
+            let service: LaunchUnit
             switch unit {
             case let .stack(definition, workingDirectory):
                 // 状態の観測と確認は`resolveManagedStackPlan`が行う。ここは設定の形式だけを見る。
@@ -1149,18 +1138,14 @@ public actor SwitchCoordinator {
                 }
                 continue
             case let .process(process):
-                service = process
-            }
-            if !service.usesProcessGroupStop {
-                return SwitchFailure(
-                    reason: .unsupportedConfiguration(
-                        RuntimeError.stopCommandUnsupported(service: service.name).description
-                    ),
-                    facts: await facts(source: source, target: target)
-                )
+                service = .process(process)
             }
             do {
-                _ = try StartupObservationPolicy.spec(for: service)
+                let process = try Self.process(service)
+                if ProcessCommandClassification.supabaseStart(process.start) == .certain {
+                    return SwitchFailure(reason: .unsupportedConfiguration("Supabase の起動は管理対象スタックとして登録してください。"), facts: await facts(source: source, target: target))
+                }
+                _ = try StartupObservationPolicy.spec(for: try Self.process(service))
             } catch {
                 return SwitchFailure(
                     reason: .unsupportedConfiguration("\(error)"),
@@ -1176,7 +1161,7 @@ public actor SwitchCoordinator {
     /// 単体再起動で、対象が実際に握っていたポートだけをゲートへ渡す。
     /// 再起動では直後に新しいプロセスを起こすため、観測不能なら停止前に中断する。
     private func stopForRestart(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition,
         progress: @escaping ProgressSink
     ) async throws -> [Int] {
@@ -1210,7 +1195,7 @@ public actor SwitchCoordinator {
 
     /// 1件だけを停止し、失敗時は既存の強制終了導線に必要な事実を返す。
     private func stopOne(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition
     ) async throws {
         let outcome: ServiceStopOutcome
@@ -1278,7 +1263,7 @@ public actor SwitchCoordinator {
         progress: @escaping ProgressSink
     ) async throws -> [Int] {
         let occupying = await registry.occupyingServiceIDs(projectID: source.id)
-        let toStop = source.shutdownOrder.filter {
+        let toStop = source.shutdownUnits.filter {
             occupying.contains($0.id) && !preservedServiceIDs.contains($0.id)
         }
 
@@ -1336,8 +1321,9 @@ public actor SwitchCoordinator {
             }
 
             switch outcome {
-            case .stopped:
+            case let .stopped(_, warning):
                 clearState(of: service.id)
+                if let warning { failureReasons[service.id] = warning }
             case let .residual(processGroupID, reason):
                 stopFailures.append(
                     StopFailureDetail(
@@ -1382,11 +1368,11 @@ public actor SwitchCoordinator {
     /// プロジェクトの資源がすべて解放されていることを実測してから、今回の結果を消す。
     /// 記録だけを消して実際には動いている、という状態を作らないため、確認してから消す。
     private func clearProjectStateIfFullyStopped(_ project: ProjectDefinition) async {
-        for service in project.services {
+        for service in project.launchUnits {
             if await registry.isOccupyingResources(serviceID: service.id) { return }
             if await registry.occupiedProcessGroup(serviceID: service.id) != nil { return }
         }
-        for service in project.services {
+        for service in project.launchUnits {
             clearState(of: service.id)
         }
     }
@@ -1451,11 +1437,11 @@ public actor SwitchCoordinator {
         events: @escaping EventSink
     ) async throws -> [String] {
         let units = target.enabledLaunchUnits
-        var startedInThisRun: [ServiceDefinition] = []
+        var startedInThisRun: [LaunchUnit] = []
         var degraded: [String] = []
 
         for (index, unit) in units.enumerated() {
-            let service = Self.sourceService(of: unit, in: target)
+            let service = unit
             progress(.starting(service: unit.name, index: index + 1, total: units.count))
             // 同じ設定で再試行したとき、前回の失敗理由を今回の理由へ連結しない。
             failureReasons[unit.id] = nil
@@ -1467,7 +1453,7 @@ public actor SwitchCoordinator {
             case .process:
                 do {
                     spec = try StartupObservationPolicy.spec(
-                        for: service,
+                        for: try Self.process(service),
                         observationWindow: options.startupObservationWindow,
                         pollInterval: options.startupPollInterval
                     )
@@ -1569,29 +1555,19 @@ public actor SwitchCoordinator {
         return degraded
     }
 
-    /// 起動単位の元になったサービス。Phase A の起動単位は`services`から作るため、スタックにも必ずある。
-    /// 起動失敗の補償停止と巻き戻し（`RuntimeRegistry.stop(service:)`）がサービス単位のため使う。
-    private static func sourceService(
-        of unit: LaunchUnit,
-        in project: ProjectDefinition
-    ) -> ServiceDefinition {
-        switch unit {
-        case let .process(service):
-            return service
-        case let .stack(definition, _):
-            guard let service = project.service(id: definition.id) else {
-                preconditionFailure("起動単位の元になったサービスが開発環境にありません。")
-            }
-            return service
+    private static func process(_ unit: LaunchUnit) throws -> ServiceDefinition {
+        guard case let .process(service) = unit else {
+            throw RuntimeError.managedCommandInvalid(service: unit.name, reason: "スタックは通常プロセスとして操作できません。")
         }
+        return service
     }
 
     private func handleStartFailure(
         _ error: Error,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         target: ProjectDefinition,
         source: ProjectDefinition?,
-        startedInThisRun: [ServiceDefinition],
+        startedInThisRun: [LaunchUnit],
         degraded: inout [String],
         progress: @escaping ProgressSink,
         events: @escaping EventSink
@@ -1646,7 +1622,7 @@ public actor SwitchCoordinator {
     /// 1件の起動失敗では、操作前から動いていた他サービスを巻き戻さない。
     private func serviceStartFailure(
         _ error: Error,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         project: ProjectDefinition
     ) async -> SwitchFailure {
         let startReason = "\(error)"
@@ -1670,7 +1646,7 @@ public actor SwitchCoordinator {
     /// 今回このrunで起動したものだけを、起動順の逆に停止する。
     /// 引き継いだ管理対象スタックは巻き戻さず、残存ありとして停止導線を残す。
     private func rollback(
-        _ startedInThisRun: [ServiceDefinition],
+        _ startedInThisRun: [LaunchUnit],
         progress: @escaping ProgressSink
     ) async {
         for started in startedInThisRun.reversed() {
@@ -1686,11 +1662,11 @@ public actor SwitchCoordinator {
 
     /// `block` なら今回起動したサービスを安全に停止して中断、`continue` なら一部停止として続行。
     private func failStart(
-        service: ServiceDefinition,
+        service: LaunchUnit,
         reason: String,
         target: ProjectDefinition,
         source: ProjectDefinition?,
-        startedInThisRun: [ServiceDefinition],
+        startedInThisRun: [LaunchUnit],
         degraded: inout [String],
         progress: @escaping ProgressSink
     ) async throws {
@@ -1710,7 +1686,7 @@ public actor SwitchCoordinator {
         }
     }
 
-    private func stopAfterFailedStart(_ service: ServiceDefinition) async {
+    private func stopAfterFailedStart(_ service: LaunchUnit) async {
         guard await registry.isOccupyingResources(serviceID: service.id) else {
             startedServiceIDs.remove(service.id)
             return
@@ -1753,7 +1729,7 @@ public actor SwitchCoordinator {
     /// 自分の応答と誤認するため、判定材料はプロセスの生存だけにする。
     /// 初期観測期間に終了せず、観測終了時点でも管理下にあれば起動成功とする。
     private func awaitStartupObservation(
-        service: ServiceDefinition,
+        service: LaunchUnit,
         spec: StartupObservationSpec
     ) async -> StartupResult {
         let observation = observations[service.id]
@@ -1795,7 +1771,7 @@ public actor SwitchCoordinator {
     /// 引き継いだ後も初期観測を行い、直後に消えるプロセスを起動済みと扱わない。
     public func adopt(
         _ candidate: HandoffCandidate,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         in project: ProjectDefinition,
         events: @escaping EventSink = { _, _ in }
     ) async throws {
@@ -1803,7 +1779,7 @@ public actor SwitchCoordinator {
         inFlight = true
         defer { inFlight = false }
 
-        try await registry.adopt(candidate: candidate, service: service, in: project)
+        try await registry.adopt(candidate: candidate, service: try Self.process(service), in: project)
         clearState(of: service.id)
         events(service.id, .logSessionStarted)
         do {
@@ -1818,7 +1794,7 @@ public actor SwitchCoordinator {
         let spec: StartupObservationSpec
         do {
             spec = try StartupObservationPolicy.spec(
-                for: service,
+                for: try Self.process(service),
                 observationWindow: options.startupObservationWindow,
                 pollInterval: options.startupPollInterval
             )
@@ -1840,14 +1816,14 @@ public actor SwitchCoordinator {
     /// 引き継がずに停止する。利用者が「停止する」を選んだ場合にだけ呼ぶ。
     public func stopAdopted(
         _ candidate: HandoffCandidate,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         in project: ProjectDefinition
     ) async throws -> ServiceStopOutcome {
         guard !inFlight else { throw RuntimeError.operationInProgress }
         inFlight = true
         defer { inFlight = false }
 
-        try await registry.adopt(candidate: candidate, service: service, in: project)
+        try await registry.adopt(candidate: candidate, service: try Self.process(service), in: project)
         return try await stopRegistered(service: service)
     }
 
@@ -1857,7 +1833,7 @@ public actor SwitchCoordinator {
     /// 本体が居ないならプロセスグループの同定条件で、送信直前に再検証する。
     public func stopWithoutAdopting(
         _ finding: StoppableProcessFinding,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         in project: ProjectDefinition
     ) async throws -> ServiceStopOutcome {
         guard !inFlight else { throw RuntimeError.operationInProgress }
@@ -1871,7 +1847,7 @@ public actor SwitchCoordinator {
                 processGroupID: finding.hint.processGroupID,
                 observedPorts: [],
                 evidence: finding.groupEvidence,
-                service: service,
+                service: try Self.process(service),
                 in: project
             )
         case .verifiedGroup:
@@ -1879,14 +1855,15 @@ public actor SwitchCoordinator {
             // 記録後に生まれた子孫を同定できない。
             try await registry.registerResidualGroup(
                 hint: finding.hint.updatingGroupEvidence(finding.groupEvidence),
-                service: service,
+                service: try Self.process(service),
                 in: project
             )
         }
+        try await registry.registerStopCommandRole(finding.hint)
         return try await stopRegistered(service: service)
     }
 
-    private func stopRegistered(service: ServiceDefinition) async throws -> ServiceStopOutcome {
+    private func stopRegistered(service: LaunchUnit) async throws -> ServiceStopOutcome {
         do {
             let outcome = try await registry.stop(service: service, grace: options.stopGrace)
             if case let .residual(processGroupID, reason) = outcome {
@@ -1921,7 +1898,7 @@ public actor SwitchCoordinator {
 
         var outcomes: [UUID: ServiceStopOutcome] = [:]
         for serviceID in serviceIDs {
-            guard let service = project.service(id: serviceID) else { continue }
+            guard let service = project.entry(id: serviceID) else { continue }
             guard await registry.isOccupyingResources(serviceID: serviceID) else {
                 // 送信前に消えていた。止まったこと自体は実測どおりなので成功として扱う。
                 clearState(of: serviceID)
@@ -1953,7 +1930,7 @@ public actor SwitchCoordinator {
     // MARK: - 状態
 
     public func servicePhase(
-        _ service: ServiceDefinition,
+        _ service: LaunchUnit,
         in project: ProjectDefinition
     ) async -> ServicePhase {
         if residualGroups[service.id] != nil { return .residual }
@@ -2010,7 +1987,7 @@ public actor SwitchCoordinator {
 
     public func projectFact(_ project: ProjectDefinition) async -> ProjectFact {
         var services: [ServiceFact] = []
-        for service in project.services {
+        for service in project.launchUnits {
             let phase = await servicePhase(service, in: project)
             let ports = await registry.runtimeSnapshot(serviceID: service.id)?
                 .observedPortRecord ?? .observed([])
@@ -2027,7 +2004,8 @@ public actor SwitchCoordinator {
             projectID: project.id,
             projectName: project.name,
             phase: projectPhase(project, services: services),
-            services: services
+            services: services,
+            warnings: await registry.stopWarnings(projectID: project.id)
         )
     }
 
@@ -2040,7 +2018,7 @@ public actor SwitchCoordinator {
 
         if services.contains(where: { $0.phase == .residual }) { return .residual }
 
-        let servicesInThisRun = project.services.map { service -> (definition: ServiceDefinition, phase: ServicePhase) in
+        let servicesInThisRun = project.launchUnits.map { service -> (definition: LaunchUnit, phase: ServicePhase) in
             guard let fact = byID[service.id] else {
                 preconditionFailure("プロジェクトの状態判定に必要なサービスの観測結果がありません。")
             }

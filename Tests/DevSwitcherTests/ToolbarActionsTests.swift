@@ -107,4 +107,33 @@ struct ToolbarActionsTests {
         #expect(!withoutURL.hasOpenableURLs)
         #expect(withURL.hasOpenableURLs)
     }
+
+    @Test("スタック側だけに URL がある環境でも開くメニューを表示する")
+    func openMenuIncludesManagedStackURLs() {
+        let directory = URL(fileURLWithPath: "/tmp/toolbar-stack-test")
+        let configurations: [ManagedStackConfiguration] = [
+            .supabase(.init(start: CommandSpec(executable: "supabase", arguments: ["start"], workingDirectory: directory))),
+            .dockerCompose(.init(projectName: "shop")),
+        ]
+        let cases: [([PortSpec], Bool)] = [
+            ([], false),
+            ([PortSpec(port: 54323, isPrimary: true)], false),
+            ([PortSpec(port: 54323, isPrimary: true, openURL: "http://localhost:54323")], true),
+        ]
+        for configuration in configurations {
+            for (ports, hasURL) in cases {
+                let stack = ManagedStackDefinition(id: UUID(), name: "DB", configuration: configuration,
+                    ports: ports, enabledByDefault: true, failurePolicy: .block)
+                let stackOnly = ProjectDefinition(name: "Stack", color: .blue,
+                    workingDirectories: [.init(name: "Backend", directory: directory, serviceIDs: [], stackIDs: [stack.id])],
+                    services: [DevSwitcherCore.ServiceDefinition](), managedStacks: [stack])
+                var mixed = makeWorkerProject(directory: directory)
+                mixed.managedStacks = [stack]
+                mixed.workingDirectories[0].stackIDs = [stack.id]
+
+                #expect(stackOnly.hasOpenableURLs == hasURL)
+                #expect(mixed.hasOpenableURLs == hasURL)
+            }
+        }
+    }
 }

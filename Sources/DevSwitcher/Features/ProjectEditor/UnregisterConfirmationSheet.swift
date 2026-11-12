@@ -35,7 +35,7 @@ struct UnregisterConfirmationSheet: View {
                 }
             }
 
-            Text("登録しているプロセス \(project.services.count) 件の設定は失われます。")
+            Text("登録しているプロセス \(project.services.count) 件とスタック \(project.managedStacks.count) 件の設定は失われます。")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

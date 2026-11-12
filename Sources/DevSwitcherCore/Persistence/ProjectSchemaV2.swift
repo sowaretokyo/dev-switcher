@@ -15,7 +15,7 @@ enum ProjectSchemaV2 {
         let name: String
         let color: ProjectColor
         let directory: URL
-        let services: [ServiceDefinition]
+        let services: [ProjectSchemaV3.Service]
         let stopOrder: [UUID]?
         let enabledNow: [String: Bool]?
     }
@@ -29,15 +29,14 @@ enum ProjectSchemaV2 {
                 }
                 parsedEnabledNow[serviceID] = value
             }
-            return ProjectDefinition(
-                id: project.id,
-                name: project.name,
-                color: project.color,
-                directory: project.directory,
-                services: project.services,
-                stopOrder: project.stopOrder,
-                enabledNow: parsedEnabledNow
-            )
+            let grouping = ProjectDefinition(id: project.id, name: project.name, color: project.color,
+                directory: project.directory, services: project.services.map {
+                    ServiceDefinition(id: $0.id, name: $0.name, ports: $0.ports, start: $0.start,
+                        enabledByDefault: $0.enabledByDefault, failurePolicy: $0.failurePolicy)
+                })
+            return try ProjectSchemaV3.convert(id: project.id, name: project.name, color: project.color,
+                directories: grouping.workingDirectories, services: project.services, stopOrder: project.stopOrder,
+                enabledNow: project.enabledNow)
         }
     }
 

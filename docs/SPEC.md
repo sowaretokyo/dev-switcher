@@ -162,7 +162,7 @@ Dev Switcher はプロセスを独立したプロセスグループとして起�
 | 排他範囲 | 起動時に停止を確認する既存スタックの範囲 | マシン上の全ローカル Supabase スタック | なし（対象と同じ ID だけを見る） |
 | 状態の観測 | `running` / `degraded` / `notRunning` / `unknown` の判定方法 | 6.6 | 6.7 |
 | 起動 | 起動コマンドと、起動成功の判定 | `supabase start` ＋ `running` の実測 | `docker compose up -d` ＋ `running` の実測 |
-| 対象限定の停止 | 1 つの ID だけを止めるコマンドと、停止完了の判定 | `supabase stop --project-id <id>` ＋ `notRunning` の実測 | `docker compose -p <name> -f <file>... stop` ＋ `notRunning` の実測 |
+| 対象限定の停止 | 1 つの ID だけを止めるコマンドと、停止完了の判定 | `supabase stop --project-id <id>` ＋ `notRunning` の実測 | `docker compose -p <name> -f <file>... --profile '*' stop` ＋ `notRunning` の実測 |
 | 引き継ぎ可否 | 同じ ID の稼働中スタックを、起動せずに管理下へ入れられるか | 可 | 可 |
 | 禁止オプション | どの経路でも生成・実行しない操作 | `--all`、`--no-backup` | `down`、`rm`、`kill`、`-v` / `--volumes`、`--rmi`、`--remove-orphans`、`-V` / `--renew-anon-volumes` |
 
@@ -264,9 +264,9 @@ Dev Switcher はプロセスを独立したプロセスグループとして起�
 
 **Compose ファイル**: Dev Switcher は、起動・観測・停止のすべてのコマンドに、同じ Compose ファイルを `-f` で明示して渡す。`files` を指定した場合はその全ファイルを指定順に渡す。省略した場合は、作業ディレクトリ直下の `compose.yaml`、`compose.yml`、`docker-compose.yaml`、`docker-compose.yml` からこの優先順で最初に見つかった 1 つを基本ファイルとし、同じディレクトリに対応する override ファイル（`compose.override.yaml`、`compose.override.yml`、`docker-compose.override.yaml`、`docker-compose.override.yml` のうち基本ファイルと同じ系統で最初に見つかったもの）があれば、その後ろに続けて渡す。作業ディレクトリ直下に基本ファイルが無ければ、親ディレクトリを探さず検証エラーにする。解決したファイルの一覧は構成同一性（fingerprint）に含める。
 
-**プロファイル**: `profiles` を指定した場合は、起動・観測・停止のすべてのコマンドに同じ `--profile` を付ける。
+**プロファイル**: 起動・観測には、設定した `profiles` を同じ `--profile` として付ける。停止だけは常に `--profile '*'` を指定し、同じプロジェクト名の全 profile を対象にする。設定外の profile で外部起動されたコンテナも停止対象となるため、編集・詳細画面と引き継ぎ・復旧・既存スタック停止の確認に、この停止範囲を表示する。
 
-**環境変数**: Compose の対象を暗黙に変える `COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` を、Dev Switcher が実行する Compose コマンドの環境から除く。プロジェクト名とファイルは `-p` と `-f` の明示指定で固定する。Compose ではコマンドラインの指定が環境変数より優先されるため、Compose が `.env` を読んでも操作対象のプロジェクトは変わらない。`profiles` を省略した場合に `.env` の `COMPOSE_PROFILES` が効くかどうかは Compose の挙動に任せる。
+**環境変数**: Compose の対象を暗黙に変える `COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` を、Dev Switcher が実行する Compose コマンドの環境から除く。プロジェクト名とファイルは `-p` と `-f` の明示指定で固定する。Compose ではコマンドラインの指定が環境変数より優先されるため、Compose が `.env` を読んでも操作対象のプロジェクトは変わらない。起動・観測で `profiles` を省略した場合に `.env` の `COMPOSE_PROFILES` が効くかどうかは Compose の挙動に任せる。停止は明示した `--profile '*'` を使う。
 
 **同一性**: Compose のプロジェクト名で判定する。名前は次の Dev Switcher 独自の規則で決め、決めた名前を起動・観測・停止のすべてのコマンドへ `-p <name>` として必ず明示する。
 
@@ -286,7 +286,7 @@ Dev Switcher はプロセスを独立したプロセスグループとして起�
 
 【PM 判断待ち: 論点 1】
 
-**状態の観測**: `docker compose -p <name> -f <file>... [--profile <profile>...] ps --all --format json` 相当の読み取り専用コマンドで、対象プロジェクトのコンテナを列挙する。実行上限は 60 秒とする。出力は 1 行 1 オブジェクトの JSON と JSON 配列の両方を受け付ける。別 profile で外部起動されたコンテナがこの出力に含まれるかは未検証で、Phase B の受け入れ条件で実機確認する（18 章 Docker Compose）。
+**状態の観測**: `docker compose -p <name> -f <file>... [--profile <profile>...] ps --all --format json` 相当の読み取り専用コマンドで、対象プロジェクトのコンテナを列挙する。実行上限は 60 秒とする。出力は 1 行 1 オブジェクトの JSON と JSON 配列の両方を受け付ける。2026-11-12 に Docker Compose v5.5.0 で、設定外の profile で外部起動されたコンテナもこの出力に含まれることを確認した。他の実行環境でも Phase B の受け入れ条件に従い実機確認する（18 章 Docker Compose）。
 
 コンテナの状態を次のように分類する。
 
@@ -310,7 +310,7 @@ Dev Switcher はプロセスを独立したプロセスグループとして起�
 
 【PM 判断待ち: 論点 2】
 
-**対象限定の停止**: `docker compose -p <name> -f <file>... [--profile <profile>...] stop` を実行する。実行上限は 300 秒とする。成功後、`notRunning` になるまで最大 60 秒再観測し、期限の時点で `notRunning` でなければ停止失敗として残存を表示する。`down` は使わない。コンテナとボリュームを削除する操作は、Supabase の `--no-backup` と同じ扱いで禁止する。停止後もコンテナは exited として残り、次の起動で再利用される。
+**対象限定の停止**: `docker compose -p <name> -f <file>... --profile '*' stop` を実行する。同じプロジェクト名の全 profile を対象にし、起動・観測に設定した profile には限定しない。実行上限は 300 秒とする。成功後、`notRunning` になるまで最大 60 秒再観測し、期限の時点で `notRunning` でなければ停止失敗として残存を表示する。`down` は使わない。コンテナとボリュームを削除する操作は、Supabase の `--no-backup` と同じ扱いで禁止する。停止後もコンテナは exited として残り、次の起動で再利用される。
 
 **上限と排他範囲**: 1 つの開発環境に複数の Compose スタックを登録できる。プロジェクト名は登録済みの全開発環境の Compose スタックの中で一意とする。排他範囲は持たず、対象と別の名前の Compose プロジェクトを観測も停止もしない。
 
@@ -619,13 +619,13 @@ Dev Switcher は、開発環境の起動・停止に必要な操作以外を自�
 ### Docker Compose
 
 - プロジェクト名を `projectName`、`name:`、プロジェクトディレクトリ名の順で決め、規則外の値や変数展開を含む `name:` は保存できない
-- 起動・観測・停止の全コマンドに同じ `-p <name>`、`-f <file>...`、`--profile` を付け、`COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` を環境から除く
+- 起動・観測・停止の全コマンドに同じ `-p <name>`、`-f <file>...` を付ける。起動・観測は設定した `profiles` を使い、停止だけは常に `--profile '*'` とする。`COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` を環境から除く
 - 起動は `up -d` で行い、許可リストに無い追加引数（短いオプションの結合を含む）を保存できない
 - 観測結果を 6.7 の優先順位の表どおり 4 状態へ分類し、停止済みコンテナだけが残る状態を `notRunning` とする
 - 起動・停止の待機は期限まで再観測し、期限の時点の状態で判定する
 - 停止は `stop` で行い、`down`、`rm`、`kill`、`-v`、`--rmi`、`--remove-orphans` をどの経路でも実行しない
 - 対象と別の名前の Compose プロジェクトを観測・停止しない
-- 実機確認: 同じプロジェクト名で、Dev Switcher の `profiles` と別の profile のサービスを外部から起動して稼働させた状態で、`-p` と `--profile` を付けた `ps --all --format json` がそのコンテナを出力するかを確認する。出力しない場合は、観測が稼働中のコンテナを見落として `notRunning` と誤判定し得るため、観測コマンドの組み立て（`--profile` を付けない、または全 profile を対象にする）を見直してから Phase B を完了とする
+- 実機確認: 同じプロジェクト名で、Dev Switcher の `profiles` と別の profile のサービスを外部から起動して稼働させた状態で、`-p` と `--profile` を付けた `ps --all --format json` がそのコンテナを出力するかを確認する。引き継ぎ確認で全 profile が停止対象と分かり、承認後に `--profile '*' stop` でそのコンテナも止まり、`notRunning` を確認できることも確かめる。出力しない場合は、観測が稼働中のコンテナを見落として `notRunning` と誤判定し得るため、観測コマンドの組み立て（`--profile` を付けない、または全 profile を対象にする）を見直してから Phase B を完了とする
 
 ### 切替
 

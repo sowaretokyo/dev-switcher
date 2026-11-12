@@ -141,7 +141,7 @@ struct ManagedStackPresentationCharacterizationTests {
 
         await state.bootstrap()
 
-        let serviceID = try #require(project.services.first?.id)
+        let serviceID = try #require(project.launchUnits.first?.id)
         let ui = try #require(state.state(of: serviceID).managedStack)
         #expect(ui.identity == nil)
         #expect(ui.state == .unknown)
@@ -170,7 +170,7 @@ struct ManagedStackPresentationCharacterizationTests {
 
         await state.bootstrap()
 
-        let serviceID = try #require(project.services.first?.id)
+        let serviceID = try #require(project.launchUnits.first?.id)
         let ui = try #require(state.state(of: serviceID).managedStack)
         #expect(ui.identity?.value == "bell")
         #expect(ui.state == .unknown)
@@ -187,7 +187,7 @@ struct ManagedStackPresentationCharacterizationTests {
         let world = FakeSupabaseWorld(stacks: ["bell": .degraded(reason: "DBコンテナが exited 状態です。")])
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
-        let serviceID = try #require(project.services.first?.id)
+        let serviceID = try #require(project.launchUnits.first?.id)
 
         let degraded = try #require(state.state(of: serviceID).managedStack)
         #expect(degraded.label == "外部・一部だけ稼働")
@@ -210,7 +210,7 @@ struct ManagedStackPresentationCharacterizationTests {
         try ProjectStore(directory: directory).save([project])
         let state = makeAppState(directory: directory)
         await state.bootstrap()
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
 
         let reason = "Supabaseは専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
         #expect(state.restartBlockedReason(for: service, in: project) == reason)
@@ -228,7 +228,7 @@ struct ManagedStackPresentationCharacterizationTests {
         try ProjectStore(directory: directory).save([project])
         let state = makeAppState(directory: directory)
         await state.bootstrap()
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
 
         #expect(
             state.restartBlockedReason(for: service, in: project)
@@ -250,7 +250,7 @@ struct ManagedStackPresentationCharacterizationTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let json = """
             {
@@ -282,7 +282,7 @@ struct ManagedStackPresentationCharacterizationTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let hint = try #require(
             makeManagedStackHint(
@@ -331,7 +331,7 @@ struct ManagedStackPresentationCharacterizationTests {
         )
         #expect(
             state.startBlockedReason
-                == "状態を判定できないSupabaseの手掛かりが残っています。"
+                == "状態を判定できない管理対象スタックの手掛かりが残っています。"
                 + "画面上部の案内から再試行するか、設定が無い手掛かりを破棄してください。"
         )
         #expect(state.canStart == false)
@@ -342,7 +342,7 @@ struct ManagedStackPresentationCharacterizationTests {
     /// schema v6 の手掛かりファイルを、リテラルの形で書き出す。
     private func writeV6Hint(
         project: ProjectDefinition,
-        service: ServiceDefinition,
+        service: LaunchUnit,
         stackID: String,
         relationship: String,
         directory: URL
@@ -379,7 +379,7 @@ struct ManagedStackPresentationCharacterizationTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         try writeV6Hint(
             project: project, service: service, stackID: "bell", relationship: "launched", directory: directory
@@ -405,7 +405,7 @@ struct ManagedStackPresentationCharacterizationTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         try writeV6Hint(
             project: project, service: service, stackID: "bell", relationship: "adopted", directory: directory

@@ -230,9 +230,18 @@ struct ServiceStartTests {
                 try await coordinator.startService(altered, in: project)
             }
             var withSupabase = project
-            withSupabase.services[1].kind = .supabase
+            var stackUnit = LaunchUnit(withSupabase.services[1])
+            stackUnit.kind = .supabase
+            withSupabase.services.remove(at: 1)
+            withSupabase.managedStacks = [try #require(stackUnit.managedStackDefinition)]
+            for index in withSupabase.workingDirectories.indices {
+                if withSupabase.workingDirectories[index].serviceIDs.contains(stackUnit.id) {
+                    withSupabase.workingDirectories[index].serviceIDs.removeAll { $0 == stackUnit.id }
+                    withSupabase.workingDirectories[index].stackIDs.append(stackUnit.id)
+                }
+            }
             await #expect(throws: SwitchFailure.self) {
-                try await coordinator.startService(withSupabase.services[1], in: withSupabase)
+                try await coordinator.startService(stackUnit, in: withSupabase)
             }
             #expect(await registry.runtimeSnapshot(serviceID: web.id)?.processID == webPID)
             #expect(await registry.isRunning(serviceID: inngest.id) == false)

@@ -44,7 +44,7 @@ final class ProjectFormModel {
 
         let id: UUID
         var name: String
-        var kind: ServiceKind
+        var tag: String
         var executable: String
         var argumentsText: String
         /// 改行や前後の空白を含む既存引数は、境界を失わないJSON配列で編集する。
@@ -52,13 +52,15 @@ final class ProjectFormModel {
         var ports: [PortDraft]
         var enabledByDefault: Bool
         var failurePolicy: FailurePolicy
-        /// 編集対象外。保存時に欠落させないためだけに持ち回る。
-        let preservedStop: CommandSpec?
+        var hasStopCommand: Bool
+        var stopExecutable: String
+        var stopArgumentsJSON: String
+        var stopDirectory: URL?
 
         init(
             id: UUID = UUID(),
             name: String = "",
-            kind: ServiceKind = .web,
+            tag: String = "",
             executable: String = "",
             argumentsText: String = "",
             argumentsFormat: ArgumentsFormat = .lines,
@@ -69,14 +71,17 @@ final class ProjectFormModel {
         ) {
             self.id = id
             self.name = name
-            self.kind = kind
+            self.tag = tag
             self.executable = executable
             self.argumentsText = argumentsText
             self.argumentsFormat = argumentsFormat
             self.ports = ports
             self.enabledByDefault = enabledByDefault
             self.failurePolicy = failurePolicy
-            self.preservedStop = preservedStop
+            self.hasStopCommand = preservedStop != nil
+            self.stopExecutable = preservedStop?.executable ?? ""
+            self.stopArgumentsJSON = String(decoding: try! JSONEncoder().encode(preservedStop?.arguments ?? []), as: UTF8.self)
+            self.stopDirectory = preservedStop?.workingDirectory
         }
 
         init(service: ServiceDefinition) {
@@ -109,7 +114,7 @@ final class ProjectFormModel {
             self.init(
                 id: service.id,
                 name: service.name,
-                kind: service.kind,
+                tag: service.tag ?? "",
                 executable: service.start.executable,
                 argumentsText: argumentsText,
                 argumentsFormat: needsJSON ? .json : .lines,
@@ -151,17 +156,20 @@ final class ProjectFormModel {
         var name: String
         var directory: URL?
         var services: [ServiceDraft]
+        var stacks: [StackDraft]
 
         init(
             id: UUID = UUID(),
             name: String = "",
             directory: URL? = nil,
-            services: [ServiceDraft] = [ServiceDraft()]
+            services: [ServiceDraft] = [ServiceDraft()],
+            stacks: [StackDraft] = []
         ) {
             self.id = id
             self.name = name
             self.directory = directory
             self.services = services
+            self.stacks = stacks
         }
 
         init(definition: WorkingDirectoryDefinition, project: ProjectDefinition) {
@@ -174,6 +182,10 @@ final class ProjectFormModel {
                         preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
                     }
                     return ServiceDraft(service: service)
+                },
+                stacks: definition.stackIDs.map { id in
+                    guard let stack = project.managedStacks.first(where: { $0.id == id }) else { preconditionFailure("スタックの定義がありません。") }
+                    return StackDraft(stack)
                 }
             )
         }
@@ -184,6 +196,7 @@ final class ProjectFormModel {
     private let preservedEnabledNow: [UUID: Bool]
     /// schema v1/v2 からの移行時も、作業ディレクトリをまたぐ既存の起動順を保つ。
     private var serviceOrder: [UUID]
+    private var stackOrder: [UUID]
 
     var name: String
     var color: ProjectColor
@@ -201,10 +214,12 @@ final class ProjectFormModel {
                 WorkingDirectoryDraft(definition: $0, project: project)
             }
             serviceOrder = project.services.map(\.id)
+            stackOrder = project.managedStacks.map(\.id)
         } else {
             let workingDirectory = WorkingDirectoryDraft()
             workingDirectories = [workingDirectory]
             serviceOrder = workingDirectory.services.map(\.id)
+            stackOrder = []
         }
     }
 
@@ -273,6 +288,8 @@ final class ProjectFormModel {
         let removedServiceIDs = Set(workingDirectory.services.map(\.id))
         workingDirectories.removeAll { $0.id == id }
         serviceOrder.removeAll { removedServiceIDs.contains($0) }
+        let removedStackIDs = Set(workingDirectory.stacks.map(\.id))
+        stackOrder.removeAll { removedStackIDs.contains($0) }
     }
 
     func moveWorkingDirectory(_ id: UUID, by offset: Int) {
@@ -281,6 +298,7 @@ final class ProjectFormModel {
         guard workingDirectories.indices.contains(destination) else { return }
         workingDirectories.swapAt(index, destination)
         serviceOrder = workingDirectories.flatMap(\.services).map(\.id)
+        stackOrder = workingDirectories.flatMap(\.stacks).map(\.id)
     }
 
     func canMoveWorkingDirectory(_ id: UUID, by offset: Int) -> Bool {
@@ -361,20 +379,6 @@ final class ProjectFormModel {
         return directory.services.indices.contains(index + offset)
     }
 
-    /// 新規の空欄だけに種別の最小プリセットを入れる。入力済みコマンドは上書きしない。
-    func setKind(_ kind: ServiceKind, for serviceID: UUID) {
-        updateService(serviceID) { service in
-            let wasSupabase = service.kind == .supabase
-            service.kind = kind
-            guard kind == .supabase,
-                  !wasSupabase,
-                  service.executable.trimmed.isEmpty,
-                  service.argumentsText.trimmed.isEmpty else { return }
-            service.executable = "supabase"
-            service.argumentsText = service.argumentsFormat == .json ? #"["start"]"# : "start"
-        }
-    }
-
     /// SwiftUI が削除アニメーション中の行を再評価する間は、削除済み ID なら nil を返す。
     /// 保存時のデータ整合性は `services` の precondition で別途保証する。
     func positionIfPresent(of serviceID: UUID) -> Int? {
@@ -420,6 +424,27 @@ final class ProjectFormModel {
         preconditionFailure("存在しないプロセスを更新できません。")
     }
 
+    func addStack(_ type: ManagedStackType, to directoryID: UUID) {
+        guard let index = workingDirectories.firstIndex(where: { $0.id == directoryID }) else { preconditionFailure("作業ディレクトリがありません。") }
+        let draft = StackDraft(type: type)
+        workingDirectories[index].stacks.append(draft)
+        stackOrder.append(draft.id)
+    }
+    func removeStack(_ id: UUID) {
+        precondition(stackOrder.contains(id), "スタックがありません。")
+        for index in workingDirectories.indices { workingDirectories[index].stacks.removeAll { $0.id == id } }
+        stackOrder.removeAll { $0 == id }
+    }
+    func moveStack(_ id: UUID, by offset: Int) {
+        guard let index = stackOrder.firstIndex(of: id), stackOrder.indices.contains(index + offset) else { return }
+        stackOrder.swapAt(index, index + offset)
+        let positions = Dictionary(uniqueKeysWithValues: stackOrder.enumerated().map { ($0.element, $0.offset) })
+        for index in workingDirectories.indices {
+            workingDirectories[index].stacks.sort { positions[$0.id]! < positions[$1.id]! }
+        }
+    }
+    func stackPosition(_ id: UUID) -> Int? { stackOrder.firstIndex(of: id).map { $0 + 1 } }
+
     // MARK: - 保存
 
     func build() throws -> ProjectDefinition {
@@ -446,6 +471,7 @@ final class ProjectFormModel {
         }
 
         var definitionsByID: [UUID: ServiceDefinition] = [:]
+        var stacksByID: [UUID: ManagedStackDefinition] = [:]
         var directoryDefinitions: [WorkingDirectoryDefinition] = []
 
         for directoryDraft in workingDirectories {
@@ -460,26 +486,30 @@ final class ProjectFormModel {
                 let service = ServiceDefinition(
                     id: draft.id,
                     name: draft.name.trimmed,
-                    kind: draft.kind,
+                    tag: draft.tag.trimmed.isEmpty ? nil : draft.tag.trimmed,
                     ports: ports,
                     start: CommandSpec(
                         executable: draft.executable.trimmed,
                         arguments: try draft.parsedArguments,
                         workingDirectory: directory
                     ),
-                    stop: draft.preservedStop,
+                    stop: try draft.stopCommand(workingDirectory: directory),
                     enabledByDefault: draft.enabledByDefault,
                     failurePolicy: draft.failurePolicy
                 )
                 definitionsByID[service.id] = service
                 serviceIDs.append(service.id)
             }
+            for draft in directoryDraft.stacks {
+                stacksByID[draft.id] = try draft.build(directory: directory)
+            }
             directoryDefinitions.append(
                 WorkingDirectoryDefinition(
                     id: directoryDraft.id,
                     name: directoryDraft.name.trimmed,
                     directory: directory,
-                    serviceIDs: serviceIDs
+                    serviceIDs: serviceIDs,
+                    stackIDs: directoryDraft.stacks.map(\.id)
                 )
             )
         }
@@ -492,13 +522,17 @@ final class ProjectFormModel {
         }
 
         let serviceIDs = definitions.map(\.id)
-        let remaining = Set(serviceIDs)
+        let remaining = Set(serviceIDs + stackOrder)
         let project = ProjectDefinition(
             id: projectID,
             name: name.trimmed,
             color: color,
             workingDirectories: directoryDefinitions,
             services: definitions,
+            managedStacks: stackOrder.map { id in
+                guard let stack = stacksByID[id] else { preconditionFailure("スタックの起動順が不正です。") }
+                return stack
+            },
             stopOrder: ProjectFormModel.stopOrder(
                 preserving: preservedStopOrder,
                 for: serviceIDs
@@ -536,7 +570,7 @@ final class ProjectFormModel {
         var errors: [ValidationError] = []
         if name.trimmed.isEmpty { errors.append(.projectNameEmpty) }
         if workingDirectories.isEmpty { errors.append(.noWorkingDirectories) }
-        if services.isEmpty { errors.append(.noServices) }
+        if services.isEmpty && workingDirectories.flatMap(\.stacks).isEmpty { errors.append(.noServices) }
 
         var serviceIndex = 0
         for (directoryIndex, directory) in workingDirectories.enumerated() {
@@ -548,8 +582,12 @@ final class ProjectFormModel {
             if directory.directory == nil {
                 errors.append(.workingDirectoryPathEmpty(name: directoryLabel))
             }
-            if directory.services.isEmpty {
+            if directory.services.isEmpty && directory.stacks.isEmpty {
                 errors.append(.workingDirectoryHasNoServices(name: directoryLabel))
+            }
+            for stack in directory.stacks where stack.name.trimmed.isEmpty {
+                errors.append(.serviceNameEmpty(serviceIndex: serviceIndex))
+                serviceIndex += 1
             }
             for service in directory.services {
                 if service.name.trimmed.isEmpty {
@@ -568,10 +606,13 @@ final class ProjectFormModel {
         of draft: ServiceDraft,
         serviceLabel: String
     ) -> ([PortSpec], [ValidationError]) {
+        Self.tryParsePorts(draft.ports, serviceLabel: serviceLabel)
+    }
+
+    static func tryParsePorts(_ drafts: [PortDraft], serviceLabel: String) -> ([PortSpec], [ValidationError]) {
         var portSpecs: [PortSpec] = []
         var errors: [ValidationError] = []
-
-        for port in draft.ports where !port.isBlank {
+        for port in drafts where !port.isBlank {
             let portText = port.port.trimmed
             guard let portNumber = Int(portText), !portText.isEmpty else {
                 errors.append(.portNotANumber(service: serviceLabel, value: port.port))

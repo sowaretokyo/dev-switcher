@@ -13,6 +13,16 @@ public struct CommandSpec: Codable, Equatable, Sendable {
         self.workingDirectory = workingDirectory
     }
 
+    private enum CodingKeys: String, CodingKey { case executable, arguments, workingDirectory }
+
+    public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(["executable", "arguments", "workingDirectory"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        executable = try c.decode(String.self, forKey: .executable)
+        arguments = try c.decode([String].self, forKey: .arguments)
+        workingDirectory = try c.decode(URL.self, forKey: .workingDirectory)
+    }
+
     /// 表示文字列を実行へ再利用しない。
     public var displayCommandLine: String {
         ([executable] + arguments).joined(separator: " ")

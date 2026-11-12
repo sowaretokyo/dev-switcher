@@ -27,6 +27,7 @@ struct RuntimeHintV6CompatibilityTests {
         let relationship = try #require(hint.relationship)
         let fingerprint = switch try #require(hint.fingerprint) {
         case let .supabase(supabaseFingerprint): supabaseFingerprint
+        case .dockerCompose: preconditionFailure("Supabase fixture ではありません。")
         }
         return ExtractedManagedHint(
             environmentID: hint.projectID,

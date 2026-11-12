@@ -158,7 +158,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let (_, coordinator, _) = makeStack(world: FakeSupabaseWorld(), logDirectory: directory)
         let message = "Supabaseは通常プロセスと停止・状態確認の方法が異なるため、単体の起動・再起動はできません。"
 
@@ -178,7 +178,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let (registry, _, _) = makeStack(world: FakeSupabaseWorld(), logDirectory: directory)
 
         do {
@@ -188,7 +188,7 @@ struct ManagedStackFlowCharacterizationTests {
             #expect(
                 error.description
                     == "サービス「Supabase」の管理コマンドを構成できません。\n"
-                    + "Supabaseは既存スタックの実測と確認を伴う専用経路から起動します。"
+                    + "スタックは専用の起動処理を使用してください。"
             )
         }
     }
@@ -204,7 +204,7 @@ struct ManagedStackFlowCharacterizationTests {
 
     private func decodeUnverifiedManagedHint(
         project: ProjectDefinition,
-        service: ServiceDefinition
+        service: LaunchUnit
     ) throws -> ManagedStackHint {
         // 旧schemaから移行した「未検証の手掛かり」は、3項目すべてが明示的な null。
         let json = """
@@ -226,7 +226,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
         let (_, coordinator, _) = makeStack(world: world, logDirectory: directory)
         let hint = try decodeUnverifiedManagedHint(project: project, service: service)
@@ -249,7 +249,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
                 supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
@@ -277,7 +277,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
                 supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .adopted
@@ -308,7 +308,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
                 supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
@@ -331,7 +331,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
                 supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
@@ -430,7 +430,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let bell = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
         await world.failStatus(.exit(code: 1))
@@ -454,7 +454,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let bell = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
         await world.failStatus(.unavailable("supabase が PATH にありません。"))

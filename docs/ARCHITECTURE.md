@@ -326,7 +326,7 @@ public enum ValidationWarning: Equatable, Sendable {
 | `ComposeProjectName` | `docs/SPEC.md` 6.7 の名前規則で検証した値。プロジェクトディレクトリ名からの導出だけ正規化を行う |
 | `DockerComposeResolvedConfiguration` | `up -d`、`ps --all --format json`、`stop` のコマンドを `-p` 付きで生成する。`down`・`rm`・`kill` などを生成する入口を持たない |
 
-`upArguments` は `docs/SCHEMA.md` 7.2 の許可リストで検証する。許可リストと、どの経路でも生成・実行しない引数・サブコマンドの一覧は、それぞれ 1 か所に定数として持ち、構造検証、コマンド生成、`ManagedStackCommandRunning` の 3 か所で参照する。`ComposeFileLocator` が解決したファイル一覧と `profiles` は、起動・観測・停止の全コマンドに同じ `-f` / `--profile` として付ける。
+`upArguments` は `docs/SCHEMA.md` 7.2 の許可リストで検証する。許可リストと、どの経路でも生成・実行しない引数・サブコマンドの一覧は、それぞれ 1 か所に定数として持ち、構造検証、コマンド生成、`ManagedStackCommandRunning` の 3 か所で参照する。`ComposeFileLocator` が解決したファイル一覧は、起動・観測・停止の全コマンドに同じ `-f` として付ける。起動・観測は設定した `profiles` を使い、停止だけは `ComposeCommandRules.stopProfiles` の `--profile '*'` で同じプロジェクト名の全 profile を対象にする。実行境界でも、全 profile を指定しない停止を拒否する。
 
 ## 6. 永続化
 
@@ -380,6 +380,12 @@ public struct ProcessStopOptions: Sendable {
 
 `RuntimeError.stopCommandUnsupported` と、`stop` を持つプロセスを起動前に拒否している preflight を削除する。
 
+### 7.1 停止コマンド自体が残存した場合
+
+停止コマンドは独立したプロセスとして `RuntimeRegistry` が所有し、元のプロセスとは別の UUID・プロセスグループで記録する。元の対象に対する停止・強制停止操作は、残存した停止コマンドも対象に含める。元の対象が先に終了しても、停止コマンドの PGID・実測ポートと停止導線を保持し、残存中の再起動を拒否する。出力は元の対象のログファイルへ追記し、停止コマンドの完了まで追尾する。
+
+手掛かり v7 の通常プロセスのレコードに、停止コマンドの場合だけ `stopCommandFor`（親サービスの UUID）と `stopCommand`（保存時のコマンド設定）を追加する。両方を指定するか両方を省略し、一部欠落や自分自身への参照は読み込みエラーにする。再起動後は親の現在の停止コマンドと一致する場合だけ再検証し、停止コマンドを稼働中サービスとして引き継ぐ選択肢は出さない。設定不一致・観測不能では手掛かりを保持する。
+
 ## 8. 状態機械との対応
 
 | SPEC の状態 | 型 |
@@ -418,7 +424,7 @@ Phase A はリファクタであり、既存の Supabase のテスト（`Supabas
 Docker Compose では少なくとも次を確認する。
 
 - プロジェクト名の決定順、`name:` の読み取り（引用符、変数展開、複数ファイルの不一致、コメント、ネストしたキーの誤認）、ディレクトリ名の正規化、規則外の値の拒否
-- 全コマンドに同じ `-p`、`-f`、`--profile` が付き、`COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` が除かれる
+- 全コマンドに同じ `-p`、`-f` が付き、起動・観測は設定した `profiles`、停止は常に `--profile '*'` を使う。限定した profile の停止は実行境界で拒否する。`COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PROFILES` が除かれる
 - `upArguments` の許可リスト（サービス名、許可したオプション、値の形式）と、短いオプションの結合や未知のオプションの拒否
 - 状態判定の優先順位（`docs/SPEC.md` 6.7 の表）と、起動・停止の待機期限の時点の状態での判定
 - 状態分類（running のみ、停止済みだけが残る、一部停止、restarting、unhealthy、health starting、removing、0 件、`docker` 失敗）

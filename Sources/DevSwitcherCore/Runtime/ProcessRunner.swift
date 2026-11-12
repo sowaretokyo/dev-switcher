@@ -6,7 +6,7 @@ public enum SpawnOutput: Sendable {
     /// アプリより長く生きるプロセスには使わない。固定の補助コマンド専用。
     case pipes
     /// アプリ終了後も残すサービスには、読み手の寿命に依存しないファイルを使う。
-    case files(standardOutput: URL, standardError: URL)
+    case files(standardOutput: URL, standardError: URL, append: Bool = false)
 }
 
 public enum SpawnIsolation: Sendable {
@@ -86,23 +86,23 @@ public enum ProcessRunner {
         case .pipes:
             posix_spawn_file_actions_adddup2(&fileActions, stdoutPipe[1], STDOUT_FILENO)
             posix_spawn_file_actions_adddup2(&fileActions, stderrPipe[1], STDERR_FILENO)
-        case let .files(standardOutput, standardError):
+        case let .files(standardOutput, standardError, append):
             // pipeだとアプリ終了後の書き込みでSIGPIPEになるため、子自身にファイルを開かせる。
             // 起動単位でログを分け、前回セッションを新しいtailが再読込しないようtruncateする。
-            try prepareLogFile(at: standardOutput)
-            try prepareLogFile(at: standardError)
+            try prepareLogFile(at: standardOutput, append: append)
+            try prepareLogFile(at: standardError, append: append)
             posix_spawn_file_actions_addopen(
                 &fileActions,
                 STDOUT_FILENO,
                 standardOutput.path,
-                O_WRONLY | O_APPEND | O_TRUNC,
+                O_WRONLY | O_APPEND | O_NOFOLLOW | (append ? 0 : O_TRUNC),
                 0o644
             )
             posix_spawn_file_actions_addopen(
                 &fileActions,
                 STDERR_FILENO,
                 standardError.path,
-                O_WRONLY | O_APPEND | O_TRUNC,
+                O_WRONLY | O_APPEND | O_NOFOLLOW | (append ? 0 : O_TRUNC),
                 0o644
             )
         }
@@ -186,9 +186,17 @@ public enum ProcessRunner {
         }
     }
 
-    private static func prepareLogFile(at url: URL) throws {
+    private static func prepareLogFile(at url: URL, append: Bool) throws {
         let fileManager = FileManager.default
-        try? fileManager.createDirectory(
+        // createFile は既存ファイルを置き換えるため、追記時は同じ inode を保持する。
+        if append, fileManager.fileExists(atPath: url.path) {
+            var info = stat()
+            guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+                throw ProcessSpawnError.logFileUnavailable(path: url.path)
+            }
+            return
+        }
+        try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )

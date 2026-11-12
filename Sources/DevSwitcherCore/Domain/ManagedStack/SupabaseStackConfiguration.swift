@@ -101,7 +101,20 @@ public struct SupabaseLifecycleFingerprint: Codable, Equatable, Sendable {
 ///
 /// `stop`はv3の形式に合わせて保持するだけで、指定されていれば構造不備として扱う。
 /// 停止は常に起動コマンドと同じCLIから導出する。
-public struct SupabaseStackConfiguration: Equatable, Sendable {
+public struct SupabaseStackConfiguration: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey { case start }
+    public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(["start"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(start: try c.decode(CommandSpec.self, forKey: .start))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        guard stop == nil else {
+            throw EncodingError.invalidValue(self, .init(codingPath: encoder.codingPath, debugDescription: "Supabase の停止コマンドは個別指定できません。"))
+        }
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(start, forKey: .start)
+    }
     public var start: CommandSpec
     public var stop: CommandSpec?
 
@@ -155,6 +168,10 @@ public struct SupabaseStackConfiguration: Equatable, Sendable {
     /// 両者の判定がずれることはない。
     /// 判定順（優先順位）: stop → 呼び出し形式 → startサブコマンド → 禁止オプション → workdir。
     private func derivation(workingDirectory: URL) -> Derivation {
+        guard start.workingDirectory.isFileURL,
+              start.workingDirectory.standardizedFileURL.path == workingDirectory.standardizedFileURL.path else {
+            return .invalid(.workingDirectoryMismatch)
+        }
         if stop != nil {
             return .invalid(.customStopUnsupported)
         }
@@ -240,7 +257,7 @@ public struct SupabaseStackConfiguration: Equatable, Sendable {
         return result
     }
 
-    private var startSubcommandIndex: Int? {
+    var startSubcommandIndex: Int? {
         guard var index = subcommandStartIndex else { return nil }
 
         while index < start.arguments.count {
@@ -320,6 +337,7 @@ public struct SupabaseStackConfiguration: Equatable, Sendable {
 public enum SupabaseConfigurationIssue: Equatable, Sendable {
     /// v3の`stop`が指定されている。停止は起動コマンドから導出する。
     case customStopUnsupported
+    case workingDirectoryMismatch
     /// 対応していない呼び出し形式。
     case commandUnsupported
     /// `start`サブコマンドが無い。
@@ -332,6 +350,7 @@ public enum SupabaseConfigurationIssue: Equatable, Sendable {
     /// 起動・切替・手掛かりの再検証で示す理由。
     public var failureReason: String {
         switch self {
+        case .workingDirectoryMismatch: "Supabase の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。"
         case .customStopUnsupported:
             "Supabaseの終了コマンドは起動コマンドから導出するため、個別には指定できません。"
         case .commandUnsupported:
@@ -348,6 +367,7 @@ public enum SupabaseConfigurationIssue: Equatable, Sendable {
     /// 保存・取り込み時の検証で示す文言。
     public func validationMessage(stackName: String) -> String {
         switch self {
+        case .workingDirectoryMismatch: "Supabase「\(stackName)」の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。"
         case .customStopUnsupported:
             "Supabase「\(stackName)」の終了コマンドは個別に指定できません。起動コマンドから導出した `supabase stop` を使用します。"
         case .commandUnsupported:

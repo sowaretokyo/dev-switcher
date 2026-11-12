@@ -93,7 +93,8 @@ struct ConfirmationSheetContentTests {
         ]
         for (action, head) in expected {
             let alone = ConfirmationSheetContent(plan: try plan(action: action, withStopTargets: false))
-            #expect(alone.notes == head + [cancelNote], "\(action) 停止行なし")
+            let extra = action == .restart ? ["停止後に対象の起動が失敗しても、停止したスタックは自動で再起動しません。"] : []
+            #expect(alone.notes == head + [cancelNote] + extra, "\(action) 停止行なし")
 
             let withStops = ConfirmationSheetContent(plan: try plan(action: action, withStopTargets: true))
             #expect(withStops.notes == head + stopNotes + [cancelNote], "\(action) 停止行あり")
@@ -106,15 +107,15 @@ struct ConfirmationSheetContentTests {
         #expect(
             content.rows == [
                 .init(
-                    identity: "bell", registration: "Bell / Supabase",
+                    identity: "Supabase / bell", registration: "Bell / Supabase",
                     configDirectory: "/tmp/bell", state: "稼働中", action: "引き継ぐ"
                 ),
                 .init(
-                    identity: "penta", registration: "Penta / DB",
+                    identity: "Supabase / penta", registration: "Penta / DB",
                     configDirectory: "/tmp/penta", state: "稼働中", action: "停止する"
                 ),
                 .init(
-                    identity: "legacy", registration: "未登録",
+                    identity: "Supabase / legacy", registration: "未登録",
                     configDirectory: nil, state: "一部だけ稼働", action: "停止する"
                 ),
             ]
@@ -129,6 +130,69 @@ struct ConfirmationSheetContentTests {
         for (action, label) in expected {
             let content = ConfirmationSheetContent(plan: try plan(action: action, withStopTargets: false))
             #expect(content.rows.map(\.action) == [label], "\(action)")
+        }
+    }
+
+    @Test("起動先が Supabase でも停止する Compose の全 profile を明示する")
+    func mixedStackStopScope() throws {
+        for action in [ManagedStackConfirmationTarget.Action.start, .restart] {
+            let original = try plan(action: action, withStopTargets: false)
+            let compose = ManagedStackConfirmationTarget(stackID: nil,
+                identity: try ManagedStackIdentity(type: .dockerCompose, value: "shop"),
+                state: .running, action: .stop, registration: registration("Shop", "DB"))
+            let mixed = ManagedStackConfirmationPlan(environmentName: original.environmentName,
+                entries: original.entries + [compose], snapshot: original.snapshot,
+                fingerprints: original.fingerprints)
+            let content = ConfirmationSheetContent(plan: mixed)
+            #expect(content.notes.contains("同じプロジェクト名の全 profile を停止します。設定した profile 以外も対象です。コンテナやボリュームは削除しません。"))
+            #expect(content.rows.last?.identity == "Docker Compose / shop")
+        }
+    }
+
+    @Test("複数対象でも種類ごとの説明・停止範囲・注意書きを重複なく表示する",
+          arguments: [ManagedStackConfirmationTarget.Action.adopt, .restart, .start])
+    func multipleTargetNotes(_ action: ManagedStackConfirmationTarget.Action) throws {
+        let directory = URL(fileURLWithPath: "/tmp/bell")
+        let composeID = UUID()
+        let compose = ManagedStackConfirmationTarget(stackID: composeID,
+            identity: try ManagedStackIdentity(type: .dockerCompose, value: "shop"),
+            state: action == .restart ? .degraded : .running, action: action,
+            registration: registration("Bell", "Compose"))
+        let composeScope = "同じプロジェクト名の全 profile を停止します。設定した profile 以外も対象です。コンテナやボリュームは削除しません。"
+        for withStops in [false, true] {
+            let original = try plan(action: action, withStopTargets: withStops)
+            var fingerprints = original.fingerprints
+            fingerprints[composeID] = .dockerCompose(.init(workingDirectory: directory,
+                projectName: "shop", files: [directory.appendingPathComponent("compose.yaml")],
+                profiles: ["dev"], upArguments: []))
+            let mixed = ManagedStackConfirmationPlan(environmentName: original.environmentName,
+                entries: [original.primaryEntry, compose] + original.stopEntries,
+                snapshot: original.snapshot, fingerprints: fingerprints)
+            let content = ConfirmationSheetContent(plan: mixed)
+            var expected: [String]
+            switch action {
+            case .adopt:
+                expected = [
+                    "引き継いだあとは、Dev Switcherから停止・切替できます。",
+                    "現在のスタックへ起動時の追加引数や profile の設定を再適用しません。引き継いだ後の停止は、同じプロジェクト名の全 profile が対象です。",
+                    "現在のスタックへ起動コマンドの `--exclude` などは再適用しません。",
+                ]
+            case .restart:
+                expected = withStops ? [] : [stopNotes[1]]
+                expected += [composeScope, stopNotes[0]]
+            case .start:
+                expected = ["「起動する」の行だけを新しく起動します。"]
+            case .stop:
+                Issue.record("起動先の操作は stop にしません。")
+                return
+            }
+            if withStops {
+                if action != .restart { expected.append(stopNotes[0]) }
+                expected.append(stopNotes[1])
+            }
+            expected.append(cancelNote)
+            #expect(content.notes == expected)
+            #expect(content.rows.map(\.identity).prefix(2) == ["Supabase / bell", "Docker Compose / shop"])
         }
     }
 }

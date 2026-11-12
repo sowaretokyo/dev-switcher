@@ -4,9 +4,9 @@ import Foundation
 public struct ProjectsDocument: Codable, Sendable {
     /// version 2 で終了順（`stopOrder`）、今回の起動対象（`enabledNow`）、終了コマンド（`stop`）を追加した。
     /// version 3 で名前付き作業ディレクトリを追加し、開発環境直下の代表ディレクトリを廃止した。
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
     /// 明示的な変換を書いてある過去バージョン。ここに無いバージョンは読まない。
-    public static let migratableSchemaVersions = [1, 2]
+    public static let migratableSchemaVersions = [1, 2, 3]
 
     public var schemaVersion: Int
     public var projects: [ProjectDefinition]
@@ -14,6 +14,14 @@ public struct ProjectsDocument: Codable, Sendable {
     public init(schemaVersion: Int = ProjectsDocument.currentSchemaVersion, projects: [ProjectDefinition]) {
         self.schemaVersion = schemaVersion
         self.projects = projects
+    }
+
+    private enum CodingKeys: String, CodingKey { case schemaVersion, projects }
+    public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(["schemaVersion", "projects"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        projects = try c.decode([ProjectDefinition].self, forKey: .projects)
     }
 
     /// 保存ファイルと取り込み確認で、同じ設定を同じJSON表現にする。
@@ -130,10 +138,13 @@ public struct ProjectStore: Sendable {
             } catch {
                 throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
             }
+        case 3:
+            do { return try ProjectSchemaV3.migrate(decoder.decode(ProjectSchemaV3.Document.self, from: data)) }
+            catch { throw ProjectStoreError.decodingFailed(path: path, reason: "\(error)") }
         case 1:
             do {
                 let legacy = try decoder.decode(ProjectSchemaV1.Document.self, from: data)
-                return ProjectSchemaV1.migrate(legacy)
+                return try ProjectSchemaV1.migrate(legacy)
             } catch {
                 throw ProjectStoreError.decodingFailed(path: path, reason: String(describing: error))
             }

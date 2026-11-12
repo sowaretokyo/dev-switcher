@@ -63,7 +63,7 @@ struct ManagedStackCharacterizationTests {
         executable: String = "supabase",
         stop: CommandSpec? = nil,
         directory: URL
-    ) -> ServiceDefinition {
+    ) -> LaunchUnit {
         var service = makeSupabaseService(
             workingDirectory: directory,
             executable: executable,
@@ -177,7 +177,7 @@ struct ManagedStackCharacterizationTests {
     @Test("Supabase設定の5種の不備は、それぞれ固有の理由で managedCommandInvalid になる")
     func configurationFailureReasons() throws {
         let directory = URL(fileURLWithPath: "/tmp/bell")
-        let cases: [(String, ServiceDefinition, String)] = [
+        let cases: [(String, LaunchUnit, String)] = [
             (
                 "カスタム停止",
                 supabaseService(

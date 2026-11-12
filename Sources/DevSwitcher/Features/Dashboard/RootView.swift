@@ -108,6 +108,12 @@ private struct BannerArea: View {
 
     private var banners: some View {
         VStack(spacing: 0) {
+            if !state.runtimeWarnings.isEmpty {
+                Banner(title: "停止コマンドの結果", message: state.runtimeWarnings.joined(separator: "\n"), tint: .orange) { EmptyView() }
+            }
+            ForEach(state.projects.compactMap(\.migrationNotice), id: \.self) { message in
+                Banner(title: "設定の形式を変換しました", message: message, tint: .orange) { EmptyView() }
+            }
             ForEach(state.managedStackObservationFailures, id: \.type) { failure in
                 Banner(title: "\(failure.type.displayName)を観測できません", message: failure.reason, tint: .orange) {
                     Button("再観測") {

@@ -28,11 +28,15 @@ public struct ManagedStackCommandResult: Equatable, Sendable {
 /// 実行されないよう、実行器でもう一度拒否・除去する。
 public struct ManagedStackCommandPolicy: Equatable, Sendable {
     /// 引数トークンと完全一致したら実行しない引数。
+    public let composeCommandsOnly: Bool
+    public let timeout: Duration?
     public let forbiddenArguments: Set<String>
     /// 実行環境から除く環境変数。対象を設定とは別の値で決めさせないため。
     public let removedEnvironmentKeys: Set<String>
 
-    public init(forbiddenArguments: Set<String>, removedEnvironmentKeys: Set<String>) {
+    public init(forbiddenArguments: Set<String>, removedEnvironmentKeys: Set<String>, composeCommandsOnly: Bool = false, timeout: Duration? = nil) {
+        self.composeCommandsOnly = composeCommandsOnly
+        self.timeout = timeout
         self.forbiddenArguments = forbiddenArguments
         self.removedEnvironmentKeys = removedEnvironmentKeys
     }
@@ -78,6 +82,7 @@ public struct ManagedStackProcessCommandRunner: ManagedStackCommandRunning {
         _ command: CommandSpec,
         policy: ManagedStackCommandPolicy
     ) async throws -> ManagedStackCommandResult {
+        if policy.composeCommandsOnly { try ComposeCommandRules.validateCommand(command) }
         if let forbidden = policy.forbiddenArguments.sorted().first(where: {
             command.arguments.contains($0)
         }) {
@@ -109,7 +114,7 @@ public struct ManagedStackProcessCommandRunner: ManagedStackCommandRunning {
             arguments: resolved.arguments,
             environment: variables,
             workingDirectory: resolved.workingDirectory,
-            timeout: timeout
+            timeout: policy.timeout ?? timeout
         )
         return ManagedStackCommandResult(
             status: output.status,

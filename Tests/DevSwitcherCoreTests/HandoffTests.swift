@@ -672,6 +672,7 @@ struct HandoffTests {
         let fingerprint = try #require(hint.fingerprint)
         let configDirectory = switch fingerprint {
         case let .supabase(supabaseFingerprint): supabaseFingerprint.configDirectory
+        case .dockerCompose: preconditionFailure("Supabase fixture ではありません。")
         }
         #expect(configDirectory == directory.standardizedFileURL)
         #expect(hint.relationship == .adopted)
@@ -680,7 +681,7 @@ struct HandoffTests {
         var changedService = service
         changedService.start.arguments.append(contentsOf: ["--exclude", "studio"])
         func resolved(
-            _ service: ServiceDefinition,
+            _ service: LaunchUnit,
             _ supabaseProjectID: SupabaseProjectID
         ) throws -> ResolvedManagedStack {
             try makeResolvedSupabaseStack(
@@ -1022,7 +1023,7 @@ struct HandoffTests {
             logDirectory: directory,
             environmentLoader: { fixedShellEnvironment }
         )
-        try await registry.registerResidualGroup(hint: hint, service: service, in: project)
+        try await registry.registerResidualGroup(hint: hint, service: try #require(service.processDefinition), in: project)
         try await registry.refreshPorts(serviceID: service.id)
 
         let snapshot = try #require(await registry.runtimeSnapshot(serviceID: service.id))

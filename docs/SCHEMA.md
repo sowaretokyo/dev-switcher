@@ -141,14 +141,14 @@
 | --- | --- | --- |
 | `projectName` | 文字列 | 任意。`docker compose -p` に相当するプロジェクト名 |
 | `files` | 文字列の配列 | 任意。Compose ファイルのパス。指定する場合は 1 件以上 |
-| `profiles` | 文字列の配列 | 任意。`--profile` に渡す値。指定する場合は 1 件以上 |
+| `profiles` | 文字列の配列 | 任意。起動・観測の `--profile` に渡す値。指定する場合は 1 件以上 |
 | `upArguments` | 文字列の配列 | `up -d` の後に渡す追加引数。なければ `[]` |
 
 検証規則:
 
 - `files` の各要素は作業ディレクトリからの相対パス（`../` 可）で、実在するファイルを指す。絶対パスと `~` は受け付けない。Dev Switcher は解決した絶対パスを `docker compose -f` に指定順で渡す
 - `files` を省略した場合、作業ディレクトリ直下に `compose.yaml`、`compose.yml`、`docker-compose.yaml`、`docker-compose.yml` のいずれかが存在すること。親ディレクトリは探さない。この場合も Dev Switcher は解決したファイル（基本ファイルと、あれば override ファイル）を `-f` で明示して渡す（`docs/SPEC.md` 6.7）
-- `profiles` の各要素は空でない
+- `profiles` の各要素は空でない。起動・観測に使い、停止はこの設定によらず `--profile '*'` で同じプロジェクト名の全 profile を対象にする。設定外の profile も停止対象であることを編集・詳細・確認画面に表示する
 - `upArguments` は許可リスト方式で検証する。各要素は次のいずれかでなければならず、それ以外（`-dV` のような短いオプションの結合、許可リストに無いオプション、`=` の付け方の違いを含む）はすべてエラーにする
   - サービス名: `-` で始まらず、英数字で始まり英数字・`_`・`.`・`-` だけからなる文字列
   - 値を取らないオプション: `--build`、`--no-build`、`--wait`、`--force-recreate`、`--no-recreate`、`--no-deps`、`--quiet-pull`
@@ -407,7 +407,7 @@ v4 ではスタックがプロセスより先に起動し後に停止するた�
 }
 ```
 
-起動時は `docker compose -p admin-console up -d` を作業ディレクトリで実行し、`running` を実測してから Web を起動する。停止は Web を止めた後に `docker compose -p admin-console stop` を実行する。
+起動時は、作業ディレクトリで解決した Compose ファイルを `-f` に明示し、`docker compose -p admin-console -f <file>... up -d` を実行する。`running` を実測してから Web を起動する。停止は Web を止めた後に、同じファイルで `docker compose -p admin-console -f <file>... --profile '*' stop` を実行し、同じプロジェクト名の全 profile を停止する。
 
 ## 12. AI に生成させるときの確認事項
 

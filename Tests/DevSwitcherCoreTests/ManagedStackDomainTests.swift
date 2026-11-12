@@ -66,7 +66,7 @@ struct ManagedStackDomainTests {
         ),
     ]
 
-    private func service(_ input: ConfigurationCase, in directory: URL) -> ServiceDefinition {
+    private func service(_ input: ConfigurationCase, in directory: URL) -> LaunchUnit {
         makeService(
             name: "Supabase",
             kind: .supabase,
@@ -134,7 +134,7 @@ struct ManagedStackDomainTests {
         var testDescription: String { name }
     }
 
-    /// 期待値は Phase A 以前の `ServiceDefinition.supabaseConfiguration` の規則から導いたリテラル。
+    /// 期待値は Phase A 以前の `LaunchUnit.supabaseConfiguration` の規則から導いたリテラル。
     /// start の workingDirectory は `/work/app`（実在しなくてよい）。
     static let literalDerivationCases: [LiteralDerivationCase] = [
         LiteralDerivationCase(
@@ -328,7 +328,7 @@ struct ManagedStackDomainTests {
 
     @Test("種類の表示名・ID の呼び名・policy")
     func typeMetadata() {
-        #expect(ManagedStackType.allCases == [.supabase])
+        #expect(ManagedStackType.allCases == [.supabase, .dockerCompose])
         #expect(ManagedStackType.supabase.rawValue == "supabase")
         #expect(ManagedStackType.supabase.displayName == "Supabase")
         #expect(ManagedStackType.supabase.identityLabel == "`project_id`")
@@ -390,7 +390,7 @@ struct ManagedStackDomainTests {
             #"{"type":"supabase","value":" bell"}"#,
             #"{"type":"supabase","value":"-bell"}"#,
             #"{"type":"supabase","value":""}"#,
-            #"{"type":"dockerCompose","value":"bell"}"#,
+            #"{"type":"unknown","value":"bell"}"#,
             #"{"type":"supabase"}"#,
             #"{"value":"bell"}"#,
         ]

@@ -38,7 +38,7 @@ struct ProjectImportView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.l) {
                     if let preview = model.preview {
-                        Text("開発環境 \(preview.projects.count) 件・プロセス \(preview.projects.reduce(0) { $0 + $1.services.count }) 件")
+                        Text("開発環境 \(preview.projects.count) 件・プロセス \(preview.projects.reduce(0) { $0 + $1.services.count }) 件・スタック \(preview.projects.reduce(0) { $0 + $1.managedStacks.count }) 件")
                             .font(Typography.support.weight(.semibold))
                         ForEach(preview.projects) { project in
                             projectPreview(project)
@@ -105,16 +105,22 @@ struct ProjectImportView: View {
                 }
                 .font(Typography.support)
             }
-            Text("プロセスの起動順")
+            Text("スタック・プロセスの起動順")
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
-            ForEach(Array(project.services.enumerated()), id: \.element.id) { index, service in
+            ForEach(ProjectValidator.warnings(project).map(\.description), id: \.self) { warning in
+                Text(warning).font(Typography.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            if let notice = project.migrationNotice {
+                Text(notice).font(Typography.caption).foregroundStyle(.orange)
+            }
+            ForEach(Array(project.launchUnits.enumerated()), id: \.element.id) { index, service in
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("\(index + 1). \(service.name)（\(project.isEnabledNow(service.id) ? "起動対象" : "対象外")）")
-                    Text(service.start.displayCommandLine)
+                    Text(service.commandDescription)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
-                    Text(service.start.workingDirectory.path)
+                    Text(service.workingDirectory.path)
                         .foregroundStyle(.secondary)
                 }
                 .font(Typography.support)

@@ -63,7 +63,7 @@ public enum ProjectValidator {
             }
 
             let directoryPath = workingDirectory.directory.path
-            if directoryPath.isEmpty {
+            if directoryPath.isEmpty || !workingDirectory.directory.isFileURL {
                 errors.append(.workingDirectoryPathEmpty(name: label))
             } else if !directoryPath.hasPrefix("/") {
                 errors.append(.workingDirectoryPathNotAbsolute(name: label, path: directoryPath))
@@ -73,7 +73,7 @@ public enum ProjectValidator {
                 errors.append(.duplicateWorkingDirectoryPath(workingDirectory.directory))
             }
 
-            if workingDirectory.serviceIDs.isEmpty {
+            if workingDirectory.serviceIDs.isEmpty && workingDirectory.stackIDs.isEmpty {
                 errors.append(.workingDirectoryHasNoServices(name: label))
             }
             for serviceID in workingDirectory.serviceIDs {
@@ -87,12 +87,12 @@ public enum ProjectValidator {
             }
         }
 
-        if project.services.isEmpty {
+        if project.services.isEmpty && project.managedStacks.isEmpty {
             errors.append(.noServices)
         }
 
         var seenServiceIDs: Set<UUID> = []
-        let existingServiceIDs = Set(existingProjects.flatMap { $0.services.map(\.id) })
+        let existingServiceIDs = Set(existingProjects.flatMap { $0.services.map(\.id) + $0.managedStacks.map(\.id) })
         var seenServiceNames: Set<String> = []
 
         for (index, service) in project.services.enumerated() {
@@ -126,6 +126,11 @@ public enum ProjectValidator {
                 errors.append(.serviceWithoutWorkingDirectory(service: label))
             }
 
+            for command in [service.start, service.stop].compactMap({ $0 }) {
+                if !command.workingDirectory.isFileURL || !command.workingDirectory.path.hasPrefix("/") {
+                    errors.append(.invalidCommandDirectory(service: label))
+                }
+            }
             if service.start.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errors.append(.executableEmpty(service: label))
             }
@@ -133,12 +138,11 @@ public enum ProjectValidator {
             where argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errors.append(.emptyArgument(service: label, argumentIndex: argumentIndex))
             }
-            if let definition = service.managedStackDefinition {
-                for issue in definition.configuration.structuralIssues(
-                    workingDirectory: service.start.workingDirectory
-                ) {
-                    errors.append(.managedStackConfigurationInvalid(stack: label, issue: issue))
-                }
+            if let tag = service.tag, tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tag.count > 32 {
+                errors.append(.invalidTag(service: label))
+            }
+            if ProcessCommandClassification.supabaseStart(service.start) == .certain {
+                errors.append(.processUsesManagedStackCommand(service: label, type: .supabase))
             }
 
             if let stop = service.stop {
@@ -157,8 +161,33 @@ public enum ProjectValidator {
             errors.append(contentsOf: portErrors(for: service.ports, serviceLabel: label))
         }
 
+        var stackMembership: [UUID: WorkingDirectoryDefinition] = [:]
+        for directory in project.workingDirectories {
+            for id in directory.stackIDs {
+                guard let stack = project.managedStacks.first(where: { $0.id == id }) else {
+                    errors.append(.workingDirectoryUnknownService(name: directory.name, id: id)); continue
+                }
+                if stackMembership.updateValue(directory, forKey: id) != nil {
+                    errors.append(.serviceInMultipleWorkingDirectories(service: stack.name))
+                }
+            }
+        }
+        for stack in project.managedStacks {
+            let label = stack.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if label.isEmpty { errors.append(.serviceNameEmpty(serviceIndex: project.services.count)) }
+            else if !seenServiceNames.insert(label.lowercased()).inserted { errors.append(.duplicateServiceName(label)) }
+            if !seenServiceIDs.insert(stack.id).inserted { errors.append(.duplicateServiceID(stack.id)) }
+            if existingServiceIDs.contains(stack.id) { errors.append(.duplicateServiceIDAcrossProjects(stack.id)) }
+            if let directory = stackMembership[stack.id] {
+                errors += stack.configuration.structuralIssues(workingDirectory: directory.directory).map {
+                    .managedStackConfigurationInvalid(stack: label, issue: $0)
+                }
+            } else { errors.append(.serviceWithoutWorkingDirectory(service: label)) }
+            errors += portErrors(for: stack.ports, serviceLabel: label)
+        }
+
         // `enabled`にかかわらず、種類ごとの上限（1開発環境あたりの件数）を超えた登録を拒否する。
-        let definitions = project.services.compactMap(\.managedStackDefinition)
+        let definitions = project.managedStacks
         for type in ManagedStackType.allCases {
             guard let limit = type.policy.maximumPerEnvironment else { continue }
             let stacks = definitions.filter { $0.type == type }
@@ -188,13 +217,15 @@ public enum ProjectValidator {
         // 候補を含む全開発環境を、名前順ではなく登録順で解決する。
         let candidates = existingProjects.filter { $0.id != project.id } + [project]
         for candidate in candidates {
-            for service in candidate.services {
-                guard let definition = service.managedStackDefinition else { continue }
-                let workingDirectory = service.start.workingDirectory
+            for definition in candidate.managedStacks {
+                guard let directory = candidate.workingDirectories.first(where: { $0.stackIDs.contains(definition.id) }) else {
+                    errors.append(.serviceWithoutWorkingDirectory(service: definition.name)); continue
+                }
+                let workingDirectory = directory.directory
                 do {
                     let identity = try definition.configuration
                         .resolve(workingDirectory: workingDirectory).identity
-                    if let owner = owners[identity], owner != candidate.name {
+                    if let owner = owners[identity] {
                         errors.append(
                             .duplicateManagedStackIdentity(identity: identity, otherProject: owner)
                         )
@@ -203,20 +234,12 @@ public enum ProjectValidator {
                     }
                 } catch let ManagedStackConfigurationError.invalid(issue) {
                     // 起動コマンドの形式エラーは構造検証が出す。ここでは重複判定を止め、
-                    // 候補の開発環境に属するものだけを解決失敗として示す。
-                    if candidate.id == project.id {
-                        errors.append(
-                            .managedStackIdentityUnresolved(
-                                stack: service.name,
-                                type: definition.type,
-                                reason: issue.failureReason
-                            )
-                        )
-                    }
+                    // 既存側の不備も一意性を確認できない理由として返す。
+                    errors.append(.managedStackIdentityUnresolved(stack: definition.name, type: definition.type, reason: issue.failureReason))
                 } catch {
                     errors.append(
                         .managedStackIdentityUnresolved(
-                            stack: service.name,
+                            stack: definition.name,
                             type: definition.type,
                             reason: "\(error)"
                         )
@@ -231,7 +254,7 @@ public enum ProjectValidator {
     /// 欠落を「起動順の逆」で黙って補うと、利用者が並べた終了順と実際の停止順がずれる。
     private static func orderErrors(_ project: ProjectDefinition) -> [ValidationError] {
         var errors: [ValidationError] = []
-        let serviceIDs = Set(project.services.map(\.id))
+        let serviceIDs = Set(project.services.map(\.id) + project.managedStacks.map(\.id))
 
         if let stopOrder = project.stopOrder {
             var seen: Set<UUID> = []

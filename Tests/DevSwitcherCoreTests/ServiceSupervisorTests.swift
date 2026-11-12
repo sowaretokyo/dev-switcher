@@ -274,7 +274,7 @@ struct ServiceSupervisorTests {
             "-c",
             "echo new-output; echo new-error >&2; while true; do sleep 1; done",
         ]
-        project.services = [service]
+        project.services = [try #require(service.processDefinition)]
 
         let secondLog = EventLog()
         let secondStream = try await registry.start(service: service, in: project)

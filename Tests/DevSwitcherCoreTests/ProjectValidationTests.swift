@@ -276,7 +276,7 @@ struct ProjectValidationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let serviceID = UUID()
-        let firstService = ServiceDefinition(
+        let firstService = LaunchUnit(
             id: serviceID,
             name: "First",
             kind: .worker,
@@ -289,7 +289,7 @@ struct ProjectValidationTests {
             enabledByDefault: true,
             failurePolicy: .block
         )
-        let secondService = ServiceDefinition(
+        let secondService = LaunchUnit(
             id: serviceID,
             name: "Second",
             kind: .worker,

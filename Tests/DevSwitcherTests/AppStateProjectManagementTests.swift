@@ -325,20 +325,16 @@ struct AppStateProjectManagementTests {
         model.name = "Bell"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
-        model.services[0].name = "Supabase"
-        model.services[0].kind = .supabase
-        model.services[0].executable = "supabase"
-        model.services[0].argumentsText = "start"
+        model.addStack(.supabase, to: model.workingDirectories[0].id)
+        model.services[0].name = "Web"
+        model.services[0].tag = "web"
+        model.services[0].executable = "pnpm"
+        model.services[0].argumentsText = "dev"
         model.addService()
-        model.services[1].name = "Web"
-        model.services[1].kind = .web
-        model.services[1].executable = "pnpm"
-        model.services[1].argumentsText = "dev"
-        model.addService()
-        model.services[2].name = "Worker"
-        model.services[2].kind = .worker
-        model.services[2].executable = "/bin/sleep"
-        model.services[2].argumentsText = "120"
+        model.services[1].name = "Worker"
+        model.services[1].tag = "worker"
+        model.services[1].executable = "/bin/sleep"
+        model.services[1].argumentsText = "120"
 
         let project = try model.build()
         try state.addProject(project)
@@ -349,7 +345,7 @@ struct AppStateProjectManagementTests {
         let reopened = makeAppState(directory: directory)
         await reopened.bootstrap()
         let loaded = try #require(reopened.project(project.id))
-        #expect(loaded.services.map(\.name) == ["Supabase", "Web", "Worker"])
+        #expect(loaded.launchUnits.map(\.name) == ["Supabase", "Web", "Worker"])
         #expect(loaded.services.map(\.id) == project.services.map(\.id))
         #expect(loaded == project)
     }

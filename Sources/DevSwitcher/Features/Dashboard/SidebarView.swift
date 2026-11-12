@@ -78,7 +78,7 @@ struct SidebarView: View {
             .tag(SidebarItem.project(project.id))
 
         if state.expandedProjectIDs.contains(project.id) {
-            ForEach(project.services) { service in
+            ForEach(project.launchUnits) { service in
                 ServiceRow(project: project, service: service)
                     .rowLayout(height: Metrics.serviceRowHeight, leading: Spacing.indent)
                     .tag(SidebarItem.service(projectID: project.id, serviceID: service.id))
@@ -143,7 +143,7 @@ private struct ProjectRow: View {
 private struct ServiceRow: View {
     @Environment(AppState.self) private var state
     let project: ProjectDefinition
-    let service: ServiceDefinition
+    let service: LaunchUnit
 
     var body: some View {
         let uiState = state.state(of: service.id)

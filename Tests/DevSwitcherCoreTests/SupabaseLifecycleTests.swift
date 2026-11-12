@@ -42,7 +42,7 @@ struct SupabaseLifecycleTests {
         name: String = "Bell",
         projectID: String = "bell",
         directory: URL,
-        extraServices: [ServiceDefinition] = []
+        extraServices: [LaunchUnit] = []
     ) throws -> ProjectDefinition {
         try writeSupabaseConfig(projectID: projectID, in: directory)
         return makeProject(
@@ -76,7 +76,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld()
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
         if relationship == .launched {
@@ -128,7 +128,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld()
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
         _ = try await coordinator.start(project, registeredProjects: [project])
@@ -221,7 +221,7 @@ struct SupabaseLifecycleTests {
             approval: plan.approval
         )
 
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         #expect(await registry.managedRelationship(stackID: service.id) == .adopted)
         #expect(await coordinator.servicePhase(service, in: project) == .healthy)
         // 引き継ぎでは `supabase start` を実行しない。
@@ -580,7 +580,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let supabase = try #require(project.services.first)
+        let supabase = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld()
         let (_, coordinator) = makeStack(world: world, logDirectory: directory)
         _ = try await coordinator.start(project, registeredProjects: [project])
@@ -600,7 +600,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let supabase = try #require(project.services.first)
+        let supabase = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld()
         let (_, coordinator) = makeStack(world: world, logDirectory: directory)
         _ = try await coordinator.start(project, registeredProjects: [project])
@@ -622,7 +622,7 @@ struct SupabaseLifecycleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let failing = makeFailingService(name: "Web", workingDirectory: directory, failurePolicy: .block)
         let project = try makeSupabaseProject(directory: directory, extraServices: [failing])
-        let supabase = try #require(project.services.first)
+        let supabase = try #require(project.launchUnits.first)
         let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
         let plan: ManagedStackConfirmationPlan

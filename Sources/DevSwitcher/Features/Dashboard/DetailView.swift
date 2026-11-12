@@ -18,7 +18,7 @@ struct DetailView: View {
                     }
                 case let .service(projectID, serviceID):
                     if let project = state.project(projectID),
-                       let service = project.service(id: serviceID) {
+                       let service = project.entry(id: serviceID) {
                         ServiceDetailView(project: project, service: service)
                     } else {
                         PlaceholderView(message: "プロセスを選択してください。")

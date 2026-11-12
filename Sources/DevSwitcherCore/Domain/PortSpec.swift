@@ -33,6 +33,16 @@ public struct PortSpec: Codable, Equatable, Sendable, Identifiable {
         case openURL = "openUrl"
     }
 
+    public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(["id", "label", "port", "primary", "openUrl"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        label = try c.optional(String.self, forKey: .label)
+        port = try c.decode(Int.self, forKey: .port)
+        isPrimary = try c.decode(Bool.self, forKey: .isPrimary)
+        openURL = try c.optional(String.self, forKey: .openURL)
+    }
+
     public var displayName: String {
         if let label, !label.isEmpty {
             return "\(label) :\(port)"

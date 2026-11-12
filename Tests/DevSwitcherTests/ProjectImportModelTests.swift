@@ -13,8 +13,8 @@ struct ProjectImportModelTests {
         let guide = try ProjectImportModel.creationGuide()
         #expect(guide.contains("serviceIDs"))
         let sections = guide.components(separatedBy: "```json\n")
-        try #require(sections.count == 2)
-        let example = try #require(sections[1].components(separatedBy: "\n```").first)
+        let sample = try #require(sections.last)
+        let example = try #require(sample.components(separatedBy: "\n```").first)
         let json = example.replacingOccurrences(
             of: "file:///ABSOLUTE/PATH/TO/web/",
             with: directory.absoluteString

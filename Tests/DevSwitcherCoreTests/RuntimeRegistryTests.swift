@@ -26,7 +26,7 @@ struct RuntimeRegistryTests {
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [service])
-        let stream = try await registry.start(service: service, in: project)
+        let stream = try await registry.start(service: try #require(service.processDefinition), in: project)
         let pid = try #require(await registry.occupiedProcessGroup(serviceID: service.id))
         defer {
             if world.startObservation(pid: pid).value != nil {
@@ -36,7 +36,7 @@ struct RuntimeRegistryTests {
         #expect(await registry.observedExit(serviceID: service.id) == nil)
 
         if requestedByUser {
-            let result = try await registry.stop(service: service, grace: .seconds(5))
+            let result = try await registry.stop(service: try #require(service.processDefinition), grace: .seconds(5))
             #expect(result.isStopped)
         } else {
             #expect(world.send(processGroupID: pid, signal: SIGTERM) == 0)
@@ -98,7 +98,7 @@ struct RuntimeRegistryTests {
                 processGroupID: 101,
                 observedPorts: [],
                 evidence: evidence,
-                service: service,
+                service: try #require(service.processDefinition),
                 in: project
             )
         }
@@ -113,7 +113,7 @@ struct RuntimeRegistryTests {
                 processGroupID: 100,
                 observedPorts: [],
                 evidence: unrelatedEvidence,
-                service: service,
+                service: try #require(service.processDefinition),
                 in: project
             )
         }
@@ -128,7 +128,7 @@ struct RuntimeRegistryTests {
                 processGroupID: 100,
                 observedPorts: [],
                 evidence: wrongBootEvidence,
-                service: service,
+                service: try #require(service.processDefinition),
                 in: project
             )
         }
@@ -178,7 +178,7 @@ struct RuntimeRegistryTests {
             bootSessionProbe: { "TEST-BOOT-SESSION" }
         )
 
-        try await registry.registerResidualGroup(hint: hint, service: service, in: project)
+        try await registry.registerResidualGroup(hint: hint, service: try #require(service.processDefinition), in: project)
         await #expect(throws: PortInspectorError.self) {
             try await registry.refreshPorts(serviceID: service.id)
         }
@@ -213,7 +213,7 @@ struct RuntimeRegistryTests {
         let project = makeProject(directory: directory, services: [service])
 
         let log = EventLog()
-        let stream = try await registry.start(service: service, in: project)
+        let stream = try await registry.start(service: try #require(service.processDefinition), in: project)
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
 
@@ -239,7 +239,7 @@ struct RuntimeRegistryTests {
         let project = makeProject(directory: directory, services: [service])
 
         await #expect(throws: ExecutableResolutionError.self) {
-            _ = try await registry.start(service: service, in: project)
+            _ = try await registry.start(service: try #require(service.processDefinition), in: project)
         }
     }
 
@@ -256,7 +256,7 @@ struct RuntimeRegistryTests {
             environmentLoader: { fixedShellEnvironment }
         )
         await #expect(throws: ExecutableResolutionError.self) {
-            _ = try await registry.start(service: service, in: project)
+            _ = try await registry.start(service: try #require(service.processDefinition), in: project)
         }
     }
 
@@ -287,7 +287,7 @@ struct RuntimeRegistryTests {
             logDirectory: directory,
             environmentLoader: { fixedShellEnvironment }
         )
-        let sleepCommand: (String) -> ServiceDefinition = { name in
+        let sleepCommand: (String) -> LaunchUnit = { name in
             makeService(
                 name: name,
                 kind: .worker,
@@ -516,17 +516,17 @@ struct RuntimeRegistryTests {
         let project = makeProject(directory: directory, services: [service])
 
         let log = EventLog()
-        let stream = try await registry.start(service: service, in: project)
+        let stream = try await registry.start(service: try #require(service.processDefinition), in: project)
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
 
         #expect(await waitUntil { await log.startedRuntime != nil })
 
         await #expect(throws: RuntimeError.self) {
-            _ = try await registry.start(service: service, in: project)
+            _ = try await registry.start(service: try #require(service.processDefinition), in: project)
         }
 
-        let outcome = try await registry.stop(service: service, grace: .seconds(5))
+        let outcome = try await registry.stop(service: try #require(service.processDefinition), grace: .seconds(5))
         #expect(outcome == .stopped(.signaled(signal: SIGTERM)))
     }
 }

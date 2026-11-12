@@ -21,8 +21,8 @@ struct ProjectFormModelTests {
         stop: CommandSpec? = nil,
         enabledByDefault: Bool = true,
         failurePolicy: FailurePolicy = .continue
-    ) -> ServiceDefinition {
-        ServiceDefinition(
+    ) -> LaunchUnit {
+        LaunchUnit(
             name: name,
             kind: kind,
             ports: port.map { [PortSpec(port: $0, isPrimary: true)] } ?? [],
@@ -38,7 +38,7 @@ struct ProjectFormModelTests {
     }
 
     private func makeProject(
-        with services: [ServiceDefinition],
+        with services: [LaunchUnit],
         directory: URL,
         stopOrder: [UUID]? = nil,
         enabledNow: [UUID: Bool] = [:]
@@ -181,23 +181,20 @@ struct ProjectFormModelTests {
         let model = ProjectFormModel(project: project)
 
         #expect(model.services.map(\.id) == project.services.map(\.id))
-        #expect(model.services.map(\.name) == ["Supabase", "Web", "Worker"])
-        #expect(model.services.map(\.kind) == [.supabase, .web, .worker])
-        #expect(model.services.map(\.executable) == ["supabase", "pnpm", "/bin/sleep"])
-        #expect(model.services.map(\.argumentsText) == ["start", "dev", "120"])
-        #expect(model.services.map(\.enabledByDefault) == [true, true, false])
-        #expect(model.services.map(\.failurePolicy) == [.block, .block, .continue])
+        #expect(model.services.map(\.name) == ["Web", "Worker"])
+        #expect(model.services.map(\.tag) == ["web", "worker"])
+        #expect(model.services.map(\.executable) == ["pnpm", "/bin/sleep"])
+        #expect(model.services.map(\.argumentsText) == ["dev", "120"])
+        #expect(model.services.map(\.enabledByDefault) == [true, false])
+        #expect(model.services.map(\.failurePolicy) == [.block, .continue])
         #expect(model.workingDirectories.count == 2)
-        let supabaseDirectory = try #require(
-            model.workingDirectories.first { $0.directory?.lastPathComponent == "stack" }
-        )
-        #expect(supabaseDirectory.name == "stack")
-        #expect(supabaseDirectory.services.map(\.name) == ["Supabase"])
-        let rootDirectory = try #require(
-            model.workingDirectories.first { $0.directory == directory }
-        )
-        #expect(rootDirectory.services.map(\.name) == ["Web", "Worker"])
-        #expect(model.services.map { $0.ports.map(\.port) } == [[""], ["3000", "3001"], [""]])
+        let stackDirectory = try #require(model.workingDirectories.first { $0.directory?.lastPathComponent == "stack" })
+        #expect(stackDirectory.stacks.map(\.name) == ["Supabase"])
+        #expect(stackDirectory.stacks[0].id == project.managedStacks[0].id)
+        #expect(stackDirectory.services.isEmpty)
+        let root = try #require(model.workingDirectories.first { $0.directory == directory })
+        #expect(root.services.map(\.name) == ["Web", "Worker"])
+        #expect(model.services.map { $0.ports.map(\.port) } == [["3000", "3001"], [""]])
 
         let rebuilt = try model.build()
         #expect(rebuilt == project)
@@ -301,32 +298,25 @@ struct ProjectFormModelTests {
         try store.save([project])
 
         let model = ProjectFormModel(project: project)
-        let webID = model.services[1].id
-
-        // Worker を削除し、Inngest を追加し、Web を先頭へ動かす。
-        model.removeService(model.services[2].id)
+        let webID = model.services[0].id
+        let stackID = project.managedStacks[0].id
+        model.removeService(model.services[1].id)
         model.addService()
-        model.services[2].name = "Inngest"
-        model.services[2].kind = .inngest
-        model.services[2].executable = "npx"
-        model.services[2].argumentsText = "inngest-cli\ndev"
-        model.moveService(webID, by: -1)
-
-        #expect(model.services.map(\.name) == ["Web", "Supabase", "Inngest"])
-
+        model.services[1].name = "Inngest"
+        model.services[1].tag = "inngest"
+        model.services[1].executable = "npx"
+        model.services[1].argumentsText = "inngest-cli\ndev"
+        model.moveService(model.services[1].id, by: -1)
+        #expect(model.services.map(\.name) == ["Inngest", "Web"])
         let rebuilt = try model.build()
         try store.save([rebuilt])
-        let loaded = try store.load()
-
-        #expect(loaded.count == 1)
-        #expect(loaded[0].services.map(\.name) == ["Web", "Supabase", "Inngest"])
-        // 並べ替えても既存 ID は変わらない。新規追加のときだけ新しい ID を発行する。
-        #expect(loaded[0].services[0].id == webID)
-        #expect(loaded[0].services[1].id == project.services[0].id)
-        #expect(!project.services.map(\.id).contains(loaded[0].services[2].id))
-        // 起動順は配列順そのもの。終了順は既定でその逆。
-        #expect(loaded[0].startupOrder.map(\.name) == ["Web", "Supabase", "Inngest"])
-        #expect(loaded[0].shutdownOrder.map(\.name) == ["Inngest", "Supabase", "Web"])
+        let loaded = try #require(store.load().first)
+        #expect(loaded.services.map(\.name) == ["Inngest", "Web"])
+        #expect(loaded.services[1].id == webID)
+        #expect(loaded.managedStacks[0].id == stackID)
+        #expect(!project.services.map(\.id).contains(loaded.services[0].id))
+        #expect(loaded.launchUnits.map(\.name) == ["Supabase", "Inngest", "Web"])
+        #expect(loaded.shutdownUnits.map(\.name) == ["Web", "Inngest", "Supabase"])
     }
 
     @Test("名前付き作業ディレクトリごとに複数プロセスを保存できる")
@@ -379,7 +369,7 @@ struct ProjectFormModelTests {
         #expect(reopened.workingDirectories[1].services.map(\.name) == ["Web"])
     }
 
-    @Test("編集画面が扱わない stop・enabledNow・stopOrder を通常編集で保持する")
+    @Test("通常編集で stop・enabledNow・stopOrder を保持する")
     func outOfScopeValuesSurviveAnOrdinaryEdit() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -478,16 +468,16 @@ struct ProjectFormModelTests {
         // Worker を削除して、末尾へ Inngest を足す。
         model.removeService(third.id)
         model.addService()
-        model.services[2].name = "Inngest"
-        model.services[2].kind = .inngest
-        model.services[2].executable = "npx"
-        let addedID = model.services[2].id
+        model.services[1].name = "Inngest"
+        model.services[1].tag = "inngest"
+        model.services[1].executable = "npx"
+        let addedID = model.services[1].id
 
         let rebuilt = try model.build()
         // 削除したサービスの参照だけを外す。残りは黙って捨てない。
         #expect(rebuilt.enabledNow == [first.id: false])
         // 追加したサービスは起動順の逆の位置（末尾追加なら最初に停止）へ入る。
-        #expect(rebuilt.stopOrder == [addedID, second.id, first.id])
+        #expect(rebuilt.stopOrder == [addedID, second.id])
         // 全サービスを過不足なく含むので、保存時の検証を通る。
         #expect(ProjectValidator.validate(rebuilt).isEmpty)
 
@@ -517,7 +507,7 @@ struct ProjectFormModelTests {
 
         let rebuilt = try model.build()
         #expect(rebuilt.stopOrder == nil)
-        #expect(rebuilt.shutdownOrder.map(\.name) == ["Inngest", "Worker", "Web", "Supabase"])
+        #expect(rebuilt.shutdownUnits.map(\.name) == ["Inngest", "Worker", "Web", "Supabase"])
     }
 
     // MARK: - ポート
@@ -527,7 +517,7 @@ struct ProjectFormModelTests {
         let model = ProjectFormModel()
         #expect(model.services[0].ports.map(\.port) == [""])
 
-        model.services[0].kind = .inngest
+        model.services[0].tag = "inngest"
 
         #expect(model.services[0].ports.map(\.port) == [""])
     }
@@ -536,7 +526,7 @@ struct ProjectFormModelTests {
     func noKindFillsADefaultPort() {
         for kind in ServiceKind.allCases {
             let model = ProjectFormModel()
-            model.services[0].kind = kind
+            model.services[0].tag = kind.rawValue
             #expect(
                 model.services[0].ports.map(\.port) == [""],
                 "\(kind.displayName) で既定ポートが入った"
@@ -549,27 +539,23 @@ struct ProjectFormModelTests {
         let model = ProjectFormModel()
         model.services[0].ports = [ProjectFormModel.PortDraft(port: "9999", isPrimary: true)]
 
-        model.services[0].kind = .inngest
-        model.services[0].kind = .web
+        model.services[0].tag = "inngest"
+        model.services[0].tag = "web"
 
         #expect(model.services[0].ports.map(\.port) == ["9999"])
     }
 
-    @Test("空のプロセスをSupabaseへ変えるとCLIコマンドを補助入力し、入力済みなら上書きしない")
-    func supabaseKindProvidesCommandDefaultsOnlyForBlankInput() {
+    @Test("Supabase の追加は通常プロセスを変更せず、独立したスタックの初期値を作る")
+    func addingSupabaseDoesNotChangeProcessInput() {
         let model = ProjectFormModel()
-        let serviceID = model.services[0].id
-
-        model.setKind(.supabase, for: serviceID)
-        #expect(model.services[0].executable == "supabase")
-        #expect(model.services[0].argumentsText == "start")
-
         model.services[0].executable = "pnpm"
-        model.services[0].argumentsText = "exec\nsupabase\nstart"
-        model.setKind(.web, for: serviceID)
-        model.setKind(.supabase, for: serviceID)
+        model.services[0].argumentsText = "dev"
+        model.addStack(.supabase, to: model.workingDirectories[0].id)
         #expect(model.services[0].executable == "pnpm")
-        #expect(model.services[0].argumentsText == "exec\nsupabase\nstart")
+        #expect(model.services[0].argumentsText == "dev")
+        #expect(model.workingDirectories[0].stacks[0].executable == "supabase")
+        #expect(model.workingDirectories[0].stacks[0].argumentsJSON == "[\"start\"]")
+        #expect(model.workingDirectories[0].stacks[0].ports.isEmpty)
     }
 
     @Test("ポート未入力の Web・Inngest・worker を1つのプロジェクトへ保存できる")
@@ -582,17 +568,17 @@ struct ProjectFormModelTests {
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
-        model.services[0].kind = .web
+        model.services[0].tag = "web"
         model.services[0].executable = "pnpm"
         model.services[0].argumentsText = "dev"
         model.addService()
         model.services[1].name = "Inngest"
-        model.services[1].kind = .inngest
+        model.services[1].tag = "inngest"
         model.services[1].executable = "npx"
         model.services[1].argumentsText = "inngest-cli\ndev"
         model.addService()
         model.services[2].name = "Worker"
-        model.services[2].kind = .worker
+        model.services[2].tag = "worker"
         model.services[2].executable = "/bin/sleep"
         model.services[2].argumentsText = "120"
 
@@ -618,7 +604,7 @@ struct ProjectFormModelTests {
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Inngest"
-        model.services[0].kind = .inngest
+        model.services[0].tag = "inngest"
         model.services[0].executable = "/usr/bin/true"
         model.services[0].ports = [ProjectFormModel.PortDraft(port: "8288", isPrimary: true)]
 
@@ -663,8 +649,8 @@ struct ProjectFormModelTests {
 
         #expect(model.services[0].ports.map(\.port) == ["9999"])
 
-        model.services[0].kind = .web
-        model.services[0].kind = .inngest
+        model.services[0].tag = "web"
+        model.services[0].tag = "inngest"
         #expect(model.services[0].ports.map(\.port) == ["9999"])
     }
 
@@ -678,12 +664,12 @@ struct ProjectFormModelTests {
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
-        model.services[0].kind = .web
+        model.services[0].tag = "web"
         model.services[0].executable = "/usr/bin/true"
         model.services[0].ports = [ProjectFormModel.PortDraft(port: "3000", isPrimary: true)]
         model.addService()
         model.services[1].name = "Docs"
-        model.services[1].kind = .web
+        model.services[1].tag = "web"
         model.services[1].executable = "/usr/bin/true"
         model.services[1].ports = [ProjectFormModel.PortDraft(port: "3000", isPrimary: true)]
 

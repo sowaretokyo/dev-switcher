@@ -82,7 +82,7 @@ struct ProjectSchemaMigrationTests {
 
         try store.save(try store.load())
         let json = try String(contentsOf: store.fileURL, encoding: .utf8)
-        #expect(json.contains("\"schemaVersion\" : 3"))
+        #expect(json.contains("\"schemaVersion\" : 4"))
     }
 
     @Test("version 2 を作業パスごとの名前付きディレクトリへ変換する")
@@ -321,10 +321,10 @@ struct ProjectSchemaMigrationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let service = makeService(
-            name: "Supabase",
-            kind: .supabase,
+            name: "Worker",
+            kind: .worker,
             ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
-            executable: "supabase",
+            executable: "/bin/sleep",
             arguments: ["start"],
             workingDirectory: directory,
             stop: CommandSpec(executable: "  ", arguments: [""], workingDirectory: directory)
@@ -332,7 +332,7 @@ struct ProjectSchemaMigrationTests {
         let project = makeProject(directory: directory, services: [service])
         let errors = ProjectValidator.validate(project)
 
-        #expect(errors.contains(.stopExecutableEmpty(service: "Supabase")))
-        #expect(errors.contains(.stopEmptyArgument(service: "Supabase", argumentIndex: 0)))
+        #expect(errors.contains(.stopExecutableEmpty(service: "Worker")))
+        #expect(errors.contains(.stopEmptyArgument(service: "Worker", argumentIndex: 0)))
     }
 }

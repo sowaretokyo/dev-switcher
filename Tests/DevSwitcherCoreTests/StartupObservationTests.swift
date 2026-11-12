@@ -51,15 +51,9 @@ struct StartupObservationTests {
         kind: ServiceKind,
         ports: [PortSpec],
         directory: URL
-    ) -> ServiceDefinition {
-        makeService(
-            name: kind.displayName,
-            kind: kind,
-            ports: ports,
-            executable: "/bin/echo",
-            arguments: ["x"],
-            workingDirectory: directory
-        )
+    ) -> LaunchUnit {
+        .process(DevSwitcherCore.ServiceDefinition(name: kind.displayName, tag: kind.rawValue, ports: ports,
+            start: CommandSpec(executable: "/bin/echo", arguments: ["x"], workingDirectory: directory), enabledByDefault: true, failurePolicy: .block))
     }
 
     @Test("ポートを持たない種別でも起動確認できる")
@@ -68,7 +62,7 @@ struct StartupObservationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // MVP の判定材料はプロセスの生存だけ。ポートの有無で分岐しない。
-        for kind in ServiceKind.allCases where kind != .docker {
+        for kind in ServiceKind.allCases {
             let withoutPort = service(kind: kind, ports: [], directory: directory)
             let spec = try StartupObservationPolicy.spec(for: withoutPort)
             #expect(spec.observationWindow == StartupObservationPolicy.defaultObservationWindow)
@@ -82,41 +76,12 @@ struct StartupObservationTests {
         }
     }
 
-    @Test("Docker は起動前に拒否する")
-    func dockerKindIsRejected() throws {
+    @Test("Docker タグの通常プロセスにも生存による初期観測を適用する")
+    func dockerTagUsesProcessObservation() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-
-        let docker = service(
-            kind: .docker,
-            ports: [PortSpec(port: 5432, isPrimary: true)],
-            directory: directory
-        )
-        #expect(throws: StartupObservationError.self) {
-            _ = try StartupObservationPolicy.spec(for: docker)
-        }
-
-        // ポートを外しても拒否は変わらない。理由はポートではなく lifecycle の未実装。
-        let withoutPort = service(kind: .docker, ports: [], directory: directory)
-        #expect(throws: StartupObservationError.self) {
-            _ = try StartupObservationPolicy.spec(for: withoutPort)
-        }
-    }
-
-    @Test("未対応機能を現行ロードマップに沿って案内する")
-    func unsupportedFeaturesUseCurrentRoadmap() {
-        let dockerMessage = StartupObservationError.unsupportedKind(
-            service: "Database",
-            kind: .docker
-        ).description
-        let managedCommandMessage = RuntimeError.stopCommandUnsupported(
-            service: "Supabase"
-        ).description
-
-        #expect(dockerMessage.contains("Post-MVP"))
-        #expect(managedCommandMessage.contains("Post-MVP"))
-        #expect(!dockerMessage.contains("Milestone 3"))
-        #expect(!managedCommandMessage.contains("Milestone 3"))
+        let docker = service(kind: .docker, ports: [], directory: directory)
+        #expect(try StartupObservationPolicy.spec(for: docker).observationWindow == .seconds(3))
     }
 
     @Test("既定の観測窓は 3 秒")

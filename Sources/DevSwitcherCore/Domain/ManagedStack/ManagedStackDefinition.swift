@@ -6,10 +6,13 @@ import Foundation
 /// 管理対象スタックの種類。
 public enum ManagedStackType: String, Codable, Sendable, CaseIterable {
     case supabase
+    case dockerCompose
 
     /// 種類ごとの契約のうち、設定検証と確認フローが参照する静的な部分。
     public var policy: ManagedStackPolicy {
         switch self {
+        case .dockerCompose:
+            ManagedStackPolicy(maximumPerEnvironment: nil, conflictScope: .identityOnly, supportsAdoption: true)
         case .supabase:
             ManagedStackPolicy(
                 maximumPerEnvironment: 1,
@@ -23,6 +26,7 @@ public enum ManagedStackType: String, Codable, Sendable, CaseIterable {
     public var displayName: String {
         switch self {
         case .supabase: "Supabase"
+        case .dockerCompose: "Docker Compose"
         }
     }
 
@@ -30,6 +34,7 @@ public enum ManagedStackType: String, Codable, Sendable, CaseIterable {
     public var identityLabel: String {
         switch self {
         case .supabase: "`project_id`"
+        case .dockerCompose: "プロジェクト名"
         }
     }
 
@@ -37,6 +42,7 @@ public enum ManagedStackType: String, Codable, Sendable, CaseIterable {
     func isValidIdentityValue(_ value: String) -> Bool {
         switch self {
         case .supabase: SupabaseStackConfiguration.isValidIdentityValue(value)
+        case .dockerCompose: ComposeProjectName(rawValue: value) != nil
         }
     }
 }
@@ -130,7 +136,7 @@ public struct ManagedStackIdentity: Hashable, Comparable, Codable, Sendable, Cus
 }
 
 /// 管理対象スタック 1 件の定義。Phase A では v3 の`kind: "supabase"`のサービスから作る。
-public struct ManagedStackDefinition: Equatable, Sendable, Identifiable {
+public struct ManagedStackDefinition: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
     public var name: String
     public var configuration: ManagedStackConfiguration
@@ -155,29 +161,63 @@ public struct ManagedStackDefinition: Equatable, Sendable, Identifiable {
     }
 
     public var type: ManagedStackType { configuration.type }
+    private enum CodingKeys: String, CodingKey, CaseIterable { case id, name, type, supabase, dockerCompose, ports, enabledByDefault, failurePolicy }
+    public init(from decoder: any Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.allCases.map(\.rawValue))
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        let type = try c.decode(ManagedStackType.self, forKey: .type)
+        switch type {
+        case .supabase:
+            guard !c.contains(.dockerCompose) else { throw ComposeConfigurationError.invalid("Supabase に dockerCompose は指定できません。") }
+            configuration = .supabase(try c.decode(SupabaseStackConfiguration.self, forKey: .supabase))
+        case .dockerCompose:
+            guard !c.contains(.supabase) else { throw ComposeConfigurationError.invalid("Compose に supabase は指定できません。") }
+            configuration = .dockerCompose(try c.decode(DockerComposeStackConfiguration.self, forKey: .dockerCompose))
+        }
+        ports = try c.decode([PortSpec].self, forKey: .ports)
+        enabledByDefault = try c.decode(Bool.self, forKey: .enabledByDefault)
+        failurePolicy = try c.decode(FailurePolicy.self, forKey: .failurePolicy)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id); try c.encode(name, forKey: .name); try c.encode(type, forKey: .type)
+        switch configuration {
+        case let .supabase(value): try c.encode(value, forKey: .supabase)
+        case let .dockerCompose(value): try c.encode(value, forKey: .dockerCompose)
+        }
+        try c.encode(ports, forKey: .ports); try c.encode(enabledByDefault, forKey: .enabledByDefault); try c.encode(failurePolicy, forKey: .failurePolicy)
+    }
 }
 
 /// 種類ごとの設定。
 public enum ManagedStackConfiguration: Equatable, Sendable {
     case supabase(SupabaseStackConfiguration)
+    case dockerCompose(DockerComposeStackConfiguration)
 
     public var type: ManagedStackType {
         switch self {
         case .supabase: .supabase
+        case .dockerCompose: .dockerCompose
         }
     }
 
     /// ファイルを読まずに判定できる設定エラー（禁止オプション、起動コマンドの形式など）。
     public func structuralIssues(workingDirectory: URL) -> [ManagedStackConfigurationIssue] {
         switch self {
+        case let .dockerCompose(configuration):
+            do { try configuration.validate(); return [] }
+            catch { return [.dockerCompose("\(error)")] }
         case let .supabase(configuration):
-            configuration.structuralIssues(workingDirectory: workingDirectory).map { .supabase($0) }
+            return configuration.structuralIssues(workingDirectory: workingDirectory).map { .supabase($0) }
         }
     }
 
     /// ファイルを読まずに導出できる設定。設定が不正なら nil。
     public func derived(workingDirectory: URL) -> ManagedStackDerivedConfiguration? {
         switch self {
+        case .dockerCompose: nil
         case let .supabase(configuration):
             configuration.derived(workingDirectory: workingDirectory).map { .supabase($0) }
         }
@@ -188,6 +228,8 @@ public enum ManagedStackConfiguration: Equatable, Sendable {
     /// ラップせずに throw する。
     public func resolve(workingDirectory: URL) throws -> ResolvedStackConfiguration {
         switch self {
+        case let .dockerCompose(configuration):
+            .dockerCompose(try configuration.resolve(workingDirectory: workingDirectory))
         case let .supabase(configuration):
             .supabase(try configuration.resolve(workingDirectory: workingDirectory))
         }
@@ -202,11 +244,13 @@ public enum ManagedStackDerivedConfiguration: Equatable, Sendable {
 /// ファイルを読まずに判定できる設定の不備。
 public enum ManagedStackConfigurationIssue: Equatable, Sendable {
     case supabase(SupabaseConfigurationIssue)
+    case dockerCompose(String)
 
     /// 起動・切替・手掛かりの再検証で示す理由。
     public var failureReason: String {
         switch self {
         case let .supabase(issue): issue.failureReason
+        case let .dockerCompose(reason): reason
         }
     }
 
@@ -214,6 +258,7 @@ public enum ManagedStackConfigurationIssue: Equatable, Sendable {
     public func validationMessage(stackName: String) -> String {
         switch self {
         case let .supabase(issue): issue.validationMessage(stackName: stackName)
+        case let .dockerCompose(reason): "Docker Compose「\(stackName)」: \(reason)"
         }
     }
 }
@@ -233,22 +278,26 @@ public enum ManagedStackConfigurationError: Error, Equatable, Sendable, CustomSt
 /// ID と構成同一性まで確定した設定。コマンドはここからしか作れない。
 public enum ResolvedStackConfiguration: Equatable, Sendable {
     case supabase(SupabaseResolvedConfiguration)
+    case dockerCompose(DockerComposeResolvedConfiguration)
 
     public var type: ManagedStackType {
         switch self {
         case .supabase: .supabase
+        case .dockerCompose: .dockerCompose
         }
     }
 
     public var identity: ManagedStackIdentity {
         switch self {
         case let .supabase(configuration): configuration.identity
+        case let .dockerCompose(configuration): configuration.identity
         }
     }
 
     public var fingerprint: ManagedStackFingerprint {
         switch self {
         case let .supabase(configuration): .supabase(configuration.fingerprint)
+        case let .dockerCompose(configuration): .dockerCompose(configuration.fingerprint)
         }
     }
 
@@ -256,6 +305,7 @@ public enum ResolvedStackConfiguration: Equatable, Sendable {
     public var registrationDirectory: URL {
         switch self {
         case let .supabase(configuration): configuration.derived.configDirectory
+        case let .dockerCompose(configuration): configuration.fingerprint.workingDirectory
         }
     }
 }
@@ -265,22 +315,27 @@ public enum ResolvedStackConfiguration: Equatable, Sendable {
 /// JSON は`{"type": "supabase", "supabase": {…}}`。`type`と中身の種類が合わなければ decode に失敗する。
 public enum ManagedStackFingerprint: Codable, Equatable, Sendable {
     case supabase(SupabaseLifecycleFingerprint)
+    case dockerCompose(DockerComposeFingerprint)
 
     public var type: ManagedStackType {
         switch self {
         case .supabase: .supabase
+        case .dockerCompose: .dockerCompose
         }
     }
 
     private enum CodingKeys: String, CodingKey {
         case type
         case supabase
+        case dockerCompose
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ManagedStackType.self, forKey: .type)
         switch type {
+        case .dockerCompose:
+            self = .dockerCompose(try container.decode(DockerComposeFingerprint.self, forKey: .dockerCompose))
         case .supabase:
             self = .supabase(
                 try container.decode(SupabaseLifecycleFingerprint.self, forKey: .supabase)
@@ -292,6 +347,8 @@ public enum ManagedStackFingerprint: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
         switch self {
+        case let .dockerCompose(fingerprint):
+            try container.encode(fingerprint, forKey: .dockerCompose)
         case let .supabase(fingerprint):
             try container.encode(fingerprint, forKey: .supabase)
         }

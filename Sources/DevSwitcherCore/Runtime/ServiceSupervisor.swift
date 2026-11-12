@@ -46,6 +46,7 @@ public actor ServiceSupervisor {
     public let serviceName: String
     public let logFiles: ServiceLogFiles
 
+    private let appendOutput: Bool
     private let command: ResolvedCommand
     private let portPollInterval: Duration
     private let identityProbe: ProcessIdentityProbe
@@ -68,6 +69,7 @@ public actor ServiceSupervisor {
     private var portRecord: ObservedPortRecord = .unavailable
     private var didExit = false
     private var stopRequested = false
+    private var commandStopInProgress = false
     private var exitRecord: ExitRecord?
 
     public init(
@@ -75,6 +77,8 @@ public actor ServiceSupervisor {
         serviceName: String,
         command: ResolvedCommand,
         logDirectory: URL,
+        sharedLogFiles: ServiceLogFiles? = nil,
+        appendOutput: Bool = false,
         portPollInterval: Duration = .seconds(2),
         identityProbe: @escaping ProcessIdentityProbe = { pid, workingDirectory in
             ProcessInspector.identity(pid: pid, workingDirectory: workingDirectory)
@@ -96,7 +100,8 @@ public actor ServiceSupervisor {
         self.serviceID = serviceID
         self.serviceName = serviceName
         self.command = command
-        self.logFiles = ServiceLogFiles(directory: logDirectory, serviceID: serviceID)
+        self.logFiles = sharedLogFiles ?? ServiceLogFiles(directory: logDirectory, serviceID: serviceID)
+        self.appendOutput = appendOutput
         self.portPollInterval = portPollInterval
         self.identityProbe = identityProbe
         self.groupStateProbe = groupStateProbe
@@ -188,7 +193,8 @@ public actor ServiceSupervisor {
             environment: environment,
             output: .files(
                 standardOutput: logFiles.standardOutput,
-                standardError: logFiles.standardError
+                standardError: logFiles.standardError,
+                append: appendOutput
             )
         )
         let process = ChildProcess(pid: spawned.pid, processGroupID: spawned.processGroupID)
@@ -212,6 +218,7 @@ public actor ServiceSupervisor {
         self.continuation = continuation
 
         // ログは受信順のまま continuation へ流す。actor を挟むと順序が崩れるため直接 yield する。
+        if !appendOutput {
         do {
             tail = try LogFileTail(
                 files: [
@@ -225,6 +232,7 @@ public actor ServiceSupervisor {
         } catch {
             // ログの障害とプロセスの稼働を分け、停止手段を維持したまま通知する。
             continuation.yield(.logUnavailable("\(error)"))
+        }
         }
 
         if let identity {
@@ -283,6 +291,39 @@ public actor ServiceSupervisor {
             pid: spawned.pid,
             residualProcessGroupID: drained ? nil : spawned.processGroupID
         )
+    }
+
+    func prepareCommandStop() throws -> Bool {
+        guard let child, let processGroupID = launchedProcessGroupID else { return false }
+        guard child.snapshot.ownsProcessGroup else { throw RuntimeError.identityMismatch(service: serviceName, pid: processGroupID) }
+        if groupStateProbe(processGroupID).hasLiveMembers == false { releaseProcessGroupOwnership(); return false }
+        if let runtime, child.currentStatus == nil,
+           startAbstimeProbe(runtime.identity.pid).value != runtime.identity.startAbstime {
+            throw RuntimeError.identityMismatch(service: serviceName, pid: runtime.identity.pid)
+        }
+        stopRequested = true
+        commandStopInProgress = true
+        return true
+    }
+
+    func waitForCommandStop(grace: Duration) async -> ServiceStopOutcome {
+        guard let pgid = launchedProcessGroupID else { return .stopped(exitRecord?.status) }
+        if await waitForGroupToDrain(processGroupID: pgid, timeout: grace) {
+            let status = child?.currentStatus
+            releaseProcessGroupOwnership()
+            return .stopped(status)
+        }
+        return .residual(processGroupID: pgid, reason: "停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。")
+    }
+
+    func completeCommandStopObservation() {
+        commandStopInProgress = false
+        if didExit { finishStream() }
+    }
+
+    func waitForCommandExit(timeout: Duration) async -> ExitStatus? {
+        guard let child else { return nil }
+        return await child.waitForExit(timeout: timeout)
     }
 
     public func stop(grace: Duration = .seconds(10)) async throws -> StopOutcome {
@@ -548,6 +589,7 @@ public actor ServiceSupervisor {
     }
 
     private func finishStream() {
+        guard !commandStopInProgress else { return }
         // cancel() が残りを読み切って onBatch へ流すため、finish より先に呼ぶ。
         tail?.cancel()
         tail = nil

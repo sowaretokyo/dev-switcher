@@ -250,7 +250,9 @@ public struct HandoffInspector: Sendable {
         for hint in load.hints {
             switch await evaluate(hint) {
             case let .adoptable(candidate):
-                candidates.append(candidate)
+                if hint.stopCommandFor != nil {
+                    stoppable.append(StoppableProcessFinding(hint: hint, evidence: .matchedLeader(candidate.identity), groupEvidence: candidate.evidence, reason: "停止コマンドが残っています。稼働中サービスとしては引き継げません。"))
+                } else { candidates.append(candidate) }
             case let .stoppableOnly(finding):
                 stoppable.append(finding)
             case let .rejected(reason):

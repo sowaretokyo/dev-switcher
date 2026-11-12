@@ -45,7 +45,7 @@ struct SupabaseValidationCharacterizationTests {
     }
 
     private func structuralErrors(
-        for service: ServiceDefinition,
+        for service: LaunchUnit,
         directory: URL
     ) -> [ValidationError] {
         ProjectValidator.structuralErrors(

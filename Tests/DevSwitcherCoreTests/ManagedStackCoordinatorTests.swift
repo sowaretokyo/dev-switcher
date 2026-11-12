@@ -39,7 +39,7 @@ struct ManagedStackCoordinatorTests {
         stackValue: String = "bell",
         directory: URL,
         stackFailurePolicy: FailurePolicy = .block,
-        extraServices: [ServiceDefinition] = []
+        extraServices: [LaunchUnit] = []
     ) throws -> ProjectDefinition {
         try writeSupabaseConfig(projectID: stackValue, in: directory)
         return makeProject(
@@ -92,7 +92,7 @@ struct ManagedStackCoordinatorTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeStackProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let driver = FakeManagedStackDriver(
             type: .supabase,
             states: [try makeSupabaseIdentity("other"): .running]
@@ -118,7 +118,7 @@ struct ManagedStackCoordinatorTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeStackProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let driver = FakeManagedStackDriver(
             type: .supabase,
             states: [try makeSupabaseIdentity("other"): .running]
@@ -206,7 +206,7 @@ struct ManagedStackCoordinatorTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeStackProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let base = FakeManagedStackDriver(
             type: .supabase,
             states: [try makeSupabaseIdentity("bell"): .running]
@@ -346,7 +346,7 @@ struct ManagedStackCoordinatorTests {
             stackFailurePolicy: .continue,
             extraServices: [follower]
         )
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let base = FakeManagedStackDriver(type: .supabase)
         let driver = ScriptedStackDriver(base: base)
         await driver.failStart(leaving: .degraded)
@@ -374,7 +374,7 @@ struct ManagedStackCoordinatorTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let failing = makeFailingService(name: "Web", workingDirectory: directory, failurePolicy: .block)
         let project = try makeStackProject(directory: directory, extraServices: [failing])
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         let driver = FakeManagedStackDriver(
             type: .supabase,
             states: [try makeSupabaseIdentity("bell"): .running]

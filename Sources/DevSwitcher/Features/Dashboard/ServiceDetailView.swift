@@ -4,7 +4,7 @@ import SwiftUI
 struct ServiceDetailView: View {
     @Environment(AppState.self) private var state
     let project: ProjectDefinition
-    let service: ServiceDefinition
+    let service: LaunchUnit
 
     @State private var isFollowing = true
 
@@ -47,7 +47,7 @@ struct ServiceDetailView: View {
                 Text(service.name)
                     .font(Typography.heading)
                     .lineLimit(1)
-                Text(service.kind.displayName)
+                Text(service.displayTag ?? "プロセス")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                 ServiceStatusLabel(state: uiState)
@@ -113,7 +113,7 @@ struct ServiceDetailView: View {
 
             LabeledValue(label: "起動確認", value: startupObservationDescription, lineLimit: 3)
             // プロジェクト詳細から退避してきた。実行内容を確かめる場所はここ1か所にする。
-            LabeledValue(label: "起動コマンド", value: service.start.displayCommandLine, lineLimit: 3)
+            LabeledValue(label: "起動コマンド", value: service.commandDescription, lineLimit: 3)
             ForEach(ManagedStackTypePresentation.detailRows(for: service), id: \.label) { row in
                 LabeledValue(label: row.label, value: row.value, lineLimit: row.lineLimit)
             }

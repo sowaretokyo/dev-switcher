@@ -11,7 +11,7 @@ struct ProjectDetailView: View {
                 header
                 controls
                 servicesSection
-                if !project.services.isEmpty {
+                if !project.launchUnits.isEmpty {
                     shutdownOrderNote
                 }
             }
@@ -38,7 +38,7 @@ struct ProjectDetailView: View {
                 Spacer(minLength: Spacing.s)
                 moreMenu
             }
-            Text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件")
+            Text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件・スタック \(project.managedStacks.count) 件")
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
         }
@@ -152,12 +152,12 @@ struct ProjectDetailView: View {
     }
 
     private var enabledCount: Int {
-        project.enabledStartupOrder.count
+        project.enabledLaunchUnits.count
     }
 
     private var startSummary: String {
-        let excluded = project.excludedServices.count
-        let base = "起動対象 \(enabledCount) / \(project.services.count) プロセス"
+        let excluded = project.launchUnits.filter { !project.isEnabledNow($0.id) }.count
+        let base = "起動対象 \(enabledCount) / \(project.launchUnits.count) 件"
         return excluded > 0 ? base + "（対象外 \(excluded)）" : base
     }
 
@@ -208,7 +208,7 @@ struct ProjectDetailView: View {
     private var shutdownOrderNote: some View {
         VStack(alignment: .leading, spacing: Spacing.hairline) {
             SectionLabel("終了順")
-            Text(project.shutdownOrder.map(\.name).joined(separator: " → "))
+            Text(project.shutdownUnits.map(\.name).joined(separator: " → "))
                 .font(Typography.mono)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -223,9 +223,9 @@ private struct WorkingDirectorySummary: View {
     let project: ProjectDefinition
     let workingDirectory: WorkingDirectoryDefinition
 
-    private var services: [ServiceDefinition] {
-        workingDirectory.serviceIDs.map { serviceID in
-            guard let service = project.service(id: serviceID) else {
+    private var services: [LaunchUnit] {
+        (workingDirectory.stackIDs + workingDirectory.serviceIDs).map { serviceID in
+            guard let service = project.entry(id: serviceID) else {
                 preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
             }
             return service
@@ -248,7 +248,7 @@ private struct WorkingDirectorySummary: View {
                 Text(workingDirectory.name)
                     .font(Typography.heading)
                 Spacer(minLength: Spacing.s)
-                Text("\(services.count) プロセス")
+                Text("プロセス \(workingDirectory.serviceIDs.count) 件・スタック \(workingDirectory.stackIDs.count) 件")
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -284,10 +284,10 @@ private struct WorkingDirectorySummary: View {
 struct ServiceSummaryRow: View {
     @Environment(AppState.self) private var state
     let project: ProjectDefinition
-    let service: ServiceDefinition
+    let service: LaunchUnit
 
     private var startupPosition: Int {
-        guard let index = project.services.firstIndex(where: { $0.id == service.id }) else {
+        guard let index = project.launchUnits.firstIndex(where: { $0.id == service.id }) else {
             preconditionFailure("存在しないプロセスの起動順は表示できません。")
         }
         return index + 1
@@ -330,7 +330,7 @@ struct ServiceSummaryRow: View {
 
             // 補助情報は固定の横並びにしない。狭い詳細ペインで黙って切れる。
             FlowRow(horizontalSpacing: Spacing.m, verticalSpacing: Spacing.xs) {
-                Text(service.kind.displayName)
+                Text(service.displayTag ?? "プロセス")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                 Text(configuredPorts)

@@ -304,8 +304,8 @@ func makeAppStateSupabaseService(
     executable: String = "supabase",
     arguments: [String] = ["start"],
     failurePolicy: FailurePolicy = .block
-) -> ServiceDefinition {
-    ServiceDefinition(
+) -> LaunchUnit {
+    LaunchUnit(
         name: name,
         kind: .supabase,
         ports: [PortSpec(label: "API", port: 54_321, isPrimary: true)],
@@ -362,11 +362,11 @@ struct SyntheticFixture {
     let registry: RuntimeRegistry
     let inspector: HandoffInspector
 
-    var service: ServiceDefinition {
+    var service: LaunchUnit {
         guard let service = project.service(id: hint.serviceID) else {
             preconditionFailure("手掛かりに対応するプロセス定義がありません。")
         }
-        return service
+        return LaunchUnit(service)
     }
 }
 
@@ -789,7 +789,7 @@ func makeWorkerProject(
         color: .blue,
         directory: directory,
         services: serviceNames.map { serviceName in
-            ServiceDefinition(
+            LaunchUnit(
                 name: serviceName,
                 kind: .worker,
                 ports: ports,
@@ -853,7 +853,7 @@ func makeSupabaseProjectID(_ value: String) throws -> SupabaseProjectID {
 /// 管理下へ入ったSupabaseの手掛かりを作る。構成を導出できないサービスなら nil。
 func makeManagedStackHint(
     projectID: UUID,
-    service: ServiceDefinition,
+    service: LaunchUnit,
     supabaseProjectID: SupabaseProjectID,
     relationship: ManagedStackRelationship
 ) -> ManagedStackHint? {
@@ -873,7 +873,7 @@ func makeManagedStackHint(
     return ManagedStackHint(stack, relationship: relationship)
 }
 
-extension ServiceDefinition {
+extension LaunchUnit {
     /// アダプタ経由で導出した Supabase の設定。導出できなければ nil。
     var derivedSupabaseConfiguration: SupabaseDerivedConfiguration? {
         guard let definition = managedStackDefinition,

@@ -8,6 +8,8 @@ import Foundation
 /// 一致しなければ引き継がず、一致してもこの値を状態として復元しない。
 /// プロジェクト定義（`projects.json`）とは別ファイルに置き、設定と混ざらないようにする。
 public struct RuntimeHint: Codable, Equatable, Sendable {
+    public var stopCommandFor: UUID?
+    public var stopCommand: CommandSpec?
     public let projectID: UUID
     public let serviceID: UUID
     public let serviceName: String
@@ -35,6 +37,8 @@ public struct RuntimeHint: Codable, Equatable, Sendable {
         workingDirectory: URL,
         observedPorts: ObservedPortRecord
     ) {
+        self.stopCommandFor = nil
+        self.stopCommand = nil
         self.projectID = projectID
         self.serviceID = serviceID
         self.serviceName = serviceName
@@ -46,11 +50,33 @@ public struct RuntimeHint: Codable, Equatable, Sendable {
         self.observedPorts = observedPorts
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case projectID, serviceID, serviceName, processGroupID, leader, groupEvidence, executablePath, workingDirectory, observedPorts
+        case stopCommandFor, stopCommand
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projectID = try c.decode(UUID.self, forKey: .projectID)
+        serviceID = try c.decode(UUID.self, forKey: .serviceID)
+        serviceName = try c.decode(String.self, forKey: .serviceName)
+        processGroupID = try c.decode(pid_t.self, forKey: .processGroupID)
+        leader = try c.decode(ProcessAnchor.self, forKey: .leader)
+        groupEvidence = try c.decode(ProcessGroupEvidence.self, forKey: .groupEvidence)
+        executablePath = try c.decode(String.self, forKey: .executablePath)
+        workingDirectory = try c.decode(URL.self, forKey: .workingDirectory)
+        observedPorts = try c.decode(ObservedPortRecord.self, forKey: .observedPorts)
+        stopCommandFor = try c.optional(UUID.self, forKey: .stopCommandFor)
+        stopCommand = try c.optional(CommandSpec.self, forKey: .stopCommand)
+        guard (stopCommandFor == nil) == (stopCommand == nil), stopCommandFor != serviceID else {
+            throw DecodingError.dataCorruptedError(forKey: .stopCommandFor, in: c, debugDescription: "停止コマンドの親 ID と設定が不正です。")
+        }
+    }
+
     public func updating(
         groupEvidence evidence: ProcessGroupEvidence,
         observedPorts: ObservedPortRecord? = nil
     ) -> RuntimeHint {
-        RuntimeHint(
+        var result = RuntimeHint(
             projectID: projectID,
             serviceID: serviceID,
             serviceName: serviceName,
@@ -61,6 +87,9 @@ public struct RuntimeHint: Codable, Equatable, Sendable {
             workingDirectory: workingDirectory,
             observedPorts: observedPorts ?? self.observedPorts
         )
+        result.stopCommandFor = stopCommandFor
+        result.stopCommand = stopCommand
+        return result
     }
 
     public func updatingGroupEvidence(_ evidence: ProcessGroupEvidence) -> RuntimeHint {

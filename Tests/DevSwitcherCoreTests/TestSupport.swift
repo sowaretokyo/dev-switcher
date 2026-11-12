@@ -24,8 +24,8 @@ func makeService(
     stop: CommandSpec? = nil,
     enabledByDefault: Bool = true,
     failurePolicy: FailurePolicy = .block
-) -> ServiceDefinition {
-    ServiceDefinition(
+) -> LaunchUnit {
+    LaunchUnit(
         name: name,
         kind: kind,
         ports: ports,
@@ -43,7 +43,7 @@ func makeService(
 func makeProject(
     name: String = "Bell",
     directory: URL,
-    services: [ServiceDefinition]? = nil,
+    services: [LaunchUnit]? = nil,
     stopOrder: [UUID]? = nil,
     enabledNow: [UUID: Bool] = [:]
 ) -> ProjectDefinition {
@@ -70,7 +70,7 @@ func makeOrderedService(
     stopLog: URL,
     failurePolicy: FailurePolicy = .block,
     enabledByDefault: Bool = true
-) -> ServiceDefinition {
+) -> LaunchUnit {
     let script = """
         trap 'echo \(name) >> "\(stopLog.path)"; exit 0' TERM
         echo \(name) >> "\(startLog.path)"
@@ -97,7 +97,7 @@ func makeFailingService(
     workingDirectory: URL,
     failurePolicy: FailurePolicy,
     exitCode: Int32 = 3
-) -> ServiceDefinition {
+) -> LaunchUnit {
     makeService(
         name: name,
         kind: kind,
@@ -344,7 +344,7 @@ func makeSupabaseService(
     executable: String = "supabase",
     arguments: [String] = ["start"],
     failurePolicy: FailurePolicy = .block
-) -> ServiceDefinition {
+) -> LaunchUnit {
     makeService(
         name: name,
         kind: .supabase,
@@ -723,7 +723,7 @@ struct TestSupportError: Error, CustomStringConvertible {
 /// 設定ファイルを読まずに、`kind: "supabase"`のサービスから解決済みのスタックを作る。
 /// `project_id`は引数の値をそのまま使う。
 func makeResolvedSupabaseStack(
-    _ service: ServiceDefinition,
+    _ service: LaunchUnit,
     projectID: SupabaseProjectID,
     environmentID: UUID = UUID()
 ) throws -> ResolvedManagedStack {
@@ -836,7 +836,7 @@ actor FakeManagedStackDriver: ManagedStackDriver {
 /// 管理下へ入ったSupabaseの手掛かりを、設定ファイルを読まずに作る。構成を導出できないサービスなら throw する。
 func makeManagedStackHint(
     projectID: UUID,
-    service: ServiceDefinition,
+    service: LaunchUnit,
     supabaseProjectID: SupabaseProjectID,
     relationship: ManagedStackRelationship
 ) throws -> ManagedStackHint {
@@ -848,7 +848,7 @@ func makeManagedStackHint(
     return ManagedStackHint(stack, relationship: relationship)
 }
 
-extension ServiceDefinition {
+extension LaunchUnit {
     /// アダプタ経由で導出した Supabase の設定。導出できなければ nil。
     var derivedSupabaseConfiguration: SupabaseDerivedConfiguration? {
         guard let definition = managedStackDefinition,

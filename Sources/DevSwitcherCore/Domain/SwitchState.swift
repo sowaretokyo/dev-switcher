@@ -107,17 +107,20 @@ public struct ProjectFact: Equatable, Sendable {
     public let projectName: String
     public let phase: ProjectPhase
     public let services: [ServiceFact]
+    public let warnings: [String]
 
     public init(
         projectID: UUID,
         projectName: String,
         phase: ProjectPhase,
-        services: [ServiceFact]
+        services: [ServiceFact],
+        warnings: [String] = []
     ) {
         self.projectID = projectID
         self.projectName = projectName
         self.phase = phase
         self.services = services
+        self.warnings = warnings
     }
 
     /// 「Bell は停止しました。」のように、いまどうなっているかを1行で断言する。
@@ -231,9 +234,9 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
 
         public var title: String {
             switch self {
-            case .stopFailed: "終了できない"
+            case .stopFailed: "停止できない"
             case .portsNotReleased: "ポートが解放されない"
-            case .startFailed: "起動直後に落ちた"
+            case .startFailed: "起動に失敗"
             case .cancelled: "切替を中止した"
             case .unsupportedConfiguration: "未対応の設定"
             case let .managedStackConfirmationRequired(plan): "\(plan.primaryEntry.identity.type.displayName)の確認"
@@ -305,7 +308,7 @@ extension ManagedStackConfirmationPlan {
 
     /// 起動先の行に続く、停止対象の行。
     public var stopEntries: [ManagedStackConfirmationTarget] {
-        Array(entries.dropFirst())
+        entries.filter { $0.action == .stop && $0.stackID == nil }
     }
 
     /// 起動先スタックの名前。先頭行の登録情報は plan の生成時に保証済み。

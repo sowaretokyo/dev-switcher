@@ -69,6 +69,7 @@ struct RuntimeHintV7Tests {
     private func supabaseFingerprint(_ hint: ManagedStackHint) throws -> SupabaseLifecycleFingerprint {
         switch try #require(hint.fingerprint) {
         case let .supabase(fingerprint): fingerprint
+        case .dockerCompose: preconditionFailure("Supabase fixture ではありません。")
         }
     }
 

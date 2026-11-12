@@ -110,6 +110,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
     private static func configuration(of stack: ResolvedManagedStack) -> SupabaseResolvedConfiguration {
         switch stack.configuration {
         case let .supabase(configuration): configuration
+        case .dockerCompose: preconditionFailure("Supabase driver に Compose 設定は渡せません。")
         }
     }
 
@@ -117,7 +118,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
         _ known: [ResolvedManagedStack]
     ) -> [SupabaseProjectID: SupabaseDerivedConfiguration] {
         var result: [SupabaseProjectID: SupabaseDerivedConfiguration] = [:]
-        for stack in known {
+        for stack in known where stack.type == .supabase {
             let configuration = configuration(of: stack)
             result[configuration.projectID] = configuration.derived
         }

@@ -49,7 +49,7 @@ struct AppStateHandoffTests {
         #expect(state.managedStackConfirmation == nil)
         #expect(state.phase(of: project) == .stopped)
         // 観測だけ。引き継ぎも停止もしない。
-        let serviceID = try #require(project.services.first?.id)
+        let serviceID = try #require(project.launchUnits.first?.id)
         let observed = try #require(state.state(of: serviceID).managedStack)
         #expect(observed.state == .running)
         #expect(observed.label == "外部・稼働中")
@@ -91,7 +91,7 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let serviceID = try #require(project.services.first?.id)
+        let serviceID = try #require(project.launchUnits.first?.id)
         try ProjectStore(directory: directory).save([project])
         let world = FakeSupabaseWorld()
         let hintStore = RuntimeHintStore(directory: directory)
@@ -229,7 +229,7 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeSupabaseConfig(projectID: "bell", in: directory)
         let supabase = makeAppStateSupabaseService(workingDirectory: directory)
-        let failing = ServiceDefinition(
+        let failing = LaunchUnit(
             name: "Web",
             kind: .web,
             ports: [],
@@ -274,7 +274,7 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let hintStore = RuntimeHintStore(directory: directory)
         try hintStore.save(
@@ -355,7 +355,7 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(projectID: "bell", directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let hintStore = RuntimeHintStore(directory: directory)
         let hint = try #require(
@@ -393,7 +393,7 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let hintStore = RuntimeHintStore(directory: directory)
         let json = """
@@ -425,7 +425,7 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let service = try #require(project.services.first)
+        let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         try RuntimeHintStore(directory: directory).save(
             [],
@@ -1961,7 +1961,7 @@ struct AppStateHandoffTests {
         let hintStore = ControllableHintStore(directory: directory)
         try await fixture.registry.adopt(
             candidate: makeCandidate(for: fixture.hint),
-            service: fixture.service,
+            service: try #require(fixture.service.processDefinition),
             in: fixture.project
         )
 
