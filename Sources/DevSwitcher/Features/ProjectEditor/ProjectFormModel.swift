@@ -142,6 +142,13 @@ final class ProjectFormModel {
             }
         }
 
+        var isUntouchedPlaceholder: Bool {
+            name.isEmpty && tag.isEmpty && executable.isEmpty && argumentsText.isEmpty
+                && argumentsFormat == .lines && enabledByDefault && failurePolicy == .block
+                && !hasStopCommand && stopExecutable.isEmpty && stopArgumentsJSON == "[]"
+                && stopDirectory == nil && ports.count == 1 && ports[0].isBlank && ports[0].isPrimary
+        }
+
         private static func parseLines(_ text: String) -> [String] {
             text
                 .split(separator: "\n", omittingEmptySubsequences: false)
@@ -444,6 +451,82 @@ final class ProjectFormModel {
         }
     }
     func stackPosition(_ id: UUID) -> Int? { stackOrder.firstIndex(of: id).map { $0 + 1 } }
+
+    // MARK: - 既存定義からの候補追加
+
+    /// 候補を確認したディレクトリ・出典が変わったら反映しない。保存は通常のフォーム操作で行う。
+    func addDiscoveredDefinitions(
+        _ preview: DefinitionDiscovery.Result,
+        scripts selectedScripts: Set<String>,
+        manager: ScriptPackageManager?,
+        includeCompose: Bool,
+        to directoryID: UUID
+    ) throws {
+        guard let index = workingDirectories.firstIndex(where: { $0.id == directoryID }),
+              workingDirectories[index].directory?.standardizedFileURL == preview.directory else {
+            throw DefinitionDiscoveryError("作業ディレクトリが変わりました。候補を読み込み直してください。")
+        }
+        guard !selectedScripts.isEmpty || includeCompose else {
+            throw DefinitionDiscoveryError("追加する候補を選択してください。")
+        }
+        guard selectedScripts.isSubset(of: Set(preview.scripts.map(\.name))),
+              !includeCompose || preview.compose != nil else {
+            throw DefinitionDiscoveryError("選択した候補がありません。候補を読み込み直してください。")
+        }
+        guard try DefinitionDiscovery.scan(directory: preview.directory) == preview else {
+            throw DefinitionDiscoveryError("取り込み元が変わりました。候補を読み込み直して確認してください。")
+        }
+        var addedServices: [ServiceDraft] = []
+        if !selectedScripts.isEmpty {
+            guard let manager else { throw DefinitionDiscoveryError("package manager を選択してください。") }
+            addedServices = preview.scripts.filter { selectedScripts.contains($0.name) }.map { script in
+                ServiceDraft(service: ServiceDefinition(
+                    name: script.name, ports: [],
+                    start: manager.command(script: script.name, directory: preview.directory),
+                    enabledByDefault: true, failurePolicy: .block
+                ))
+            }
+        }
+        var addedStacks: [StackDraft] = []
+        if includeCompose, let compose = preview.compose {
+            addedStacks = [StackDraft(ManagedStackDefinition(
+                id: UUID(), name: "Docker Compose", configuration: .dockerCompose(compose.configuration), ports: [],
+                enabledByDefault: true, failurePolicy: .block
+            ))]
+        }
+        let existingNames = workingDirectories.flatMap { $0.services.map(\.name) + $0.stacks.map(\.name) }
+        let addedNames = addedServices.map(\.name) + addedStacks.map(\.name)
+        var names = Set(existingNames.map { $0.trimmed.lowercased() })
+        for name in addedNames {
+            guard names.insert(name.trimmed.lowercased()).inserted else {
+                throw DefinitionDiscoveryError("「\(name)」というプロセスまたはスタックがすでにあります。名前を変更してから追加してください。")
+            }
+        }
+
+        // 新規フォームが用意した未入力1行だけを除く。利用者が変更した行は保持する。
+        if workingDirectories[index].services.count == 1,
+           let placeholder = workingDirectories[index].services.first, placeholder.isUntouchedPlaceholder {
+            removeService(placeholder.id)
+        }
+        // 既存の相対順は変えず、このディレクトリの最後へ挿入する。
+        for service in addedServices {
+            let existingIDs = workingDirectories[index].services.map(\.id)
+            let insertion: Int
+            if let last = existingIDs.last {
+                guard let position = serviceOrder.firstIndex(of: last) else {
+                    preconditionFailure("作業ディレクトリ内のプロセスが起動順に含まれていません。")
+                }
+                insertion = position + 1
+            } else {
+                let following = Set(workingDirectories.dropFirst(index + 1).flatMap(\.services).map(\.id))
+                insertion = serviceOrder.firstIndex(where: following.contains) ?? serviceOrder.endIndex
+            }
+            workingDirectories[index].services.append(service)
+            serviceOrder.insert(service.id, at: insertion)
+        }
+        workingDirectories[index].stacks.append(contentsOf: addedStacks)
+        stackOrder.append(contentsOf: addedStacks.map(\.id))
+    }
 
     // MARK: - 保存
 

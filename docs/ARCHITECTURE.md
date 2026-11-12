@@ -328,6 +328,12 @@ public enum ValidationWarning: Equatable, Sendable {
 
 `upArguments` は `docs/SCHEMA.md` 7.2 の許可リストで検証する。許可リストと、どの経路でも生成・実行しない引数・サブコマンドの一覧は、それぞれ 1 か所に定数として持ち、構造検証、コマンド生成、`ManagedStackCommandRunning` の 3 か所で参照する。`ComposeFileLocator` が解決したファイル一覧は、起動・観測・停止の全コマンドに同じ `-f` として付ける。起動・観測は設定した `profiles` を使い、停止だけは `ComposeCommandRules.stopProfiles` の `--profile '*'` で同じプロジェクト名の全 profile を対象にする。実行境界でも、全 profile を指定しない停止を拒否する。
 
+### 5.3 既存定義からの候補追加
+
+`DefinitionDiscovery` はファイルの読み取りだけで scripts、package manager の根拠、Compose の候補、出典ごとの問題を返す。Compose の対象は既存の `ComposeFileLocator` と `ComposeProjectNameReader` で解決する。候補は保存形式とは分け、確認時の出典を一時保持してフォーム反映直前の再読結果と比較する。
+
+`DefinitionDiscoveryView` は作業ディレクトリのカード内で選択と確認を扱い、`ProjectFormModel.addDiscoveredDefinitions` がディレクトリ・選択・出典・名前重複を検証してから入力へ反映する。保存は既存の `build` → `AppState.addProject` / `updateProject` → `ProjectStore.save` を通す。設定 JSON と実行・停止処理は変更しない。
+
 ## 6. 永続化
 
 ### 6.1 設定ファイル（`projects.json`）

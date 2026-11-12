@@ -88,6 +88,10 @@ enum Metrics {
     /// 引数の入力欄。1行1引数で3行程度を見せる。
     static let argumentsEditorHeight: CGFloat = 52
 
+    /// 定義からの追加候補。名前とコマンドの列を揃える。
+    static let discoveryNameWidth: CGFloat = 120
+    static let discoveryDetailsWidth: CGFloat = 300
+
     /// チェックボックスの幅ぶんのインデント。補助情報をラベルの真下へ揃える。
     static let checkboxIndent: CGFloat = 20
     /// 状態を表す点。

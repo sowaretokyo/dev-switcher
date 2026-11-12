@@ -88,9 +88,6 @@ struct ProjectFormView: View {
                 }
                     .controlSize(.small)
             }
-            Text("名前と場所を1回指定し、その場所から起動するプロセスをまとめます。プロセスは左端の番号順に起動します。")
-                .font(Typography.caption)
-                .foregroundStyle(.tertiary)
             if model.wrappedValue.hasCrossDirectoryServiceOrder {
                 Text("既存の起動順を保持しているため、番号と作業ディレクトリの表示順が一致していません。ディレクトリをまたぐ順序はプロセス単位では変更できません。作業ディレクトリを並べ替えると、ディレクトリ単位の順序に揃います。")
                     .font(Typography.caption)
@@ -174,7 +171,7 @@ private struct WorkingDirectoryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             header
-            FormRow("名前（必須）", note: "例: Web、Native。Git リポジトリ名である必要はありません。") {
+            FormRow("名前（必須）") {
                 TextField("Web", text: $workingDirectory.name)
                     .textFieldStyle(.roundedBorder)
             }
@@ -201,13 +198,9 @@ private struct WorkingDirectoryCard: View {
                 }
             }
 
-            HStack {
-                SectionLabel("プロセス")
-                Spacer()
-                Button("プロセスを追加") {
-                    model.addService(to: workingDirectory.id)
-                }
-                .controlSize(.small)
+            DefinitionDiscoveryView(directory: workingDirectory.directory) { preview, scripts, manager, compose in
+                try model.addDiscoveredDefinitions(preview, scripts: scripts, manager: manager,
+                                                   includeCompose: compose, to: workingDirectory.id)
             }
 
             if workingDirectory.services.isEmpty && workingDirectory.stacks.isEmpty {
@@ -217,7 +210,7 @@ private struct WorkingDirectoryCard: View {
             }
 
             HStack {
-                SectionLabel("管理対象スタック（プロセスより先に起動）")
+                SectionLabel("管理対象スタック")
                 Spacer()
                 Menu("スタックを追加") {
                     ForEach(ManagedStackType.allCases, id: \.self) { type in
@@ -227,6 +220,15 @@ private struct WorkingDirectoryCard: View {
             }
             ForEach($workingDirectory.stacks) { $stack in
                 StackCard(model: model, stack: $stack)
+            }
+
+            HStack {
+                SectionLabel("プロセス")
+                Spacer()
+                Button("プロセスを追加") {
+                    model.addService(to: workingDirectory.id)
+                }
+                .controlSize(.small)
             }
             ForEach($workingDirectory.services) { $service in
                 if let position = model.positionIfPresent(of: service.id) {
