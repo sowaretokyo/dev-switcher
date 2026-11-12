@@ -237,10 +237,7 @@ private struct WorkingDirectoryCard: View {
             }
         }
         .padding(Spacing.m)
-        .background(
-            .quaternary.opacity(0.22),
-            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-        )
+        .cardBackground(.group)
     }
 
     private var header: some View {
@@ -261,6 +258,7 @@ private struct WorkingDirectoryCard: View {
             .buttonStyle(.borderless)
             .disabled(!model.canMoveWorkingDirectory(workingDirectory.id, by: -1))
             .help(L10n.text("作業ディレクトリを前へ"))
+            .accessibilityLabel(L10n.text("作業ディレクトリを前へ"))
             Button {
                 model.moveWorkingDirectory(workingDirectory.id, by: 1)
             } label: {
@@ -269,6 +267,7 @@ private struct WorkingDirectoryCard: View {
             .buttonStyle(.borderless)
             .disabled(!model.canMoveWorkingDirectory(workingDirectory.id, by: 1))
             .help(L10n.text("作業ディレクトリを後ろへ"))
+            .accessibilityLabel(L10n.text("作業ディレクトリを後ろへ"))
             Button(role: .destructive) {
                 model.removeWorkingDirectory(workingDirectory.id)
             } label: {
@@ -276,6 +275,7 @@ private struct WorkingDirectoryCard: View {
             }
             .buttonStyle(.borderless)
             .help(L10n.text("この作業ディレクトリとプロセス設定を削除"))
+            .accessibilityLabel(L10n.text("この作業ディレクトリとプロセス設定を削除"))
         }
     }
 }
@@ -355,10 +355,7 @@ private struct ServiceCard: View {
             portSection
         }
         .padding(Spacing.m)
-        .background(
-            .quaternary.opacity(0.35),
-            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-        )
+        .cardBackground()
     }
 
     private var header: some View {
@@ -379,6 +376,7 @@ private struct ServiceCard: View {
             .buttonStyle(.borderless)
             .disabled(!model.canMoveService(service.id, by: -1))
             .help(L10n.text("起動順を1つ前へ"))
+            .accessibilityLabel(L10n.text("起動順を1つ前へ"))
             Button {
                 model.moveService(service.id, by: 1)
             } label: {
@@ -387,6 +385,7 @@ private struct ServiceCard: View {
             .buttonStyle(.borderless)
             .disabled(!model.canMoveService(service.id, by: 1))
             .help(L10n.text("起動順を1つ後ろへ"))
+            .accessibilityLabel(L10n.text("起動順を1つ後ろへ"))
             Button(role: .destructive) {
                 model.removeService(service.id)
             } label: {
@@ -394,6 +393,7 @@ private struct ServiceCard: View {
             }
             .buttonStyle(.borderless)
             .help(L10n.text("このプロセスを削除"))
+            .accessibilityLabel(L10n.text("このプロセスを削除"))
         }
     }
 
@@ -434,6 +434,7 @@ private struct ServiceCard: View {
                         }
                         .buttonStyle(.plain)
                         .help(L10n.text("このポートを削除"))
+                        .accessibilityLabel(L10n.text("このポートを削除"))
                     }
                 }
             }
@@ -474,8 +475,14 @@ private struct StackCard: View {
                 Text(L10n.text("スタック \(model.stackPosition(stack.id) ?? 0)・\(stack.type.displayName)")).font(Typography.heading)
                 Spacer()
                 Button { model.moveStack(stack.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                    .help(L10n.text("起動順を1つ前へ"))
+                    .accessibilityLabel(L10n.text("起動順を1つ前へ"))
                 Button { model.moveStack(stack.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                    .help(L10n.text("起動順を1つ後ろへ"))
+                    .accessibilityLabel(L10n.text("起動順を1つ後ろへ"))
                 Button(role: .destructive) { model.removeStack(stack.id) } label: { Image(systemName: "trash") }
+                    .help(L10n.text("このスタックを削除"))
+                    .accessibilityLabel(L10n.text("このスタックを削除"))
             }.buttonStyle(.borderless)
             FormRow(L10n.text("名前（必須）")) { TextField(L10n.text("名前"), text: $stack.name).textFieldStyle(.roundedBorder) }
             if stack.type == .supabase {
@@ -514,9 +521,10 @@ private struct StackCard: View {
                             for index in stack.ports.indices { stack.ports[index].isPrimary = stack.ports[index].id == port.id }
                         })).toggleStyle(.checkbox)
                         Button { stack.ports.removeAll { $0.id == port.id } } label: { Image(systemName: "minus.circle") }
+                            .accessibilityLabel(L10n.text("このポートを削除"))
                     }.textFieldStyle(.roundedBorder)
                 }
             }
-        }.padding(Spacing.m).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card))
+        }.padding(Spacing.m).cardBackground()
     }
 }

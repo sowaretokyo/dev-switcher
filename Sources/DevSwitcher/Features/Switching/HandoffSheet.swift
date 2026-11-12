@@ -123,7 +123,7 @@ struct HandoffSheet: View {
         }
         .padding(Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .cardBackground()
     }
 }
 

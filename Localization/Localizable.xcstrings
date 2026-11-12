@@ -12828,6 +12828,23 @@
           }
         }
       }
+    },
+    "このスタックを削除": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスタックを削除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove this stack"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

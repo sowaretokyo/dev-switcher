@@ -181,3 +181,28 @@ struct FormRow<Content: View>: View {
         }
     }
 }
+
+/// カード背景の種類。値は見た目の濃さの違いだけを表す。
+enum CardBackgroundStyle {
+    /// 独立したカード・囲み。
+    case standard
+    /// 標準カードを内側に並べる外枠。内側のカードより薄くして入れ子を区別する。
+    case group
+
+    fileprivate var opacity: Double {
+        switch self {
+        case .standard: 0.35
+        case .group: 0.2
+        }
+    }
+}
+
+extension View {
+    /// カードの背景。個別に `.quaternary.opacity(...)` を書かず、これを使う。
+    func cardBackground(_ style: CardBackgroundStyle = .standard) -> some View {
+        background(
+            .quaternary.opacity(style.opacity),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
+    }
+}

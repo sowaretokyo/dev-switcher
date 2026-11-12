@@ -45,7 +45,7 @@ struct ProjectImportView: View {
                         }
                         DisclosureGroup(L10n.text("設定の全項目を確認")) {
                             Text(preview.json)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(Typography.monoSmall)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -118,7 +118,7 @@ struct ProjectImportView: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(L10n.text("\(index + 1). \(service.name)（\(project.isEnabledNow(service.id) ? L10n.text("起動対象") : L10n.text("対象外"))）"))
                     Text(service.commandDescription)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(Typography.monoSmall)
                         .textSelection(.enabled)
                     Text(service.workingDirectory.path)
                         .foregroundStyle(.secondary)
@@ -128,7 +128,7 @@ struct ProjectImportView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.m)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .cardBackground()
     }
 
     private func save() {

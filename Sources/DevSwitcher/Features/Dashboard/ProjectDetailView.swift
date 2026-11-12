@@ -68,6 +68,7 @@ struct ProjectDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .accessibilityLabel(L10n.text("開発環境の編集・Finder 表示・登録解除"))
         // 無効の理由は1か所から出す。固定文にすると、稼働中でない理由で
         // 無効なときに嘘の案内を出すことになる。
         .help(
@@ -272,10 +273,7 @@ private struct WorkingDirectorySummary: View {
             }
         }
         .padding(Spacing.m)
-        .background(
-            .quaternary.opacity(0.2),
-            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-        )
+        .cardBackground(.group)
     }
 }
 
@@ -359,7 +357,7 @@ struct ServiceSummaryRow: View {
             }
         }
         .padding(Spacing.m)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .cardBackground()
         // 対象外は色を持たせない。警告色を使うと、外した日に毎回警告が出ることになる。
         .opacity(uiState.phase == .excluded ? 0.55 : 1)
     }

@@ -185,6 +185,7 @@
 "「{0}」は起動済みです。" = "“{0}” is running.";
 "「起動する」の行だけを新しく起動します。" = "Only rows marked “Start” will be started as new stacks.";
 "このグループのプロセスを起動するディレクトリを選択してください" = "Choose the directory in which to start this group’s processes";
+"このスタックを削除" = "Remove this stack";
 "このディレクトリを利用できません。" = "This directory is unavailable.";
 "このプロセスは現在の起動対象として動作していません。" = "This process is not running as part of the current session.";
 "このプロセスを削除" = "Remove this process";
