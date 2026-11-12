@@ -27,5 +27,21 @@
     <string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 sowaretokyo. MIT License.</string>
+    <key>DevSwitcherUpdatesEnabled</key>
+    <false/>
+    <key>SUFeedURL</key>
+    <string>https://github.com/sowaretokyo/dev-switcher/releases/latest/download/appcast.xml</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
+    <key>SUSendProfileInfo</key>
+    <false/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
 </dict>
 </plist>

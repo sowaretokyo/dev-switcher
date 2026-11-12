@@ -12,3 +12,6 @@ xcuserdata/
 
 # Generated application bundles and distribution archives
 dist/
+
+# Python bytecode caches
+__pycache__/

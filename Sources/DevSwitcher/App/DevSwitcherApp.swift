@@ -20,6 +20,9 @@ public struct DevSwitcherRootApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                AppUpdateMenu(updater: appDelegate.updater)
+            }
         }
     }
 }
@@ -31,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 生成時から保持する。あとから結び付ける形にすると、
     /// 結び付く前の終了要求が `.terminateNow` になり、保存を飛ばしてしまう。
     let appState: AppState
+    let updater = AppUpdater()
     private lazy var termination = TerminationCoordinator(appState: appState)
 
     override init() {
@@ -42,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        updater.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

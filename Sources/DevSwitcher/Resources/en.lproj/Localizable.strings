@@ -202,7 +202,11 @@
 "ほかの切替処理が実行中です。完了してから操作してください。" = "Another switch is in progress. Wait for it to finish.";
 "ほかの起動・停止・切替を実行中です。" = "Another start, stop, or switch operation is in progress.";
 "ほかの起動・停止処理が実行中です。完了してから操作してください。" = "Another start or stop operation is in progress. Wait for it to finish.";
+"アップデートを確認…" = "Check for Updates…";
+"アップデートを確認できません。" = "Unable to check for updates.";
+"アップデートを自動確認" = "Automatically Check for Updates";
 "アプリの同梱リソースが見つかりません。アプリを入れ直してください。\n{0}" = "Bundled application resources are missing. Reinstall the app.\n{0}";
+"アプリの更新設定が不正です（{0}）。配布元からアプリを入れ直してください。" = "The app update configuration is invalid ({0}). Reinstall the app from its distributor.";
 "アプリの終了処理を実行中です。" = "The app is preparing to quit.";
 "イエロー" = "Yellow";
 "エラーの詳細" = "Error details";
@@ -755,5 +759,6 @@
 "開発環境全体を失敗にする" = "Fail the entire environment";
 "開発環境名「{0}」は既に登録されています。" = "Environment name “{0}” is already registered.";
 "開発環境名が空です。" = "The environment name is empty.";
+"開発用ビルドでは更新を確認できません。配布版の Dev Switcher を使用してください。" = "Updates are unavailable in development builds. Use the distributed version of Dev Switcher.";
 "関連する pre/post script も実行される場合があります。コンテナの起動は管理対象スタックに登録してください。" = "Related pre/post scripts may also run. Register container startup as a managed stack.";
 "（古い {0} 行は破棄）" = "(older lines discarded: {0})";

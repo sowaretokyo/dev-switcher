@@ -48,6 +48,7 @@ mkdir "$STAGING/volume"
 ditto "$APP" "$STAGING/volume/DevSwitcher.app"
 ln -s /Applications "$STAGING/volume/Applications"
 cp "$ROOT/packaging/INSTALL.txt" "$STAGING/volume/インストール方法.txt"
+cp "$ROOT/LICENSE" "$STAGING/volume/LICENSE"
 hdiutil create -volname "Dev Switcher $APP_VERSION" -srcfolder "$STAGING/volume" \
     -format UDZO -fs HFS+ "$APP_OUTPUT_DIR/$DMG_NAME"
 
@@ -59,7 +60,9 @@ if [[ "$MODE" == release ]]; then
 fi
 hdiutil verify "$APP_OUTPUT_DIR/$DMG_NAME"
 cd "$APP_OUTPUT_DIR"
-shasum -a 256 "$DMG_NAME" > SHA256SUMS.txt
+# 固定のダウンロード URL 用。署名・公証を終えた DMG をそのまま複製する。
+cp "$DMG_NAME" DevSwitcher.dmg
+shasum -a 256 "$DMG_NAME" DevSwitcher.dmg > SHA256SUMS.txt
 echo "Created: $APP_OUTPUT_DIR/$DMG_NAME"
 if [[ "$MODE" == local ]]; then
     echo 'Local preview only: this DMG has no Developer ID signature or notarization.'

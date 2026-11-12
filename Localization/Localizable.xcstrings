@@ -12845,6 +12845,91 @@
           }
         }
       }
+    },
+    "アップデートを確認…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        }
+      }
+    },
+    "アップデートを確認できません。": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認できません。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to check for updates."
+          }
+        }
+      }
+    },
+    "アップデートを自動確認": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを自動確認"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically Check for Updates"
+          }
+        }
+      }
+    },
+    "アプリの更新設定が不正です（{0}）。配布元からアプリを入れ直してください。": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリの更新設定が不正です（{0}）。配布元からアプリを入れ直してください。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app update configuration is invalid ({0}). Reinstall the app from its distributor."
+          }
+        }
+      }
+    },
+    "開発用ビルドでは更新を確認できません。配布版の Dev Switcher を使用してください。": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用ビルドでは更新を確認できません。配布版の Dev Switcher を使用してください。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates are unavailable in development builds. Use the distributed version of Dev Switcher."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

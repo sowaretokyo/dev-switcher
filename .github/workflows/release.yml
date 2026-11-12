@@ -1,4 +1,4 @@
-name: Prepare private DMG release
+name: Prepare DMG release
 
 on:
   workflow_dispatch:
@@ -16,21 +16,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: private-dmg-release
+  group: dmg-release
   cancel-in-progress: false
 
 jobs:
   preflight:
     runs-on: ubuntu-latest
     steps:
-      - name: Require private repository and valid version
+      - name: Validate version and build number
         env:
-          GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ inputs.version }}
           APP_BUILD: ${{ inputs.build }}
         run: |
           set -euo pipefail
-          [[ "$(gh repo view "$GITHUB_REPOSITORY" --json visibility --jq .visibility)" == PRIVATE ]]
           [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$APP_BUILD" =~ ^[0-9]+$ ]]
 
@@ -49,6 +47,7 @@ jobs:
       APP_VERSION: ${{ inputs.version }}
       APP_BUILD: ${{ inputs.build }}
       DEVELOPER_ID_APPLICATION: ${{ vars.DEVELOPER_ID_APPLICATION }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       NOTARYTOOL_PROFILE: dev-switcher-notary
     steps:
       - uses: actions/checkout@v6
@@ -60,6 +59,31 @@ jobs:
           xcodebuild -version
           xcrun swift --version
           xcrun --sdk macosx --show-sdk-version
+
+      - name: Check update configuration and retrieve previous appcast
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == sowaretokyo/dev-switcher ]] || {
+            echo 'The configured update feed belongs to sowaretokyo/dev-switcher.' >&2; exit 1;
+          }
+          : "${SPARKLE_ED_PRIVATE_KEY:?Sparkle signing secret is required}"
+          python3 scripts/sparkle.py check-key
+          PREVIOUS_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" \
+            --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            HAS_APPCAST=$(gh release view "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq 'any(.assets[]; .name == "appcast.xml")')
+            if [[ "$HAS_APPCAST" == true ]]; then
+              gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" \
+                --pattern appcast.xml --dir "$RUNNER_TEMP/previous-update"
+              echo "PREVIOUS_APPCAST=$RUNNER_TEMP/previous-update/appcast.xml" >> "$GITHUB_ENV"
+            else
+              echo 'Previous release predates Sparkle; no appcast to compare.'
+            fi
+          fi
 
       - name: Import signing identity and notarization credentials
         env:
@@ -98,18 +122,24 @@ jobs:
       - name: Build, sign, and notarize DMG
         run: bash scripts/build-dmg.sh --release
 
-      - name: Create private release draft
+      - name: Generate signed update appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: bash scripts/generate-appcast.sh
+
+      - name: Create release draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$(gh repo view "$GITHUB_REPOSITORY" --json visibility --jq .visibility)" == PRIVATE ]]
           EXISTING_TAGS=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$APP_VERSION" \
             --jq "map(select(.ref == \"refs/tags/v$APP_VERSION\")) | length")
           [[ "$EXISTING_TAGS" == 0 ]] || { echo 'Version tag already exists; use a new version.' >&2; exit 1; }
           DIST_DIR="dist/$APP_VERSION-$APP_BUILD-release"
           gh release create "v$APP_VERSION" \
+            "$DIST_DIR/DevSwitcher.dmg" \
             "$DIST_DIR/DevSwitcher-$APP_VERSION-$APP_BUILD-release.dmg" \
+            "$DIST_DIR/appcast.xml" \
             "$DIST_DIR/SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --draft --title "Dev Switcher $APP_VERSION (build $APP_BUILD)" \

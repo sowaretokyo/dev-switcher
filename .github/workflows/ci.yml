@@ -34,6 +34,8 @@ jobs:
         run: |
           bash -n scripts/build-app.sh
           bash -n scripts/build-dmg.sh
+          bash -n scripts/generate-appcast.sh
+          bash -n scripts/setup-sparkle.sh
           plutil -lint packaging/Info.plist
       - name: Validate translations
         run: python3 scripts/localization.py --check
@@ -47,6 +49,8 @@ jobs:
         with:
           persist-credentials: false
       - run: swift test
+      - name: Test update packaging rules
+        run: python3 -m unittest discover -s Tests/Packaging -v
 
   package:
     needs: [build, test]
