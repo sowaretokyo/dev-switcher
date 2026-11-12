@@ -60,6 +60,14 @@ struct ComposeEditorTests {
         let view = SwitchFailureSheet(presentation: presentation).environment(state)
         let controller = NSHostingController(rootView: view)
         try await render(view, size: controller.view.fittingSize, to: output.appendingPathComponent("failure.png"))
+
+        let longReason = String(repeating: "PostgreSQL data directory is incompatible with server 17.\n", count: 20)
+        let longFact = ProjectFact(projectID: value.id, projectName: value.name, phase: .failed(reason: longReason), services: [.init(serviceID: unit.id, name: unit.name, phase: .failed(reason: longReason), observedPorts: .unavailable)])
+        let longFailure = SwitchFailure(reason: .startFailed(service: unit.name, reason: longReason), facts: CurrentStateFacts(source: nil, target: longFact))
+        let longView = SwitchFailureSheet(presentation: .init(failure: longFailure, logTarget: presentation.logTarget)).environment(state)
+        let longController = NSHostingController(rootView: longView)
+        #expect(longController.view.fittingSize.height <= Metrics.windowMinHeight)
+        try await render(longView, size: NSSize(width: Metrics.sheetWidth, height: Metrics.windowMinHeight), to: output.appendingPathComponent("long-failure.png"))
     }
     private func render<V: View>(_ view: V, size: NSSize, to url: URL) async throws {
         let controller = NSHostingController(rootView: view.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light))

@@ -75,6 +75,8 @@ enum Metrics {
 
     /// 通常のシート幅。
     static let sheetWidth: CGFloat = 452
+    /// 長い失敗理由でも、タイトルと操作ボタンを画面内に残す。
+    static let failureSheetBodyMaxHeight: CGFloat = 300
     /// プロジェクト追加・編集シート。
     static let editorSheetWidth: CGFloat = 600
     static let editorSheetHeight: CGFloat = 620

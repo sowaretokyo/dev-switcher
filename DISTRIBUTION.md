@@ -45,7 +45,7 @@ bash scripts/setup-sparkle.sh
 ## GitHubから配布版を準備する
 
 1. このworkflowを既定ブランチに反映する。
-2. Actions → **Prepare DMG release** → Run workflowで対象ブランチ、`version`（v1.0.0 は `1.0.0`）、`build`（v1.0.0 は `2`）を指定する。
+2. Actions → **Prepare DMG release** → Run workflowで対象ブランチ、`version`（v1.0.0 は `1.0.0`）、`build`（v1.0.0 は `3`）を指定する。
 3. ビルド・テスト・DMG生成の検証後、署名・公証済みの`DevSwitcher.dmg`、バージョン付きDMG、`appcast.xml`、`SHA256SUMS.txt`を持つRelease下書きが作られる。
 4. 下書きの「配布前の確認」を実施し、確認したMacと結果を記入してからPublish releaseを押す。
 5. Release のリンクを利用者へ案内する。初回の公開配布時は、README の「公開配布の準備中」の案内を削除する。
@@ -77,7 +77,7 @@ APP_VERSION=0.0.0 APP_BUILD=0 bash scripts/build-dmg.sh --local
 security find-identity -v -p codesigning
 xcrun notarytool store-credentials dev-switcher-notary
 
-export APP_VERSION=1.0.0 APP_BUILD=2
+export APP_VERSION=1.0.0 APP_BUILD=3
 export SPARKLE_PUBLIC_ED_KEY
 SPARKLE_PUBLIC_ED_KEY=$(.build/artifacts/sparkle/Sparkle/bin/generate_keys --account ed25519 -p)
 

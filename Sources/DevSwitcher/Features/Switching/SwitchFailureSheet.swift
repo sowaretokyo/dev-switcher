@@ -31,23 +31,29 @@ struct SwitchFailureSheet: View {
             Text(failure.reason.title)
                 .font(Typography.title)
 
-            Text(failure.reason.detail)
-                .font(Typography.row)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.l) {
+                    Text(failure.reason.detail)
+                        .font(Typography.row)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            currentState
+                    currentState
 
-            if case let .portsNotReleased(holders) = failure.reason {
-                holderList(holders)
+                    if case let .portsNotReleased(holders) = failure.reason {
+                        holderList(holders)
+                    }
+
+                    if canForceStop {
+                        Text(L10n.text("通常終了（SIGTERM）では停止できませんでした。強制終了（SIGKILL）は後始末を行わずにプロセスを止めます。実行するか判断してください。"))
+                            .font(Typography.support)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            if canForceStop {
-                Text(L10n.text("通常終了（SIGTERM）では停止できませんでした。強制終了（SIGKILL）は後始末を行わずにプロセスを止めます。実行するか判断してください。"))
-                    .font(Typography.support)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .frame(maxHeight: Metrics.failureSheetBodyMaxHeight)
 
             Divider()
 
