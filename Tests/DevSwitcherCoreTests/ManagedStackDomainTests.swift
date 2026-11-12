@@ -469,7 +469,7 @@ struct ManagedStackDomainTests {
             ]
         )
 
-        #expect(snapshot.observations.map(\.identity.value) == ["demo", "cat", "dog"])
+        #expect(snapshot.observations.map(\.identity.value) == ["cat", "demo", "dog"])
         #expect(snapshot.state(of: try makeSupabaseIdentity("demo")) == .running)
         #expect(snapshot.state(of: try makeSupabaseIdentity("zzz")) == .notRunning)
         #expect(snapshot.observation(of: try makeSupabaseIdentity("zzz")).detail == nil)

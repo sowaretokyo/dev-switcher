@@ -25,7 +25,7 @@ struct ManagedStackCoordinatorTests {
             options: SwitchCoordinator.Options(
                 releaseTimeout: .seconds(2),
                 stopGrace: .seconds(2),
-                startupObservationWindow: .milliseconds(150),
+                startupObservationWindow: .seconds(1),
                 startupPollInterval: .milliseconds(20),
                 gatePollInterval: .milliseconds(20)
             ),

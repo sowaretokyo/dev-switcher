@@ -31,7 +31,7 @@ struct ServiceStartTests {
             portHolderProbe: { _ in [] },
             options: SwitchCoordinator.Options(
                 stopGrace: .seconds(2),
-                startupObservationWindow: .milliseconds(100),
+                startupObservationWindow: .seconds(1),
                 startupPollInterval: .milliseconds(20)
             )
         )

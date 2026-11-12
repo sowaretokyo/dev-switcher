@@ -33,10 +33,6 @@ struct RootViewLayoutTests {
             await world.failInventory(message)
         }
         let state = makeAppState(directory: directory, supabaseWorld: world)
-        await state.bootstrap()
-        state.selection = selectsService
-            ? .service(projectID: project.id, serviceID: service.id)
-            : .project(project.id)
 
         let controller = NSHostingController(rootView: RootView().environment(state))
         let window = NSWindow(
@@ -48,6 +44,17 @@ struct RootViewLayoutTests {
         window.isReleasedWhenClosed = false
         defer { window.close() }
         window.contentViewController = controller
+        controller.view.layoutSubtreeIfNeeded()
+        let bootstrapDeadline = ContinuousClock.now + .seconds(10)
+        while (state.projects.isEmpty || state.isOperationInFlight),
+              ContinuousClock.now < bootstrapDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(state.projects.count == 1)
+        try #require(!state.isOperationInFlight)
+        state.selection = selectsService
+            ? .service(projectID: project.id, serviceID: service.id)
+            : .project(project.id)
         controller.view.layoutSubtreeIfNeeded()
         // NavigationSplitView内部のAppKit制約が反映されるまで待つ。
         // 装着前のsizeThatFitsは460を返しても、装着後の高さが膨らむことがある。

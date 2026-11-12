@@ -894,6 +894,7 @@ struct HandoffTests {
     func residualGrandchildSurvivesAppRestart() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let leaderRelease = directory.appendingPathComponent("leader-release")
 
         let registry = RuntimeRegistry(
             portPollInterval: .seconds(60),
@@ -905,7 +906,10 @@ struct HandoffTests {
             kind: .worker,
             ports: [],
             executable: "/bin/sh",
-            arguments: ["-c", "sleep 120 &"],
+            arguments: [
+                "-c",
+                "attempt=0; while [ ! -e leader-release ] && [ \"$attempt\" -lt 500 ]; do sleep 0.02; attempt=$((attempt + 1)); done; [ -e leader-release ] || exit 2; sleep 120 &"
+            ],
             workingDirectory: directory
         )
         let project = makeProject(directory: directory, services: [detached])
@@ -915,12 +919,17 @@ struct HandoffTests {
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
 
+        let runtime = try #require(await waitForValue(timeout: .seconds(5)) {
+            await log.startedRuntime
+        })
+        defer { kill(-runtime.processGroupID, SIGKILL) }
+        try Data().write(to: leaderRelease)
         #expect(await waitUntil { await log.exitStatus != nil })
         #expect(await registry.isRunning(serviceID: detached.id) == false)
         let processGroupID = try #require(
             await registry.occupiedProcessGroup(serviceID: detached.id)
         )
-        defer { kill(-processGroupID, SIGKILL) }
+        #expect(processGroupID == runtime.processGroupID)
 
         let hints = try await registry.runtimeHints()
         let hint = try #require(hints.first { $0.serviceID == detached.id })

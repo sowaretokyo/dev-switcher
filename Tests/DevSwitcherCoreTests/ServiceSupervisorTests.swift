@@ -400,13 +400,17 @@ struct ServiceSupervisorTests {
     func retainsProcessGroupOwnershipWhileResidual() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let leaderRelease = directory.appendingPathComponent("leader-release")
 
         let supervisor = ServiceSupervisor(
             serviceID: UUID(),
             serviceName: "detached",
             command: ResolvedCommand(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "sleep 2 &"],
+                arguments: [
+                    "-c",
+                    "attempt=0; while [ ! -e leader-release ] && [ \"$attempt\" -lt 1000 ]; do sleep 0.01; attempt=$((attempt + 1)); done; sleep 2 &"
+                ],
                 workingDirectory: directory
             ),
             logDirectory: directory,
@@ -418,8 +422,11 @@ struct ServiceSupervisorTests {
         let consumer = Task { await log.consume(stream) }
         defer { consumer.cancel() }
 
+        let runtime = try #require(await waitForValue(timeout: .seconds(5)) {
+            await log.startedRuntime
+        })
+        try Data().write(to: leaderRelease)
         #expect(await waitUntil { await log.exitStatus != nil })
-        let runtime = try #require(await log.startedRuntime)
         let processGroupID = try #require(await supervisor.processGroupID)
 
         #expect(await supervisor.isOccupyingResources())
