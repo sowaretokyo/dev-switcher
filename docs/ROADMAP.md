@@ -99,9 +99,13 @@ Core の型付きエラー・状態を維持し、表示文言はキーと引数
 
 ### 2.4 署名・公証・Homebrew cask
 
-目的は、チーム外へ配布し、更新を容易にすることである。現状は、非公開の GitHub Releases で Developer ID 署名と公証を付けた DMG を配布する手順がある（`DISTRIBUTION.md`）。
+目的は、チーム外へ配布し、更新を容易にすることである。2026-11-12 に MIT の LICENSE、README、公開リポジトリでも動く Release workflow を整備した。Developer ID 署名と公証を付けた DMG を下書きとして作り、実機確認後に公開する（`DISTRIBUTION.md`）。固定名の `DevSwitcher.dmg` とバージョン付き DMG を用意し、DMG とアプリに LICENSE を同梱する。
 
-壁は、公開配布に必要な公開リポジトリ、LICENSE、README が未整備であること（PM 判断で後回し）、Homebrew cask には公開されたダウンロード URL と安定したバージョン付けが必要なことである。自動アップデートは扱っていない。
+リポジトリの Public 化と新しい配布物の公開は未実施。Homebrew cask には公開されたダウンロード URL と安定したバージョン付けが必要であり、まだ追加していない。同日、Sparkle 2.10.1 による自動確認・通知と利用者操作による更新を追加した。更新メニュー、配布物への Framework 同梱・署名、EdDSA 署名付き appcast の生成、鍵の初回設定スクリプトを整備した。GitEdit と同じ既存鍵を使い、GitHub の Secret / Variable への登録まで完了した。新規の鍵生成・ローテーションはしていない。
+
+検証: Swift の追加 5 件、配布設定の Python 10 件、翻訳・plist・YAML・shell 構文は成功。全 Swift テストは 608 件中 579 件成功・変更前と同じ 29 件失敗（実プロセス同定・引き継ぎ）。Apple Silicon / Intel 向けの Release ビルド、Universal アプリと Sparkle の同梱、内側からの ad-hoc 署名・厳密検証、両ライセンスの同梱を確認した。独立した検証アプリで、開発ビルドの案内、更新メニュー、Sparkle の取得エラー、自動確認オフの再起動後の保持を確認した。既存鍵で ZIP を署名し、公式 `sign_update` で正当な署名の受理と改ざん後の拒否を確認した。
+
+未検証: 実 DMG の生成は `hdiutil: create failed - 装置が構成されていません` で失敗。公式 `generate_appcast` も、この実行環境では展開した `.app` を対応する bundle と判定できず失敗した。appcast スクリプトは署名ツールを差し替えた検証まで。Developer ID 署名・公証、公開リリース、実際の旧版から新版への入れ替えは未実施。公開済みの v0.1.1 には Sparkle がないため、v1.0.0 の公開前に更新の通し操作を試すには別の旧ビルドと検証用フィードが必要。ローカルの Xcode 27 では SwiftPM の sandbox 無効化と一時ディレクトリのビルド先を使用した。配布開始前に `DISTRIBUTION.md` の実機確認を行う。
 
 ### 2.5 メニューバーとグローバルホットキー
 

@@ -21,9 +21,17 @@ The same-day review also reused the placeholder pattern, shared startup language
 
 Readiness was deferred by the PM on 2026-11-12. No concrete problem has yet justified the burden of configuring a confirmation URL. The tentative display-only implementation was withdrawn. Ordinary startup still uses the default three-second liveness check. Revisit readiness when “started but not responding” causes an actual workflow problem.
 
+## Distribution: implementation ready, public release pending
+
+On 2026-11-12, an MIT LICENSE, README, and a release workflow supporting public repositories were added. The workflow prepares a draft with Developer ID signed and notarized DMGs, including a fixed `DevSwitcher.dmg` asset. The license is bundled in both the DMG and the app. Sparkle 2.10.1 was added for automatic checks and user-initiated installation, with update menu commands, framework packaging/signing, signed appcast generation, and a first-time key setup script. The existing GitEdit key was reused and registered in the Dev Switcher GitHub secret/variable without generating or rotating keys.
+
+Five new Swift tests and ten Python packaging tests passed. The complete Swift suite had 579 passes and the same 29 failures as before. Both CPU release builds, the universal app, nested ad-hoc signatures, bundled licenses, isolated menu/error UI, persistence of disabled automatic checks, and valid/tampered archive signature verification passed.
+
+DMG creation failed because the runner could not configure a disk-image device; official appcast generation also failed because the extracted app was not recognized as a bundle in this execution environment. The appcast script was tested with the signing tool replaced by a fixture. Developer ID signing/notarization, publishing, and actual old-to-new installation remain unverified. The published v0.1.1 build has no Sparkle updater, so a pre-release update test requires a separate Sparkle-enabled older build and test feed. Making the repository public and publishing the new assets remain pending.
+
 ## Later candidates
 
-Public distribution requires decisions about a public repository, license, README, and public download URLs before Homebrew cask support. Existing private-release instructions cover Developer ID signing and notarization; automatic updates are not currently planned.
+Homebrew cask support requires a public download URL and stable versioning.
 
 Menu-bar status/switching and a global hotkey may improve switching speed. They require consistent operation locking and progress across two interfaces, and a hotkey path for machines where the notch hides menu-bar items.
 

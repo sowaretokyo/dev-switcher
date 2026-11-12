@@ -2,7 +2,7 @@
 
 Updated: 2026-11-12. [日本語](../ARCHITECTURE.md) · [Product behavior](SPEC.md) · [Schema](SCHEMA.md)
 
-Swift 6, SwiftUI, Foundation, and limited AppKit implement the macOS application. Swift Package Manager is the build definition. No external packages are required. The Japanese architecture document retains the detailed migration history and type sketches; this edition describes the resulting responsibilities.
+Swift 6, SwiftUI, Foundation, and limited AppKit implement the macOS application. Swift Package Manager is the build definition. Sparkle is the only external package, for app updates. The Japanese architecture document retains the detailed migration history and type sketches; this edition describes the resulting responsibilities.
 
 ## Targets and ownership
 
@@ -63,6 +63,10 @@ Templates use numbered placeholders so English can reorder arguments. Substituti
 Translate complete sentences rather than concatenated fragments, allowing language-specific word order and spacing. UI messages and the copied guide share the language selected at startup. Resource generation validates all translation and guide inputs before writing any output, so invalid inputs cannot leave one language updated and the other unchanged.
 
 The distributed app declares both languages in `Info.plist` and includes the existing resource bundle. A relocated `.app` must load only its own resources, never a development-machine build directory.
+
+## App updates
+
+`AppUpdater` owns the Sparkle standard controller and observes menu availability and automatic-check preferences. `UpdateConfiguration` rejects incomplete release configuration; local builds explicitly disable updates. Sparkle termination uses the existing `AppDelegate` and `TerminationCoordinator` path. Packaging embeds and signs the framework and its helpers from the inside out. The generated appcast is validated for its signature, version, immutable download URL, and increasing build number.
 
 ## Verification and known limitation
 

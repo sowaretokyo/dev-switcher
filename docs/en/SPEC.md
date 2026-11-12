@@ -8,7 +8,7 @@ The Japanese specification is the canonical product specification. This English 
 
 Dev Switcher starts, stops, and switches local development environments on macOS 15 or later. Before starting another environment, it verifies that the previous environment has stopped and that its observed process ports have been released. This prevents accidental connections to another environment’s processes or database.
 
-The app uses Swift 6, SwiftUI, and AppKit where needed, with Swift Package Manager as the build definition and no external packages. App Sandbox is disabled because the app must run development commands in user-selected directories and inspect processes and ports. Directories need not be Git repositories.
+The app uses Swift 6, SwiftUI, and AppKit where needed, with Swift Package Manager as the build definition. Sparkle is the sole external package, used for app updates. App Sandbox is disabled because the app must run development commands in user-selected directories and inspect processes and ports. Directories need not be Git repositories.
 
 ## Environments, processes, and stacks
 
@@ -167,6 +167,12 @@ Japanese and English are supported. At launch, choose the first supported langua
 
 Use the system accent and semantic green/orange/red/gray colors, system label hierarchy, monospaced ports/PIDs/logs, and the existing design tokens. English text must remain readable at minimum window size; wrap or scroll detailed explanations. No menu-bar UI or global hotkey is currently provided.
 
+## Application updates
+
+Distributed builds use Sparkle to check for updates automatically and notify users. Downloading and installing requires user action. The app menu provides Check for Updates and an automatic-check toggle; automatic checks default to on and preserve user changes. System-profile reporting and unattended installation are disabled.
+
+Updates use the existing termination coordinator: wait for active operations and save runtime hints before quitting. Failed saves or timeouts cancel termination. Development processes and stacks stay running, and the relaunched app revalidates their hints. Public GitHub Releases host the HTTPS appcast and EdDSA-signed archive; drafts are not offered. Versions without Sparkle require one manual DMG installation. Development builds do not check for updates, and invalid release configuration is reported as an error.
+
 ## Safety and acceptance
 
 All mutating lifecycle operations, configuration changes, adoption decisions, and revalidation use an exclusive activity token at the state API boundary. UI disabling alone is insufficient. Failure sheets state the actual current state of both source and target. Destructive choices are never defaults. Never guess missing mandatory values, trust saved runtime state, signal external processes, read project environment files, run database migration/reset/seed, or automatically install/update dependencies.
@@ -177,4 +183,4 @@ Language acceptance requires complete Japanese/English catalogs, matching interp
 
 Run `python3 scripts/localization.py --check`, `swift build`, and `swift test`. Do not weaken or skip real-process tests to accommodate a restricted runner. Report failures and unverified behavior. Real Docker/Supabase startup, adoption, and shutdown checks require explicit user approval.
 
-HTTP readiness, concurrent environments, automatic port assignment, custom stack drivers, additional stack types, individual stack operations, shared Supabase stacks, combined logs, app auto-update, and Windows/Linux support remain out of scope.
+HTTP readiness, concurrent environments, automatic port assignment, custom stack drivers, additional stack types, individual stack operations, shared Supabase stacks, combined logs, unattended update installation, and Windows/Linux support remain out of scope.

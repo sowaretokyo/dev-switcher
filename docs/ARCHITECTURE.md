@@ -10,7 +10,7 @@
 ## 1. 技術構成
 
 - Swift 6 言語モード、SwiftUI、必要箇所のみ AppKit（ログ表示の `NSTextView`、`NSWorkspace`、ウィンドウ・フォーカス制御）
-- Foundation のプロセス・ファイル・永続化 API。外部パッケージは追加しない。必要になった場合は理由・代替案・影響を示して承認を得る
+- Foundation のプロセス・ファイル・永続化 API。アプリ更新用の Sparkle だけを外部パッケージとして使う。追加依存は理由・代替案・影響を示して承認を得る
 - macOS 15 以降。ビルド定義の正は Swift Package Manager
 - テストは Swift Testing
 - 配布用の `.app` と DMG は `scripts/` で生成する（`DISTRIBUTION.md`）
@@ -422,7 +422,13 @@ public struct ProcessStopOptions: Sendable {
 
 埋め込み引数は一度だけ置換し、利用者の名前や外部出力に含まれる `{0}`、`%`、日本語などを再解釈しない。UI・Core の診断表示・コピー用ガイドは起動時に選択した言語を共有し、設定の保存値と外部ログ本文は変更しない。`L10n.override` はテスト用の task-local 指定であり、並行テスト間で言語を共有しない。同梱翻訳が欠けた場合は開発マシンの bundle や別言語へフォールバックしない。
 
+### 9.2 アプリの更新
+
+`AppUpdater` が Sparkle の標準 UI と更新スケジューラを保持し、KVO で更新メニューの可否・自動確認設定を反映する。配布版の設定は `UpdateConfiguration` で検証し、ローカル確認用では明示的に無効化する。更新時の終了要求は既存の `AppDelegate` → `TerminationCoordinator` を通し、手掛かりの保存を迂回しない。
+
 ## 10. テスト方針
+
+配布処理は Sparkle の Framework と補助プロセスを内側から署名し、公式 `generate_appcast` の出力に署名・バージョン・配布 URL が揃っていることを別途検証する。
 
 既存のテストは弱めない。実ポートの listen や実プロセスの観測を使うテストは、ポートの listen が禁止された実行環境でも skip や条件の緩和をせず、失敗または未検証として報告する。利用者の Application Support へテストデータを書かない。
 

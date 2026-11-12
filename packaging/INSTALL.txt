@@ -11,4 +11,11 @@ Dev Switcher — インストール・更新
 Dev Switcherを終了しても、起動済みの開発プロセスは動き続けます。
 次の起動時に既存プロセスが検出されたら、表示された内容を確認してください。
 
-以後の更新も、チームのGitHub Releasesから新版をダウンロードして入れ替えます。
+以後の更新は、新版の通知からダウンロード・インストールできます。
+「Dev Switcher」メニューの「アップデートを確認…」から手動確認もできます。
+自動確認は同じメニューでオフにできます。インストールには利用者の操作が必要です。
+GitHub ReleasesからDMGをダウンロードして入れ替えることもできます。
+https://github.com/sowaretokyo/dev-switcher/releases/latest
+
+ライセンス: MIT（同梱のLICENSEを参照）
+Copyright (c) 2026 sowaretokyo
