@@ -19,12 +19,30 @@ struct LocalizationTests {
     @Test("停止済みと停止処理中を英語でも区別する")
     func stoppingProgress() throws {
         let english = try AppLocalization(language: .english)
-        L10n.$override.withValue({ english.render($0) }) {
+        L10n.$override.withValue(english) {
             #expect(ServicePhase.stopped.label == "Stopped")
             #expect(AppState.InlineOperation.Kind.stopping.label == "Stopping")
             let operation = AppState.ServiceOperation(projectID: UUID(), serviceID: UUID(), kind: .restarting,
                 state: .stopping(service: "Worker", index: 1, total: 1))
             #expect(operation.label == "Stopping")
+        }
+    }
+
+    @Test("停止時の翻訳を繰り返しても再帰しない", arguments: AppLocalization.Language.allCases)
+    func repeatedStopMessages(language: AppLocalization.Language) throws {
+        let localization = try AppLocalization(language: language)
+        let identity = try ManagedStackIdentity(type: .supabase, value: "demo")
+        L10n.$override.withValue(localization) {
+            for _ in 0..<1_000 {
+                #expect(!L10n.text("停止").isEmpty)
+                let failure = ManagedStackOperationError.commandFailed(
+                    action: L10n.text("停止"),
+                    identity: identity,
+                    status: .exited(code: 1),
+                    output: ""
+                )
+                #expect(!failure.description.isEmpty)
+            }
         }
     }
 
@@ -68,7 +86,7 @@ struct LocalizationTests {
     func nestedErrors() throws {
         let english = try AppLocalization(language: .english)
         let originalLog = "ユーザーのログ: pnpm dev --port 3000"
-        L10n.$override.withValue({ english.render($0) }) {
+        L10n.$override.withValue(english) {
             #expect(ServicePhase.healthy.label == "Started")
             #expect(ServicePhase.stopping.label == "Stopping")
             #expect(ProjectPhase.degraded(stoppedServices: ["Web"]).label == "Partially stopped")
@@ -107,7 +125,7 @@ struct LocalizationTests {
         let document = ProjectsDocument(projects: projects)
         let original = try document.jsonData()
         let english = try AppLocalization(language: .english)
-        let translated = try L10n.$override.withValue({ english.render($0) }) { try document.jsonData() }
+        let translated = try L10n.$override.withValue(english) { try document.jsonData() }
         #expect(original == translated)
     }
 
@@ -146,7 +164,7 @@ struct LocalizationLayoutTests {
         await state.bootstrap()
         state.selection = .service(projectID: project.id, serviceID: project.services[0].id)
         let localization = try AppLocalization(language: language)
-        try await L10n.$override.withValue({ localization.render($0) }) {
+        try await L10n.$override.withValue(localization) {
             let controller = NSHostingController(rootView: RootView().environment(state))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Metrics.windowMinWidth, height: Metrics.windowMinHeight),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -169,7 +187,7 @@ struct LocalizationLayoutTests {
         let project = ProjectDefinition(name: "Shop", color: .green, workingDirectories: [.init(name: "Backend", directory: directory, serviceIDs: [], stackIDs: [stack.id])], services: [], managedStacks: [stack])
         let state = makeAppState(directory: directory)
         let localization = try AppLocalization(language: language)
-        try L10n.$override.withValue({ localization.render($0) }) {
+        try L10n.$override.withValue(localization) {
             let editor = ProjectFormView(project: project).environment(state)
             let editorSize = NSHostingController(rootView: editor).view.fittingSize
             #expect(editorSize.width == Metrics.editorSheetWidth)

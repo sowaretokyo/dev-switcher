@@ -64,12 +64,15 @@ public struct LocalizedMessage: ExpressibleByStringLiteral, ExpressibleByStringI
 /// Core は翻訳リソースを所有しない。アプリが起動時に表示用 renderer を設定する。
 /// 単独の Core 利用・既存の単体テストでは、日本語の原文を診断表示に使う。
 /// OS の言語変更はアプリの次回起動から反映する。
-public enum L10n {
-    public typealias Renderer = @Sendable (LocalizedMessage) -> String
-    private static let renderer = Mutex<Renderer?>(nil)
-    @TaskLocal public static var override: Renderer?
+public protocol LocalizedMessageRendering: Sendable {
+    func render(_ message: LocalizedMessage) -> String
+}
 
-    public static func install(_ render: @escaping Renderer) {
+public enum L10n {
+    private static let renderer = Mutex<(any LocalizedMessageRendering)?>(nil)
+    @TaskLocal public static var override: (any LocalizedMessageRendering)?
+
+    public static func install(_ render: any LocalizedMessageRendering) {
         renderer.withLock { current in
             precondition(current == nil, "Localization must be installed once at app startup.")
             current = render
@@ -77,7 +80,7 @@ public enum L10n {
     }
 
     public static func text(_ message: LocalizedMessage) -> String {
-        if let render = override ?? renderer.withLock({ $0 }) { return render(message) }
+        if let render = override ?? renderer.withLock({ $0 }) { return render.render(message) }
         return message.rendered(using: message.key)
     }
 }

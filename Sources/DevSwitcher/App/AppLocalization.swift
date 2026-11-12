@@ -2,7 +2,7 @@ import DevSwitcherCore
 import Foundation
 
 /// 言語は起動時に固定する。確認シートを開いた途中で言語や判断文言を変えない。
-struct AppLocalization: Sendable {
+struct AppLocalization: LocalizedMessageRendering {
     static let selectedLanguage = Language.preferred()
 
     enum Language: String, CaseIterable, Sendable {
@@ -43,7 +43,7 @@ struct AppLocalization: Sendable {
     static func install() {
         do {
             let localization = try AppLocalization()
-            L10n.install { localization.render($0) }
+            L10n.install(localization)
         } catch {
             // 同梱物の欠落を別言語や開発マシンのファイルで補わない。
             fatalError("Cannot load application translations. Reinstall Dev Switcher. \(error)")
