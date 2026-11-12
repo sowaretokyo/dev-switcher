@@ -2300,13 +2300,15 @@ struct AppStateHandoffTests {
 
         // SIGTERM を無視する孫を残して本体だけが終了する。
         let readyFile = directory.appendingPathComponent("ready")
+        let releaseFile = directory.appendingPathComponent("release")
         let spawned = try ProcessRunner.spawn(
             ResolvedCommand(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
                 arguments: [
                     "-c",
                     "/bin/sh -c 'trap \"\" TERM; echo ready > \"\(readyFile.path)\";"
-                        + " while true; do sleep 1; done' & sleep 1; exit 0",
+                        + " while true; do sleep 1; done' &"
+                        + " while [ ! -f \"\(releaseFile.path)\" ]; do sleep 0.05; done; exit 0",
                 ],
                 workingDirectory: directory
             ),
@@ -2340,6 +2342,7 @@ struct AppStateHandoffTests {
             )
         )
         try RuntimeHintStore(directory: directory).save([hint])
+        try "go".write(to: releaseFile, atomically: true, encoding: .utf8)
 
         for _ in 0..<400 {
             if ProcessInspector.startAbstime(pid: spawned.pid) == nil { break }
