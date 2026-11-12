@@ -1420,7 +1420,9 @@ struct AppStateHandoffTests {
             }
         }
         #expect(state.operationError == nil)
-        #expect(state.state(of: project.services[0].id).phase == .healthy)
+        #expect(await waitForCondition {
+            state.state(of: project.services[0].id).phase == .healthy
+        })
     }
 
     @Test("終了を待っている間の再試行は保存先も読み込み状態も変えない")
