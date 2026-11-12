@@ -11,9 +11,9 @@ struct ManagedStackRuntimeTests {
     func supabaseDriverPassesPolicyToEveryCommand() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
         let world = FakeSupabaseWorld()
         let driver = SupabaseStackDriver(
             inventory: world,
@@ -127,7 +127,7 @@ struct ManagedStackRuntimeTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = makeSupabaseService(workingDirectory: directory)
         let project = makeProject(directory: directory, services: [service])
-        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"), environmentID: project.id)
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"), environmentID: project.id)
         let other = try ManagedStackIdentity(type: .supabase, value: "other")
         let driver = FakeManagedStackDriver(type: .supabase)
         let registry = makeRegistry(driver: driver, directory: directory)

@@ -69,7 +69,7 @@ struct PortInspectorTests {
         p26877
         g26872
         cnc
-        Lshoheiyamada
+        Ldeveloper
         f3
         n*:51777
         """
@@ -79,7 +79,7 @@ struct PortInspectorTests {
         #expect(holders[0].pid == 26_877)
         #expect(holders[0].processGroupID == 26_872)
         #expect(holders[0].command == "nc")
-        #expect(holders[0].loginName == "shoheiyamada")
+        #expect(holders[0].loginName == "developer")
     }
 
     @Test("プロセスが変われば属性を引き継がない")

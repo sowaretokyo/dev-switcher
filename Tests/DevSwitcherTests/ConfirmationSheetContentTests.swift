@@ -19,16 +19,16 @@ struct ConfirmationSheetContentTests {
         action: ManagedStackConfirmationTarget.Action,
         withStopTargets: Bool
     ) throws -> ManagedStackConfirmationPlan {
-        let directory = URL(fileURLWithPath: "/tmp/bell")
+        let directory = URL(fileURLWithPath: "/tmp/demo")
         let serviceID = UUID()
         let stopTargets = withStopTargets
             ? [
                 ManagedStackConfirmationTarget(
                     stackID: nil,
-                    identity: try makeSupabaseIdentity("penta"),
+                    identity: try makeSupabaseIdentity("sample"),
                     state: .running,
                     action: .stop,
-                    registration: registration("Penta", "DB")
+                    registration: registration("Sample", "DB")
                 ),
                 ManagedStackConfirmationTarget(
                     stackID: nil,
@@ -40,14 +40,14 @@ struct ConfirmationSheetContentTests {
             ]
             : []
         return ManagedStackConfirmationPlan(
-            environmentName: "Bell",
+            environmentName: "Demo",
             entries: [
                 ManagedStackConfirmationTarget(
                     stackID: serviceID,
-                    identity: try makeSupabaseIdentity("bell"),
+                    identity: try makeSupabaseIdentity("demo"),
                     state: .running,
                     action: action,
-                    registration: registration("Bell", "Supabase")
+                    registration: registration("Demo", "Supabase")
                 ),
             ] + stopTargets,
             snapshot: ManagedStackSnapshot(type: .supabase, observations: []),
@@ -64,7 +64,7 @@ struct ConfirmationSheetContentTests {
         )
     }
 
-    private let lead = "開発環境「Bell」のサービス「Supabase」を起動する前に、既存のローカルSupabaseスタックの扱いを決めてください。"
+    private let lead = "開発環境「Demo」のサービス「Supabase」を起動する前に、既存のローカルSupabaseスタックの扱いを決めてください。"
     private let cancelNote = "キャンセルした場合、既存スタック・切替元・切替先のいずれも変更しません。"
     private let stopNotes = [
         "停止は `project_id` を1件ずつ指定して実行します（`--all` と `--no-backup` は使いません）。",
@@ -107,12 +107,12 @@ struct ConfirmationSheetContentTests {
         #expect(
             content.rows == [
                 .init(
-                    identity: "Supabase / bell", registration: "Bell / Supabase",
-                    configDirectory: "/tmp/bell", state: "稼働中", action: "引き継ぐ"
+                    identity: "Supabase / demo", registration: "Demo / Supabase",
+                    configDirectory: "/tmp/demo", state: "稼働中", action: "引き継ぐ"
                 ),
                 .init(
-                    identity: "Supabase / penta", registration: "Penta / DB",
-                    configDirectory: "/tmp/penta", state: "稼働中", action: "停止する"
+                    identity: "Supabase / sample", registration: "Sample / DB",
+                    configDirectory: "/tmp/sample", state: "稼働中", action: "停止する"
                 ),
                 .init(
                     identity: "Supabase / legacy", registration: "未登録",
@@ -152,12 +152,12 @@ struct ConfirmationSheetContentTests {
     @Test("複数対象でも種類ごとの説明・停止範囲・注意書きを重複なく表示する",
           arguments: [ManagedStackConfirmationTarget.Action.adopt, .restart, .start])
     func multipleTargetNotes(_ action: ManagedStackConfirmationTarget.Action) throws {
-        let directory = URL(fileURLWithPath: "/tmp/bell")
+        let directory = URL(fileURLWithPath: "/tmp/demo")
         let composeID = UUID()
         let compose = ManagedStackConfirmationTarget(stackID: composeID,
             identity: try ManagedStackIdentity(type: .dockerCompose, value: "shop"),
             state: action == .restart ? .degraded : .running, action: action,
-            registration: registration("Bell", "Compose"))
+            registration: registration("Demo", "Compose"))
         let composeScope = "同じプロジェクト名の全 profile を停止します。設定した profile 以外も対象です。コンテナやボリュームは削除しません。"
         for withStops in [false, true] {
             let original = try plan(action: action, withStopTargets: withStops)
@@ -192,7 +192,7 @@ struct ConfirmationSheetContentTests {
             }
             expected.append(cancelNote)
             #expect(content.notes == expected)
-            #expect(content.rows.map(\.identity).prefix(2) == ["Supabase / bell", "Docker Compose / shop"])
+            #expect(content.rows.map(\.identity).prefix(2) == ["Supabase / demo", "Docker Compose / shop"])
         }
     }
 }

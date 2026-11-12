@@ -55,7 +55,7 @@ struct ToolbarActionsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let project = makeWorkerProject(directory: directory)
-        let selected = makeWorkerProject(name: "Penta", directory: directory)
+        let selected = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([project, selected])
         let hints = ControllableHintStore(directory: directory)
         let state = makeAppState(directory: directory, hintStore: hints)

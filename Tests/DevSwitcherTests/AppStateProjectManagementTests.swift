@@ -82,25 +82,25 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let bell = makeProject(name: "Bell", directory: directory)
-        let penta = makeProject(name: "Penta", directory: directory)
+        let demo = makeProject(name: "Demo", directory: directory)
+        let sample = makeProject(name: "Sample", directory: directory)
         let store = ProjectStore(directory: directory)
-        try store.save([bell, penta])
+        try store.save([demo, sample])
         let marker = try makeMarkerFile(in: directory)
 
         let state = makeAppState(directory: directory)
         await state.bootstrap()
-        state.selection = .project(bell.id)
-        state.expandedProjectIDs.insert(bell.id)
+        state.selection = .project(demo.id)
+        state.expandedProjectIDs.insert(demo.id)
 
-        try state.unregisterProject(bell)
+        try state.unregisterProject(demo)
 
-        #expect(state.projects.map(\.name) == ["Penta"])
+        #expect(state.projects.map(\.name) == ["Sample"])
         // 削除対象を指す選択・展開状態を残さない。
-        #expect(state.selection == .project(penta.id))
-        #expect(!state.expandedProjectIDs.contains(bell.id))
+        #expect(state.selection == .project(sample.id))
+        #expect(!state.expandedProjectIDs.contains(demo.id))
         #expect(state.unregisterPresentation == nil)
-        #expect(try store.load().map(\.name) == ["Penta"])
+        #expect(try store.load().map(\.name) == ["Sample"])
 
         // ローカルのファイルとディレクトリには触らない。
         #expect(FileManager.default.fileExists(atPath: marker.path))
@@ -109,7 +109,7 @@ struct AppStateProjectManagementTests {
         // 再読み込みしても復活しない。
         let reopened = makeAppState(directory: directory)
         await reopened.bootstrap()
-        #expect(reopened.projects.map(\.name) == ["Penta"])
+        #expect(reopened.projects.map(\.name) == ["Sample"])
     }
 
     @Test("最後の1件を登録解除したら空状態へ遷移する")
@@ -117,14 +117,14 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let bell = makeProject(name: "Bell", directory: directory)
-        try ProjectStore(directory: directory).save([bell])
+        let demo = makeProject(name: "Demo", directory: directory)
+        try ProjectStore(directory: directory).save([demo])
 
         let state = makeAppState(directory: directory)
         await state.bootstrap()
-        #expect(state.selection == .project(bell.id))
+        #expect(state.selection == .project(demo.id))
 
-        try state.unregisterProject(bell)
+        try state.unregisterProject(demo)
 
         #expect(state.projects.isEmpty)
         #expect(state.selection == nil)
@@ -137,14 +137,14 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let bell = makeProject(name: "Bell", directory: directory)
-        let penta = makeProject(name: "Penta", directory: directory)
+        let demo = makeProject(name: "Demo", directory: directory)
+        let sample = makeProject(name: "Sample", directory: directory)
         let store = ProjectStore(directory: directory)
-        try store.save([bell, penta])
+        try store.save([demo, sample])
 
         let state = makeAppState(directory: directory)
         await state.bootstrap()
-        state.selection = .project(bell.id)
+        state.selection = .project(demo.id)
 
         // 保存だけを決定的に失敗させる。書き込み先をディレクトリに変えると、
         // atomic write の置き換えが「Is a directory」で失敗する。
@@ -152,12 +152,12 @@ struct AppStateProjectManagementTests {
         try FileManager.default.removeItem(at: store.fileURL)
         try FileManager.default.createDirectory(at: store.fileURL, withIntermediateDirectories: true)
 
-        #expect(throws: (any Error).self) { try state.unregisterProject(bell) }
+        #expect(throws: (any Error).self) { try state.unregisterProject(demo) }
 
         // 一覧・選択状態を登録解除成功として扱わない。
-        #expect(state.projects.map(\.name) == ["Bell", "Penta"])
-        #expect(state.selection == .project(bell.id))
-        #expect(state.project(bell.id) != nil)
+        #expect(state.projects.map(\.name) == ["Demo", "Sample"])
+        #expect(state.selection == .project(demo.id))
+        #expect(state.project(demo.id) != nil)
     }
 
     // MARK: - 起動済みプロジェクト
@@ -201,7 +201,7 @@ struct AppStateProjectManagementTests {
         #expect(state.operationError?.contains("動作中のプロセス") == true)
         state.operationError = nil
 
-        #expect(state.projects.map(\.name) == ["Bell"])
+        #expect(state.projects.map(\.name) == ["Demo"])
         #expect(try Data(contentsOf: store.fileURL) == originalData)
 
         state.stopProject(fixture.project)
@@ -240,7 +240,7 @@ struct AppStateProjectManagementTests {
         #expect(state.storeError != nil)
         #expect(state.canChangeConfiguration == false)
 
-        let candidate = makeProject(name: "Bell", directory: directory)
+        let candidate = makeProject(name: "Demo", directory: directory)
         #expect(throws: AppError.self) { try state.addProject(candidate) }
         #expect(throws: AppError.self) { try state.updateProject(candidate) }
         #expect(throws: AppError.self) { try state.unregisterProject(candidate) }
@@ -279,12 +279,12 @@ struct AppStateProjectManagementTests {
         #expect(state.storeError == nil)
         #expect(state.canChangeConfiguration)
 
-        let bell = makeProject(name: "Bell", directory: directory)
-        try state.addProject(bell)
-        #expect(state.projects.map(\.name) == ["Bell"])
-        #expect(try store.load().map(\.name) == ["Bell"])
+        let demo = makeProject(name: "Demo", directory: directory)
+        try state.addProject(demo)
+        #expect(state.projects.map(\.name) == ["Demo"])
+        #expect(try store.load().map(\.name) == ["Demo"])
 
-        try state.unregisterProject(bell)
+        try state.unregisterProject(demo)
         #expect(state.projects.isEmpty)
         #expect(try store.load().isEmpty)
     }
@@ -296,7 +296,7 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let project = makeProject(name: "Bell", directory: directory, serviceNames: ["Web", "Worker"])
+        let project = makeProject(name: "Demo", directory: directory, serviceNames: ["Web", "Worker"])
         try ProjectStore(directory: directory).save([project])
 
         let state = makeAppState(directory: directory)
@@ -317,12 +317,12 @@ struct AppStateProjectManagementTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let state = makeAppState(directory: directory)
         await state.bootstrap()
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.addStack(.supabase, to: model.workingDirectories[0].id)
@@ -339,7 +339,7 @@ struct AppStateProjectManagementTests {
         let project = try model.build()
         try state.addProject(project)
 
-        #expect(state.projects.map(\.name) == ["Bell"])
+        #expect(state.projects.map(\.name) == ["Demo"])
         #expect(state.selection == .project(project.id))
 
         let reopened = makeAppState(directory: directory)

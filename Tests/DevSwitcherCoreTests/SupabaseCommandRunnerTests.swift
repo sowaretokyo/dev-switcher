@@ -5,7 +5,7 @@ import Testing
 @Suite("Supabase CLIの実行環境")
 struct SupabaseCommandRunnerTests {
     @Test("周辺環境でworkdirを変えず、指定した引数・cwd・他の環境値を維持する",
-          arguments: [["start"], ["status", "--workdir", "/explicit/path"], ["stop", "--project-id", "bell"]])
+          arguments: [["start"], ["status", "--workdir", "/explicit/path"], ["stop", "--project-id", "demo"]])
     func ignoresAmbientWorkdir(arguments: [String]) async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -39,8 +39,8 @@ struct SupabaseLifecycleTests {
     }
 
     private func makeSupabaseProject(
-        name: String = "Bell",
-        projectID: String = "bell",
+        name: String = "Demo",
+        projectID: String = "demo",
         directory: URL,
         extraServices: [LaunchUnit] = []
     ) throws -> ProjectDefinition {
@@ -82,9 +82,9 @@ struct SupabaseLifecycleTests {
         if relationship == .launched {
             _ = try await coordinator.start(project, registeredProjects: [project])
         } else {
-            let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
-            let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"), environmentID: project.id)
-            await world.setStack("bell", .databaseHealthy)
+            let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
+            let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"), environmentID: project.id)
+            await world.setStack("demo", .databaseHealthy)
             await registry.setKnownStacks([ManagedStackIdentity(projectID): stack])
             _ = try await registry.adoptManagedStack(
                 stack, in: project, relationship: relationship,
@@ -98,10 +98,10 @@ struct SupabaseLifecycleTests {
         case .forceStop:
             _ = try await registry.forceStop(service: service)
         case .observation:
-            await world.setStack("bell", nil)
+            await world.setStack("demo", nil)
             _ = await registry.observeManagedStacks()
         case .failedStop:
-            await world.setStack("bell", nil)
+            await world.setStack("demo", nil)
             await world.failStop(.unavailable("CLI unavailable"))
             await #expect(throws: ManagedStackOperationError.self) {
                 _ = try await registry.stop(service: service)
@@ -113,14 +113,14 @@ struct SupabaseLifecycleTests {
         #expect(await registry.managedStackIdentities().isEmpty)
         #expect(try await registry.managedRuntimeHints().isEmpty)
 
-        await world.setStack("bell", .databaseHealthy)
+        await world.setStack("demo", .databaseHealthy)
         await world.resetCommands()
         await coordinator.observeManagedStacks(registeredProjects: [project])
         #expect(await registry.isOccupyingResources(serviceID: service.id) == false)
         // 古い開発環境の停止を試しても、外部再起動したスタックは対象にならない。
         _ = try await coordinator.stop(project, registeredProjects: [project])
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     @Test("管理対象の設定を解決できずDockerも読めない場合に、停止導線とhintを失わない")
@@ -162,7 +162,7 @@ struct SupabaseLifecycleTests {
             arguments: ["120"], workingDirectory: directory
         )
         let project = try makeSupabaseProject(directory: directory, extraServices: [worker])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
         let plan: ManagedStackConfirmationPlan
         do {
@@ -181,7 +181,7 @@ struct SupabaseLifecycleTests {
         try await coordinator.stopAfterUnsavedStart(project, preserving: [])
 
         #expect(await registry.isOccupyingResources(serviceID: worker.id) == false)
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
         #expect(await coordinator.projectFact(project).phase == .residual)
         let hint = try #require(try await registry.managedRuntimeHints().first)
@@ -194,7 +194,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
 
         let plan: ManagedStackConfirmationPlan
@@ -207,8 +207,8 @@ struct SupabaseLifecycleTests {
         }
 
         #expect(plan.primaryEntry.action == .adopt)
-        #expect(plan.primaryEntry.identity.value == "bell")
-        #expect(plan.primaryEntry.registration?.environmentName == "Bell")
+        #expect(plan.primaryEntry.identity.value == "demo")
+        #expect(plan.primaryEntry.registration?.environmentName == "Demo")
         #expect(plan.stopEntries.isEmpty)
         // 未承認の時点では start も stop も実行しない。
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
@@ -226,7 +226,7 @@ struct SupabaseLifecycleTests {
         #expect(await coordinator.servicePhase(service, in: project) == .healthy)
         // 引き継ぎでは `supabase start` を実行しない。
         #expect(await world.commandLines.allSatisfy { !$0.contains(" start") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     @Test("引き継いだスタックは開発環境の停止で対象限定stopを実行する")
@@ -234,7 +234,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (_, coordinator) = makeStack(world: world, logDirectory: directory)
 
         let plan: ManagedStackConfirmationPlan
@@ -255,7 +255,7 @@ struct SupabaseLifecycleTests {
         _ = try await coordinator.stop(project, registeredProjects: [project])
 
         #expect(await world.runningProjectIDs.isEmpty)
-        #expect(await world.commandLines.contains { $0.contains("stop") && $0.contains("--project-id bell") })
+        #expect(await world.commandLines.contains { $0.contains("stop") && $0.contains("--project-id demo") })
         #expect(await coordinator.projectFact(project).phase == .stopped)
     }
 
@@ -266,7 +266,7 @@ struct SupabaseLifecycleTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
-        let world = FakeSupabaseWorld(stacks: ["bell": .degraded(reason: "DBコンテナがありません")])
+        let world = FakeSupabaseWorld(stacks: ["demo": .degraded(reason: "DBコンテナがありません")])
         let (_, coordinator) = makeStack(world: world, logDirectory: directory)
 
         let plan: ManagedStackConfirmationPlan
@@ -294,7 +294,7 @@ struct SupabaseLifecycleTests {
         #expect(stopIndex < startIndex)
         // 起動後は running を status まで確認する。
         #expect(commands[(startIndex + 1)...].contains { $0.contains("status") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     // MARK: - 別スタックの停止
@@ -303,22 +303,22 @@ struct SupabaseLifecycleTests {
     func stopsEveryForeignStackIndividually() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let pentaDirectory = root.appendingPathComponent("penta", isDirectory: true)
-        for directory in [bellDirectory, pentaDirectory] {
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let sampleDirectory = root.appendingPathComponent("sample", isDirectory: true)
+        for directory in [demoDirectory, sampleDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
             )
         }
-        let project = try makeSupabaseProject(directory: bellDirectory)
+        let project = try makeSupabaseProject(directory: demoDirectory)
         let registered = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "penta",
-            directory: pentaDirectory
+            name: "Sample",
+            projectID: "sample",
+            directory: sampleDirectory
         )
         let world = FakeSupabaseWorld(stacks: [
-            "penta": .databaseHealthy,
+            "sample": .databaseHealthy,
             "legacy": .degraded(reason: "DBコンテナが exited 状態です。"),
         ])
         let (_, coordinator) = makeStack(world: world, logDirectory: root)
@@ -333,10 +333,10 @@ struct SupabaseLifecycleTests {
         }
 
         #expect(plan.primaryEntry.action == .start)
-        #expect(plan.stopEntries.map(\.identity.value) == ["legacy", "penta"])
+        #expect(plan.stopEntries.map(\.identity.value) == ["legacy", "sample"])
         // 登録済みと未登録を区別して表示する。
-        #expect(plan.stopEntries.first { $0.identity.value == "penta" }?
-            .registration?.environmentName == "Penta")
+        #expect(plan.stopEntries.first { $0.identity.value == "sample" }?
+            .registration?.environmentName == "Sample")
         #expect(plan.stopEntries.first { $0.identity.value == "legacy" }?
             .registration == nil)
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
@@ -351,12 +351,12 @@ struct SupabaseLifecycleTests {
         let stops = await world.commandLines.filter { $0.contains("stop") }
         #expect(stops.count == 2)
         #expect(stops.contains { $0.contains("--project-id legacy") })
-        #expect(stops.contains { $0.contains("--project-id penta") })
+        #expect(stops.contains { $0.contains("--project-id sample") })
         // `--all`と`--no-backup`はどの経路でも実行しない。
         #expect(await world.commandLines.allSatisfy {
             !$0.contains("--all") && !$0.contains("--no-backup")
         })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     @Test("承認後に状態が変わっていたら、停止も起動もせず最新内容で確認し直す")
@@ -407,7 +407,7 @@ struct SupabaseLifecycleTests {
         let stopLog = directory.appendingPathComponent("stop.log")
         var supabase = makeSupabaseService(workingDirectory: directory)
         supabase.failurePolicy = .continue
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let follower = makeOrderedService(
             name: "Web",
             workingDirectory: directory,
@@ -480,7 +480,7 @@ struct SupabaseLifecycleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         var supabase = makeSupabaseService(workingDirectory: directory)
         supabase.failurePolicy = .continue
         let follower = makeOrderedService(
@@ -511,7 +511,7 @@ struct SupabaseLifecycleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         var supabase = makeSupabaseService(workingDirectory: directory)
         supabase.failurePolicy = .continue
         let follower = makeOrderedService(
@@ -531,7 +531,7 @@ struct SupabaseLifecycleTests {
         }
 
         #expect(await registry.managedRelationship(stackID: supabase.id) == nil)
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
         #expect(readLines(startLog).isEmpty)
     }
@@ -542,7 +542,7 @@ struct SupabaseLifecycleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         var supabase = makeSupabaseService(workingDirectory: directory)
         supabase.failurePolicy = .continue
         let follower = makeOrderedService(
@@ -553,7 +553,7 @@ struct SupabaseLifecycleTests {
         )
         let project = makeProject(directory: directory, services: [supabase, follower])
         let world = FakeSupabaseWorld()
-        await world.makeStackAppearWhenStartRuns("bell", observation: .databaseHealthy)
+        await world.makeStackAppearWhenStartRuns("demo", observation: .databaseHealthy)
         await world.failStart(.exit(code: 9))
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
 
@@ -569,7 +569,7 @@ struct SupabaseLifecycleTests {
             #expect(reason.contains("自動停止していません"))
         }
         #expect(await registry.managedRelationship(stackID: supabase.id) == nil)
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(await world.commandLines.contains { $0.contains(" start") })
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
         #expect(readLines(startLog).isEmpty)
@@ -585,7 +585,7 @@ struct SupabaseLifecycleTests {
         let (_, coordinator) = makeStack(world: world, logDirectory: directory)
         _ = try await coordinator.start(project, registeredProjects: [project])
 
-        await world.setStack("bell", .degraded(reason: "DBコンテナがありません"))
+        await world.setStack("demo", .degraded(reason: "DBコンテナがありません"))
         _ = await coordinator.observeManagedStacks(registeredProjects: [project])
 
         #expect(await coordinator.servicePhase(supabase, in: project) == .residual)
@@ -623,7 +623,7 @@ struct SupabaseLifecycleTests {
         let failing = makeFailingService(name: "Web", workingDirectory: directory, failurePolicy: .block)
         let project = try makeSupabaseProject(directory: directory, extraServices: [failing])
         let supabase = try #require(project.launchUnits.first)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
         let plan: ManagedStackConfirmationPlan
         do {
@@ -638,7 +638,7 @@ struct SupabaseLifecycleTests {
         }
         #expect(await registry.managedRelationship(stackID: supabase.id) == .adopted)
 
-        await world.setStack("bell", nil)
+        await world.setStack("demo", nil)
         await coordinator.observeManagedStacks(registeredProjects: [project])
         #expect(await coordinator.servicePhase(supabase, in: project) == .stopped)
         await world.resetCommands()
@@ -655,7 +655,7 @@ struct SupabaseLifecycleTests {
     func rollsBackLaunchedSupabaseOnBlockingFailure() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let supabase = makeSupabaseService(workingDirectory: directory)
         let failing = makeFailingService(
             name: "Web",
@@ -673,14 +673,14 @@ struct SupabaseLifecycleTests {
         // 今回起動した分は巻き戻す。
         #expect(await world.runningProjectIDs.isEmpty)
         #expect(await registry.isRunning(serviceID: supabase.id) == false)
-        #expect(await world.commandLines.contains { $0.contains("--project-id bell") })
+        #expect(await world.commandLines.contains { $0.contains("--project-id demo") })
     }
 
     @Test("引き継いだSupabaseは後続のblock失敗でも停止せず、残存ありとして残る")
     func keepsAdoptedSupabaseOnBlockingFailure() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let supabase = makeSupabaseService(workingDirectory: directory)
         let failing = makeFailingService(
             name: "Web",
@@ -688,7 +688,7 @@ struct SupabaseLifecycleTests {
             failurePolicy: .block
         )
         let project = makeProject(directory: directory, services: [supabase, failing])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (registry, coordinator) = makeStack(world: world, logDirectory: directory)
 
         let plan: ManagedStackConfirmationPlan
@@ -709,7 +709,7 @@ struct SupabaseLifecycleTests {
         }
 
         // 引き継いだスタックは巻き戻さない。停止導線は残す。
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(await registry.managedRelationship(stackID: supabase.id) == .adopted)
         #expect(await coordinator.servicePhase(supabase, in: project) == .residual)
         #expect(await coordinator.projectFact(project).phase == .residual)
@@ -724,8 +724,8 @@ struct SupabaseLifecycleTests {
     func doesNotReconfirmManagedStackOfSwitchSource() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let sourceDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let targetDirectory = root.appendingPathComponent("penta", isDirectory: true)
+        let sourceDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let targetDirectory = root.appendingPathComponent("sample", isDirectory: true)
         for directory in [sourceDirectory, targetDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
@@ -734,8 +734,8 @@ struct SupabaseLifecycleTests {
         }
         let source = try makeSupabaseProject(directory: sourceDirectory)
         let target = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "penta",
+            name: "Sample",
+            projectID: "sample",
             directory: targetDirectory
         )
         let world = FakeSupabaseWorld()
@@ -743,39 +743,39 @@ struct SupabaseLifecycleTests {
 
         // 切替元を先に起動しておく（今回起動＝launched）。
         _ = try await coordinator.start(source, registeredProjects: [source, target])
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
 
         await world.resetCommands()
-        // 切替元の bell は通常の停止処理で止まるので、Supabase固有の確認は出さない。
+        // 切替元の demo は通常の停止処理で止まるので、Supabase固有の確認は出さない。
         _ = try await coordinator.switchProject(
             from: source,
             to: target,
             registeredProjects: [source, target]
         )
 
-        #expect(await world.runningProjectIDs == ["penta"])
+        #expect(await world.runningProjectIDs == ["sample"])
         let stops = await world.commandLines.filter { $0.contains("stop") }
         #expect(stops.count == 1)
-        #expect(stops.allSatisfy { $0.contains("--project-id bell") })
+        #expect(stops.allSatisfy { $0.contains("--project-id demo") })
     }
 
     @Test("起動直前に project_id が重複していれば起動せず、停止導線は残す")
     func refusesToStartWhenProjectIDsCollideAtRuntime() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
         let otherDirectory = root.appendingPathComponent("other", isDirectory: true)
-        for directory in [bellDirectory, otherDirectory] {
+        for directory in [demoDirectory, otherDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
             )
         }
-        let project = try makeSupabaseProject(directory: bellDirectory)
+        let project = try makeSupabaseProject(directory: demoDirectory)
         // 保存後に別の開発環境が同じ`project_id`を指すようになった状態。
         let colliding = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "bell",
+            name: "Sample",
+            projectID: "demo",
             directory: otherDirectory
         )
         let world = FakeSupabaseWorld()

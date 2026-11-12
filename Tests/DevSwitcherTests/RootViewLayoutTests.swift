@@ -15,7 +15,7 @@ struct RootViewLayoutTests {
         try writeSupabaseConfig(projectID: "layout-test", in: directory)
         let service = makeAppStateSupabaseService(workingDirectory: directory)
         let project = ProjectDefinition(
-            name: "Bell", color: .blue, directory: directory, services: [service]
+            name: "Demo", color: .blue, directory: directory, services: [service]
         )
         try ProjectStore(directory: directory).save([project])
         let stackID = try #require(SupabaseProjectID(rawValue: "layout-test"))

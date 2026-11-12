@@ -299,9 +299,9 @@ struct RuntimeRegistryTests {
         }
 
         let serviceA = sleepCommand("A")
-        let projectA = makeProject(name: "Bell", directory: directory, services: [serviceA])
+        let projectA = makeProject(name: "Demo", directory: directory, services: [serviceA])
         let serviceB = sleepCommand("B")
-        let projectB = makeProject(name: "Penta", directory: directory, services: [serviceB])
+        let projectB = makeProject(name: "Sample", directory: directory, services: [serviceB])
 
         let log = EventLog()
         let stream = try await registry.start(service: serviceA, in: projectA)
@@ -351,7 +351,7 @@ struct RuntimeRegistryTests {
             ],
             workingDirectory: directory
         )
-        let projectA = makeProject(name: "Bell", directory: directory, services: [stubborn])
+        let projectA = makeProject(name: "Demo", directory: directory, services: [stubborn])
         let serviceB = makeService(
             name: "B",
             kind: .worker,
@@ -360,7 +360,7 @@ struct RuntimeRegistryTests {
             arguments: ["30"],
             workingDirectory: directory
         )
-        let projectB = makeProject(name: "Penta", directory: directory, services: [serviceB])
+        let projectB = makeProject(name: "Sample", directory: directory, services: [serviceB])
 
         let log = EventLog()
         let stream = try await registry.start(service: stubborn, in: projectA)
@@ -403,7 +403,7 @@ struct RuntimeRegistryTests {
             arguments: ["-c", "sleep 120 &"],
             workingDirectory: directory
         )
-        let projectA = makeProject(name: "Bell", directory: directory, services: [detached])
+        let projectA = makeProject(name: "Demo", directory: directory, services: [detached])
         let serviceB = makeService(
             name: "B",
             kind: .worker,
@@ -412,7 +412,7 @@ struct RuntimeRegistryTests {
             arguments: ["30"],
             workingDirectory: directory
         )
-        let projectB = makeProject(name: "Penta", directory: directory, services: [serviceB])
+        let projectB = makeProject(name: "Sample", directory: directory, services: [serviceB])
 
         let log = EventLog()
         let stream = try await registry.start(service: detached, in: projectA)
@@ -461,7 +461,7 @@ struct RuntimeRegistryTests {
             arguments: ["-c", "sleep 120 &"],
             workingDirectory: directory
         )
-        let project = makeProject(name: "Bell", directory: directory, services: [detached])
+        let project = makeProject(name: "Demo", directory: directory, services: [detached])
 
         let log = EventLog()
         let stream = try await registry.start(service: detached, in: project)

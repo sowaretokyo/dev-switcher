@@ -116,7 +116,7 @@ struct ManagedStackDomainTests {
             Issue.record("Supabase の導出結果ではありません。")
             return
         }
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
 
         for command in [configuration.statusCommand, configuration.stopCommand(projectID: projectID)] {
             #expect(!command.arguments.contains("--all"))
@@ -142,21 +142,21 @@ struct ManagedStackDomainTests {
             startArguments: ["--workdir", "./db", "start"],
             configDirectory: "/work/app/db",
             statusArguments: ["status", "--workdir", "/work/app/db", "--output", "json"],
-            stopArguments: ["stop", "--workdir", "/work/app/db", "--project-id", "bell"]
+            stopArguments: ["stop", "--workdir", "/work/app/db", "--project-id", "demo"]
         ),
         LiteralDerivationCase(
             name: "--workdir=./db 形式",
             startArguments: ["--workdir=./db", "start"],
             configDirectory: "/work/app/db",
             statusArguments: ["status", "--workdir", "/work/app/db", "--output", "json"],
-            stopArguments: ["stop", "--workdir", "/work/app/db", "--project-id", "bell"]
+            stopArguments: ["stop", "--workdir", "/work/app/db", "--project-id", "demo"]
         ),
         LiteralDerivationCase(
             name: "--debug は引き継ぎ、--output / -o / --workdir は落とす",
             startArguments: ["--debug", "--output", "json", "-o", "json", "--workdir", "/work/other", "start"],
             configDirectory: "/work/other",
             statusArguments: ["--debug", "status", "--workdir", "/work/other", "--output", "json"],
-            stopArguments: ["--debug", "stop", "--workdir", "/work/other", "--project-id", "bell"]
+            stopArguments: ["--debug", "stop", "--workdir", "/work/other", "--project-id", "demo"]
         ),
     ]
 
@@ -171,7 +171,7 @@ struct ManagedStackDomainTests {
         let wrapped = try #require(
             SupabaseStackConfiguration(start: start).derived(workingDirectory: workingDirectory)
         )
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let configDirectory = URL(fileURLWithPath: input.configDirectory)
 
         #expect(wrapped.configDirectory.path == input.configDirectory)
@@ -206,7 +206,7 @@ struct ManagedStackDomainTests {
             )
         )
         let derived = try #require(configuration.derived(workingDirectory: directory))
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
 
         #expect(derived.configDirectory == directory.standardizedFileURL)
         #expect(derived.statusCommand.executable == "pnpm")
@@ -218,7 +218,7 @@ struct ManagedStackDomainTests {
         #expect(derived.stopCommand(projectID: projectID).arguments == [
             "exec", "supabase@latest", "stop",
             "--workdir", directory.standardizedFileURL.path,
-            "--project-id", "bell",
+            "--project-id", "demo",
         ])
     }
 
@@ -226,7 +226,7 @@ struct ManagedStackDomainTests {
     func resolveReadsProjectID() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
         let definition = try #require(service.managedStackDefinition)
         let derived = try #require(
@@ -240,7 +240,7 @@ struct ManagedStackDomainTests {
         let resolved = try definition.configuration.resolve(workingDirectory: directory)
 
         #expect(resolved.type == .supabase)
-        #expect(resolved.identity == (try makeSupabaseIdentity("bell")))
+        #expect(resolved.identity == (try makeSupabaseIdentity("demo")))
         #expect(resolved.fingerprint == .supabase(compatible.fingerprint))
 
         let environmentID = UUID()
@@ -274,7 +274,7 @@ struct ManagedStackDomainTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         // 設定ファイルがあっても、構造不備なら読みに行かずに止める。
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(
             workingDirectory: directory,
             arguments: ["start", "--no-backup"]
@@ -341,12 +341,12 @@ struct ManagedStackDomainTests {
 
     @Test("ID は project_id の規則で検証し、正規化で値が変わるものを拒否する")
     func identityValidation() throws {
-        let valid = try makeSupabaseIdentity("bell_1.a-b")
+        let valid = try makeSupabaseIdentity("demo_1.a-b")
         #expect(valid.type == .supabase)
-        #expect(valid.value == "bell_1.a-b")
-        #expect(valid.description == "bell_1.a-b")
+        #expect(valid.value == "demo_1.a-b")
+        #expect(valid.description == "demo_1.a-b")
 
-        for value in ["", " bell", "bell ", "-bell", "bell/x", String(repeating: "a", count: 129)] {
+        for value in ["", " demo", "demo ", "-demo", "demo/x", String(repeating: "a", count: 129)] {
             #expect(throws: ManagedStackIdentityError.invalidValue(type: .supabase, value: value)) {
                 try ManagedStackIdentity(type: .supabase, value: value)
             }
@@ -355,14 +355,14 @@ struct ManagedStackDomainTests {
 
     @Test("SupabaseProjectID と ID の相互変換")
     func projectIDConversion() throws {
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let converted = ManagedStackIdentity(projectID)
-        #expect(converted == (try makeSupabaseIdentity("bell")))
+        #expect(converted == (try makeSupabaseIdentity("demo")))
         #expect(try SupabaseProjectID(identity: converted) == projectID)
 
         // 検証を経ずに作られた不正な値は、変換時に拒否する。
-        let unchecked = ManagedStackIdentity(validatedType: .supabase, value: " bell")
-        #expect(throws: ManagedStackIdentityError.invalidValue(type: .supabase, value: " bell")) {
+        let unchecked = ManagedStackIdentity(validatedType: .supabase, value: " demo")
+        #expect(throws: ManagedStackIdentityError.invalidValue(type: .supabase, value: " demo")) {
             try SupabaseProjectID(identity: unchecked)
         }
     }
@@ -375,24 +375,24 @@ struct ManagedStackDomainTests {
 
     @Test("ID の JSON は type と value で往復する")
     func identityJSONRoundTrip() throws {
-        let original = try makeSupabaseIdentity("bell")
+        let original = try makeSupabaseIdentity("demo")
         let data = try JSONEncoder().encode(original)
         let object = try #require(
             try JSONSerialization.jsonObject(with: data) as? [String: String]
         )
-        #expect(object == ["type": "supabase", "value": "bell"])
+        #expect(object == ["type": "supabase", "value": "demo"])
         #expect(try JSONDecoder().decode(ManagedStackIdentity.self, from: data) == original)
     }
 
     @Test(
         "不正な ID の JSON は decode に失敗する",
         arguments: [
-            #"{"type":"supabase","value":" bell"}"#,
-            #"{"type":"supabase","value":"-bell"}"#,
+            #"{"type":"supabase","value":" demo"}"#,
+            #"{"type":"supabase","value":"-demo"}"#,
             #"{"type":"supabase","value":""}"#,
-            #"{"type":"unknown","value":"bell"}"#,
+            #"{"type":"unknown","value":"demo"}"#,
             #"{"type":"supabase"}"#,
-            #"{"value":"bell"}"#,
+            #"{"value":"demo"}"#,
         ]
     )
     func identityJSONRejectsInvalidValues(_ json: String) {
@@ -451,9 +451,9 @@ struct ManagedStackDomainTests {
 
     @Test("観測の等価は ID と状態だけで判定する")
     func observationEqualityIgnoresDetail() throws {
-        let a = ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .unknown, detail: "x")
-        let b = ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .unknown, detail: "y")
-        let c = ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running, detail: "x")
+        let a = ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .unknown, detail: "x")
+        let b = ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .unknown, detail: "y")
+        let c = ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running, detail: "x")
         #expect(a == b)
         #expect(a != c)
     }
@@ -464,13 +464,13 @@ struct ManagedStackDomainTests {
             type: .supabase,
             observations: [
                 ManagedStackObservation(identity: try makeSupabaseIdentity("cat"), state: .unknown, detail: "壊れた"),
-                ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+                ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
                 ManagedStackObservation(identity: try makeSupabaseIdentity("dog"), state: .unknown),
             ]
         )
 
-        #expect(snapshot.observations.map(\.identity.value) == ["bell", "cat", "dog"])
-        #expect(snapshot.state(of: try makeSupabaseIdentity("bell")) == .running)
+        #expect(snapshot.observations.map(\.identity.value) == ["demo", "cat", "dog"])
+        #expect(snapshot.state(of: try makeSupabaseIdentity("demo")) == .running)
         #expect(snapshot.state(of: try makeSupabaseIdentity("zzz")) == .notRunning)
         #expect(snapshot.observation(of: try makeSupabaseIdentity("zzz")).detail == nil)
         #expect(snapshot.hasUnknown)
@@ -482,7 +482,7 @@ struct ManagedStackDomainTests {
     @Test("観測全体が失敗した種類の ID は判定不能で、理由を返す")
     func failedSnapshotSemantics() throws {
         let snapshot = ManagedStackSnapshot(type: .supabase, unobservable: "docker が応答しません。")
-        let observation = snapshot.observation(of: try makeSupabaseIdentity("bell"))
+        let observation = snapshot.observation(of: try makeSupabaseIdentity("demo"))
 
         #expect(observation.state == .unknown)
         #expect(observation.detail == "docker が応答しません。")
@@ -495,7 +495,7 @@ struct ManagedStackDomainTests {
     @Test("未観測の種類の ID は判定不能だが、hasUnknown と failureDetails に含めない")
     func unobservedSnapshotSemantics() throws {
         let snapshot = ManagedStackSnapshot()
-        let observation = snapshot.observation(of: try makeSupabaseIdentity("bell"))
+        let observation = snapshot.observation(of: try makeSupabaseIdentity("demo"))
 
         #expect(observation.state == .unknown)
         #expect(observation.detail == "Supabaseの状態をまだ観測できていません。")
@@ -508,10 +508,10 @@ struct ManagedStackDomainTests {
     @Test("typesWithUnknown は観測失敗または unknown を含む種類だけを返し、未観測は含めない")
     func typesWithUnknownSemantics() throws {
         let allRunning = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
         ])
         let withUnknown = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
             ManagedStackObservation(identity: try makeSupabaseIdentity("cat"), state: .unknown),
         ])
         let failed = ManagedStackSnapshot(type: .supabase, unobservable: "docker が応答しません。")
@@ -525,13 +525,13 @@ struct ManagedStackDomainTests {
     @Test("snapshot の等価は観測の ID と状態、観測失敗の理由で判定する")
     func snapshotEquality() throws {
         let a = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .unknown, detail: "x"),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .unknown, detail: "x"),
         ])
         let b = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .unknown, detail: "y"),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .unknown, detail: "y"),
         ])
         let c = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
         ])
         #expect(a == b)
         #expect(a != c)
@@ -549,12 +549,12 @@ struct ManagedStackDomainTests {
     func confirmationTargetIDAndLabels() throws {
         let target = ManagedStackConfirmationTarget(
             stackID: nil,
-            identity: try makeSupabaseIdentity("bell"),
+            identity: try makeSupabaseIdentity("demo"),
             state: .running,
             action: .stop,
             registration: nil
         )
-        #expect(target.id == "supabase:bell")
+        #expect(target.id == "supabase:demo")
         #expect(target.registrationLabel == "未登録")
 
         let labels: [(ManagedStackConfirmationTarget.Action, String)] = [
@@ -566,26 +566,26 @@ struct ManagedStackDomainTests {
 
         let registered = ManagedStackConfirmationTarget(
             stackID: UUID(),
-            identity: try makeSupabaseIdentity("bell"),
+            identity: try makeSupabaseIdentity("demo"),
             state: .running,
             action: .adopt,
             registration: .init(
-                environmentName: "Bell",
+                environmentName: "Demo",
                 stackName: "Supabase",
-                directory: URL(fileURLWithPath: "/tmp/bell")
+                directory: URL(fileURLWithPath: "/tmp/demo")
             )
         )
-        #expect(registered.registrationLabel == "Bell / Supabase")
+        #expect(registered.registrationLabel == "Demo / Supabase")
     }
 
     @Test("新規起動だけの plan は確認不要で、それ以外の action があれば確認が要る")
     func planRequiresConfirmation() throws {
         let stackID = UUID()
         let start = ManagedStackConfirmationTarget(
-            stackID: stackID, identity: try makeSupabaseIdentity("bell"), state: .notRunning,
+            stackID: stackID, identity: try makeSupabaseIdentity("demo"), state: .notRunning,
             action: .start,
             registration: .init(
-                environmentName: "Bell", stackName: "Supabase", directory: URL(fileURLWithPath: "/tmp/bell")
+                environmentName: "Demo", stackName: "Supabase", directory: URL(fileURLWithPath: "/tmp/demo")
             )
         )
         let stop = ManagedStackConfirmationTarget(
@@ -595,20 +595,20 @@ struct ManagedStackDomainTests {
         let fingerprints = [stackID: ManagedStackFingerprint.supabase(makeSupabaseFingerprint())]
 
         let startOnly = ManagedStackConfirmationPlan(
-            environmentName: "Bell", entries: [start],
+            environmentName: "Demo", entries: [start],
             snapshot: ManagedStackSnapshot(type: .supabase, observations: []),
             fingerprints: fingerprints
         )
         #expect(!startOnly.requiresConfirmation)
 
         let withStop = ManagedStackConfirmationPlan(
-            environmentName: "Bell", entries: [start, stop],
+            environmentName: "Demo", entries: [start, stop],
             snapshot: ManagedStackSnapshot(type: .supabase, observations: []),
             fingerprints: fingerprints
         )
         #expect(withStop.requiresConfirmation)
         #expect(withStop.approval.entries == [
-            ManagedStackApproval.Entry(stackID: stackID, identity: try makeSupabaseIdentity("bell"), action: .start),
+            ManagedStackApproval.Entry(stackID: stackID, identity: try makeSupabaseIdentity("demo"), action: .start),
             ManagedStackApproval.Entry(stackID: nil, identity: try makeSupabaseIdentity("cat"), action: .stop),
         ])
         #expect(withStop.approval.fingerprints == fingerprints)
@@ -619,7 +619,7 @@ struct ManagedStackDomainTests {
     func approvalIgnoresRegistration() throws {
         let stackID = UUID()
         let snapshot = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
         ])
         func plan(environmentName: String, stackName: String, directory: String) throws
             -> ManagedStackConfirmationPlan {
@@ -628,7 +628,7 @@ struct ManagedStackDomainTests {
                 entries: [
                     ManagedStackConfirmationTarget(
                         stackID: stackID,
-                        identity: try makeSupabaseIdentity("bell"),
+                        identity: try makeSupabaseIdentity("demo"),
                         state: .running,
                         action: .adopt,
                         registration: .init(
@@ -643,7 +643,7 @@ struct ManagedStackDomainTests {
             )
         }
 
-        let before = try plan(environmentName: "Bell", stackName: "Supabase", directory: "/tmp/a")
+        let before = try plan(environmentName: "Demo", stackName: "Supabase", directory: "/tmp/a")
         let after = try plan(environmentName: "Cat", stackName: "DB", directory: "/tmp/b")
         #expect(before != after)
         #expect(before.approval == after.approval)
@@ -656,13 +656,13 @@ struct ManagedStackDomainTests {
             ManagedStackConfirmationTarget(
                 stackID: id, identity: try makeSupabaseIdentity(value), state: .running, action: id == nil ? .stop : .adopt,
                 registration: .init(
-                    environmentName: "Bell", stackName: stackName, directory: URL(fileURLWithPath: "/tmp/bell")
+                    environmentName: "Demo", stackName: stackName, directory: URL(fileURLWithPath: "/tmp/demo")
                 )
             )
         }
         let plan = ManagedStackConfirmationPlan(
-            environmentName: "Bell",
-            entries: [try entry("bell", stackID, "Primary"), try entry("cat", nil, "Other")],
+            environmentName: "Demo",
+            entries: [try entry("demo", stackID, "Primary"), try entry("cat", nil, "Other")],
             snapshot: ManagedStackSnapshot(type: .supabase, observations: []),
             fingerprints: [stackID: .supabase(makeSupabaseFingerprint())]
         )

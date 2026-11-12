@@ -8,7 +8,6 @@
 2. `docs/ARCHITECTURE.md` — Swift 実装への写像、型の案、テスト方針
 3. `docs/SCHEMA.md` — 設定保存と JSON 取り込みの形式
 4. `docs/ROADMAP.md` — 実装段階（Phase A / C / B）と今後の項目
-5. `DevSwitcher.tsx` / `mock.html` — 見た目と操作感の参考。実装仕様の正ではない
 
 文書間に矛盾がある場合は、推測で実装せず矛盾箇所を報告すること。依頼された Phase の範囲を超えて先回りしない。
 
@@ -17,7 +16,7 @@
 - macOS 専用アプリとして Swift 6、SwiftUI、必要箇所のみ AppKit で実装する。最低対応 OS は macOS 15。
 - ビルド定義の正は Swift Package Manager とする。
 - 外部依存を追加しない。必要なら理由・代替案・影響を提示し、承認を得てから追加する。
-- React、Tauri、Flutter へ置き換えない。既存 TSX は参照用として保持する。
+- React、Tauri、Flutter へ置き換えない。
 
 ## 安全規則
 
@@ -43,7 +42,7 @@
 - 実装プランは「ファイル × 変更内容」の短い表で提示する。
 - UI やプロダクト仕様の未確定事項を独断で決めない。選択肢、pros/cons、推奨を簡潔に提示する。
 - unrelated なリファクタリングを混ぜない。
-- 仕様文書とモックは、明示的な仕様変更依頼なしに削除・全面置換しない。
+- 仕様文書は、明示的な仕様変更依頼なしに削除・全面置換しない。
 - 明示的な依頼がない限り、署名、notarization、配布、git commit、git push は行わない。
 - 実 Docker・実 Supabase のスタックの起動・停止は、利用者の明示承認なしに検証で実行しない。
 

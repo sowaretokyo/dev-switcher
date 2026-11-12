@@ -28,7 +28,7 @@ struct ManagedStackCharacterizationTests {
     ) -> ManagedStackConfirmationPlan {
         // 起動先の行は serviceID を stackID に持ち、停止行は stackID を持たない。
         ManagedStackConfirmationPlan(
-            environmentName: "Bell",
+            environmentName: "Demo",
             entries: [
                 ManagedStackConfirmationTarget(
                     stackID: serviceID,
@@ -78,10 +78,10 @@ struct ManagedStackCharacterizationTests {
     @Test("managedStackConfirmationRequired は複数の停止行を、対象→停止対象の順に登録有無つきで並べる")
     func confirmationRequiredDetail() throws {
         let plan = plan(
-            target: try target("bell", .running, .adopt, registration: registration("Bell")),
-            // 並びは観測順ではなく渡した順のまま出る（pentaはlegacyより先に渡している）。
+            target: try target("demo", .running, .adopt, registration: registration("Demo")),
+            // 並びは観測順ではなく渡した順のまま出る（sampleはlegacyより先に渡している）。
             stopTargets: [
-                try target("penta", .degraded, .stop, registration: registration("Penta")),
+                try target("sample", .degraded, .stop, registration: registration("Sample")),
                 try target("legacy", .running, .stop, registration: nil),
             ]
         )
@@ -91,8 +91,8 @@ struct ManagedStackCharacterizationTests {
         #expect(
             reason.detail == """
                 サービス「Supabase」の起動前に、既存のSupabaseスタックの扱いを確認してください。
-                bell: 稼働中 → 引き継ぐ（Bell / Supabase）
-                penta: 一部だけ稼働 → 停止する（Penta / Supabase）
+                demo: 稼働中 → 引き継ぐ（Demo / Supabase）
+                sample: 一部だけ稼働 → 停止する（Sample / Supabase）
                 legacy: 稼働中 → 停止する（未登録）
                 """
         )
@@ -101,10 +101,10 @@ struct ManagedStackCharacterizationTests {
     @Test("registrationLabel は登録済みなら「開発環境 / サービス」、未登録なら「未登録」")
     func registrationLabels() throws {
         let registered = try target(
-            "bell", .running, .adopt, registration: registration("Bell", "DB")
+            "demo", .running, .adopt, registration: registration("Demo", "DB")
         )
-        let unregistered = try target("bell", .running, .adopt, registration: nil)
-        #expect(registered.registrationLabel == "Bell / DB")
+        let unregistered = try target("demo", .running, .adopt, registration: nil)
+        #expect(registered.registrationLabel == "Demo / DB")
         #expect(unregistered.registrationLabel == "未登録")
     }
 
@@ -112,14 +112,14 @@ struct ManagedStackCharacterizationTests {
     func observationFailedText() {
         let reason = SwitchFailure.Reason.managedStackObservationFailed(
             types: [.supabase],
-            details: ["Docker unavailable", "bell: status failed"]
+            details: ["Docker unavailable", "demo: status failed"]
         )
         #expect(reason.title == "Supabaseの状態を確認できない")
         #expect(
             reason.detail == """
                 Supabaseスタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。
                 Docker unavailable
-                bell: status failed
+                demo: status failed
                 """
         )
     }
@@ -127,12 +127,12 @@ struct ManagedStackCharacterizationTests {
     @Test("managedStackStopFailed は停止済み・未処理が空なら「なし」、あれば ` / ` 区切り")
     func stopFailedText() throws {
         let empty = SwitchFailure.Reason.managedStackStopFailed(
-            identity: try makeSupabaseIdentity("penta"), reason: "CLI failed", stopped: [], remaining: []
+            identity: try makeSupabaseIdentity("sample"), reason: "CLI failed", stopped: [], remaining: []
         )
         #expect(empty.title == "既存のSupabaseを停止できない")
         #expect(
             empty.detail == """
-                既存のSupabase「penta」を停止できませんでした。
+                既存のSupabase「sample」を停止できませんでした。
                 CLI failed
                 停止済み: なし
                 未処理: なし
@@ -141,12 +141,12 @@ struct ManagedStackCharacterizationTests {
         )
 
         let filled = SwitchFailure.Reason.managedStackStopFailed(
-            identity: try makeSupabaseIdentity("penta"), reason: "CLI failed",
+            identity: try makeSupabaseIdentity("sample"), reason: "CLI failed",
             stopped: ["a", "b"], remaining: ["c", "d"]
         )
         #expect(
             filled.detail == """
-                既存のSupabase「penta」を停止できませんでした。
+                既存のSupabase「sample」を停止できませんでした。
                 CLI failed
                 停止済み: a / b
                 未処理: c / d
@@ -161,13 +161,13 @@ struct ManagedStackCharacterizationTests {
     func startOwnershipUnconfirmedText() throws {
         let error = RuntimeError.managedStartOwnershipUnconfirmed(
             stack: "Supabase",
-            identity: try makeSupabaseIdentity("bell"),
+            identity: try makeSupabaseIdentity("demo"),
             state: .running,
             reason: "起動前から稼働中でした。"
         )
         #expect(
             error.description
-                == "サービス「Supabase」のSupabase「bell」は起動処理の前後で稼働中と観測されましたが、"
+                == "サービス「Supabase」のSupabase「demo」は起動処理の前後で稼働中と観測されましたが、"
                 + "Dev Switcherが起動したスタックか確定できません。"
                 + "停止権限を持たないため自動停止していません。再度起動操作を行い、現在のスタックの扱いを確認してください。\n"
                 + "起動前から稼働中でした。"
@@ -176,7 +176,7 @@ struct ManagedStackCharacterizationTests {
 
     @Test("Supabase設定の5種の不備は、それぞれ固有の理由で managedCommandInvalid になる")
     func configurationFailureReasons() throws {
-        let directory = URL(fileURLWithPath: "/tmp/bell")
+        let directory = URL(fileURLWithPath: "/tmp/demo")
         let cases: [(String, LaunchUnit, String)] = [
             (
                 "カスタム停止",
@@ -235,44 +235,44 @@ struct ManagedStackCharacterizationTests {
 
     @Test("ManagedStackOperationError 3ケースの description")
     func operationErrorText() throws {
-        let bell = try makeSupabaseIdentity("bell")
+        let demo = try makeSupabaseIdentity("demo")
 
         let failedWithOutput = ManagedStackOperationError.commandFailed(
-            action: "開始", identity: bell, status: .exited(code: 2), output: "boom"
+            action: "開始", identity: demo, status: .exited(code: 2), output: "boom"
         )
         #expect(
             failedWithOutput.description
-                == "Supabase「bell」の開始コマンドが失敗しました（終了コード 2）。\n直近の出力:\nboom"
+                == "Supabase「demo」の開始コマンドが失敗しました（終了コード 2）。\n直近の出力:\nboom"
         )
         let failedWithoutOutput = ManagedStackOperationError.commandFailed(
-            action: "停止", identity: bell, status: .signaled(signal: 9), output: ""
+            action: "停止", identity: demo, status: .signaled(signal: 9), output: ""
         )
         #expect(
             failedWithoutOutput.description
-                == "Supabase「bell」の停止コマンドが失敗しました（シグナル 9 で終了）。"
+                == "Supabase「demo」の停止コマンドが失敗しました（シグナル 9 で終了）。"
         )
 
         let unavailable = ManagedStackOperationError.commandUnavailable(
-            action: "停止", identity: bell, reason: "supabase が見つかりません。"
+            action: "停止", identity: demo, reason: "supabase が見つかりません。"
         )
         #expect(
             unavailable.description
-                == "Supabase「bell」の停止コマンドを実行できません。\nsupabase が見つかりません。"
+                == "Supabase「demo」の停止コマンドを実行できません。\nsupabase が見つかりません。"
         )
 
         let notConfirmedWithDetail = ManagedStackOperationError.stateNotConfirmed(
-            action: "停止", identity: bell, expected: .notRunning, actual: .running, detail: "残存コンテナあり"
+            action: "停止", identity: demo, expected: .notRunning, actual: .running, detail: "残存コンテナあり"
         )
         #expect(
             notConfirmedWithDetail.description
-                == "Supabase「bell」の停止後に停止中を確認できませんでした（実測: 稼働中）。\n残存コンテナあり"
+                == "Supabase「demo」の停止後に停止中を確認できませんでした（実測: 稼働中）。\n残存コンテナあり"
         )
         let notConfirmedWithoutDetail = ManagedStackOperationError.stateNotConfirmed(
-            action: "開始", identity: bell, expected: .running, actual: .unknown, detail: nil
+            action: "開始", identity: demo, expected: .running, actual: .unknown, detail: nil
         )
         #expect(
             notConfirmedWithoutDetail.description
-                == "Supabase「bell」の開始後に稼働中を確認できませんでした（実測: 判定不能）。"
+                == "Supabase「demo」の開始後に稼働中を確認できませんでした（実測: 判定不能）。"
         )
     }
 
@@ -328,13 +328,13 @@ struct ManagedStackCharacterizationTests {
     @Test("観測成功のスナップショットは、未列挙のIDを notRunning（detail なし）にする")
     func observedSnapshotTreatsUnlistedAsNotRunning() throws {
         let snapshot = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
         ])
-        let unlisted = snapshot.observation(of: try makeSupabaseIdentity("penta"))
+        let unlisted = snapshot.observation(of: try makeSupabaseIdentity("sample"))
 
         #expect(unlisted.state == .notRunning)
         #expect(unlisted.detail == nil)
-        #expect(snapshot.state(of: try makeSupabaseIdentity("bell")) == .running)
+        #expect(snapshot.state(of: try makeSupabaseIdentity("demo")) == .running)
         #expect(snapshot.hasUnknown == false)
         #expect(snapshot.failureDetails.isEmpty)
         #expect(ManagedStackSnapshot(type: .supabase, observations: []).hasUnknown == false)
@@ -343,40 +343,40 @@ struct ManagedStackCharacterizationTests {
     @Test("観測の中に unknown があれば hasUnknown になり、failureDetails は「ID: 理由」を返す")
     func snapshotWithUnknownObservations() throws {
         let snapshot = ManagedStackSnapshot(type: .supabase, observations: [
-            ManagedStackObservation(identity: try makeSupabaseIdentity("penta"), state: .unknown, detail: "ラベル欠落"),
-            ManagedStackObservation(identity: try makeSupabaseIdentity("bell"), state: .running),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("sample"), state: .unknown, detail: "ラベル欠落"),
+            ManagedStackObservation(identity: try makeSupabaseIdentity("demo"), state: .running),
             ManagedStackObservation(identity: try makeSupabaseIdentity("legacy"), state: .unknown),
         ])
 
         #expect(snapshot.hasUnknown)
-        #expect(snapshot.observations.filter { $0.state == .unknown }.map(\.identity.value) == ["legacy", "penta"])
+        #expect(snapshot.observations.filter { $0.state == .unknown }.map(\.identity.value) == ["legacy", "sample"])
         // IDの昇順で並び、理由が無ければ固定文言になる。
         #expect(
             snapshot.failureDetails == [
                 "legacy: 理由を取得できませんでした。",
-                "penta: ラベル欠落",
+                "sample: ラベル欠落",
             ]
         )
-        #expect(snapshot.observations.map(\.identity.value) == ["bell", "legacy", "penta"])
+        #expect(snapshot.observations.map(\.identity.value) == ["demo", "legacy", "sample"])
     }
 
     @Test("detail だけが違う観測は等しく、状態が違えば等しくない")
     func observationEquality() throws {
-        let bell = try makeSupabaseIdentity("bell")
+        let demo = try makeSupabaseIdentity("demo")
         #expect(
-            ManagedStackObservation(identity: bell, state: .degraded, detail: "A")
-                == ManagedStackObservation(identity: bell, state: .degraded, detail: "B")
+            ManagedStackObservation(identity: demo, state: .degraded, detail: "A")
+                == ManagedStackObservation(identity: demo, state: .degraded, detail: "B")
         )
         #expect(
             ManagedStackSnapshot(type: .supabase, observations: [
-                ManagedStackObservation(identity: bell, state: .degraded, detail: "A"),
+                ManagedStackObservation(identity: demo, state: .degraded, detail: "A"),
             ]) == ManagedStackSnapshot(type: .supabase, observations: [
-                ManagedStackObservation(identity: bell, state: .degraded, detail: nil),
+                ManagedStackObservation(identity: demo, state: .degraded, detail: nil),
             ])
         )
         #expect(
-            ManagedStackObservation(identity: bell, state: .degraded)
-                != ManagedStackObservation(identity: bell, state: .running)
+            ManagedStackObservation(identity: demo, state: .degraded)
+                != ManagedStackObservation(identity: demo, state: .running)
         )
     }
 
@@ -384,20 +384,20 @@ struct ManagedStackCharacterizationTests {
 
     @Test("requiresConfirmation は「新規起動のみで他スタックに触れない」場合だけ false")
     func requiresConfirmationCondition() throws {
-        let stopTarget = try target("penta", .running, .stop, registration: nil)
+        let stopTarget = try target("sample", .running, .stop, registration: nil)
 
         for action in [
             ManagedStackConfirmationTarget.Action.adopt, .restart, .stop,
         ] {
-            let alone = plan(target: try target("bell", .running, action, registration: registration("Bell")))
+            let alone = plan(target: try target("demo", .running, action, registration: registration("Demo")))
             #expect(alone.requiresConfirmation, "\(action)")
         }
 
-        let startOnly = plan(target: try target("bell", .notRunning, .start, registration: registration("Bell")))
+        let startOnly = plan(target: try target("demo", .notRunning, .start, registration: registration("Demo")))
         #expect(startOnly.requiresConfirmation == false)
 
         let startWithStop = plan(
-            target: try target("bell", .notRunning, .start, registration: registration("Bell")),
+            target: try target("demo", .notRunning, .start, registration: registration("Demo")),
             stopTargets: [stopTarget]
         )
         #expect(startWithStop.requiresConfirmation)
@@ -408,18 +408,18 @@ struct ManagedStackCharacterizationTests {
         let serviceID = UUID()
         let withRegistration = plan(
             serviceID: serviceID,
-            target: try target("bell", .running, .adopt, registration: registration("Bell")),
-            stopTargets: [try target("penta", .running, .stop, registration: registration("Penta"))]
+            target: try target("demo", .running, .adopt, registration: registration("Demo")),
+            stopTargets: [try target("sample", .running, .stop, registration: registration("Sample"))]
         )
         let withoutRegistration = plan(
             serviceID: serviceID,
-            target: try target("bell", .running, .adopt, registration: registration("Cat", "DB")),
-            stopTargets: [try target("penta", .running, .stop, registration: nil)]
+            target: try target("demo", .running, .adopt, registration: registration("Cat", "DB")),
+            stopTargets: [try target("sample", .running, .stop, registration: nil)]
         )
 
         #expect(withRegistration != withoutRegistration)
         #expect(withRegistration.approval == withoutRegistration.approval)
-        #expect(withRegistration.approval.entries.dropFirst().map(\.identity.value) == ["penta"])
+        #expect(withRegistration.approval.entries.dropFirst().map(\.identity.value) == ["sample"])
         #expect(withRegistration.approval.entries.first?.action == .adopt)
     }
 }

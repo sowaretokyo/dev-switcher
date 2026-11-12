@@ -41,7 +41,7 @@ func makeService(
 }
 
 func makeProject(
-    name: String = "Bell",
+    name: String = "Demo",
     directory: URL,
     services: [LaunchUnit]? = nil,
     stopOrder: [UUID]? = nil,
@@ -757,7 +757,7 @@ func makeSupabaseProjectID(_ value: String) throws -> SupabaseProjectID {
 }
 
 /// 起動コマンド`supabase start`を`directory`で実行する構成の同一性。
-func makeSupabaseFingerprint(_ directory: String = "/tmp/bell") -> SupabaseLifecycleFingerprint {
+func makeSupabaseFingerprint(_ directory: String = "/tmp/demo") -> SupabaseLifecycleFingerprint {
     SupabaseLifecycleFingerprint(
         start: CommandSpec(
             executable: "supabase",

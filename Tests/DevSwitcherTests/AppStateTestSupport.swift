@@ -372,7 +372,7 @@ struct SyntheticFixture {
 
 func makeSyntheticFixture(
     directory: URL,
-    projectName: String = "Bell",
+    projectName: String = "Demo",
     pid: pid_t = 45_001,
     startAbstime: UInt64 = 501,
     serviceNames: [String] = ["Worker"],
@@ -777,7 +777,7 @@ func waitForValue<Value: Sendable>(
 }
 
 func makeWorkerProject(
-    name: String = "Bell",
+    name: String = "Demo",
     directory: URL,
     serviceNames: [String] = ["Worker"],
     arguments: [String] = ["120"],

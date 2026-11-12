@@ -46,7 +46,7 @@ struct ProjectImportTests {
                 stopOrder: services.map(\.id),
                 enabledNow: [services[0].id: false]
             ),
-            makeProject(name: "Penta", directory: directory),
+            makeProject(name: "Sample", directory: directory),
         ]
         let data = try JSONEncoder().encode(ProjectsDocument(projects: projects))
 
@@ -74,7 +74,7 @@ struct ProjectImportTests {
         let existing = makeProject(directory: directory)
         var incoming = makeProject(name: "Incoming", directory: directory)
         switch field {
-        case "name": incoming.name = " bell "
+        case "name": incoming.name = " demo "
         case "id": incoming.id = existing.id
         default:
             incoming.services[0].id = existing.services[0].id

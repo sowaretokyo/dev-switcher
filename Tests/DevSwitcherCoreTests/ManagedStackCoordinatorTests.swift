@@ -35,8 +35,8 @@ struct ManagedStackCoordinatorTests {
     }
 
     private func makeStackProject(
-        name: String = "Bell",
-        stackValue: String = "bell",
+        name: String = "Demo",
+        stackValue: String = "demo",
         directory: URL,
         stackFailurePolicy: FailurePolicy = .block,
         extraServices: [LaunchUnit] = []
@@ -104,8 +104,8 @@ struct ManagedStackCoordinatorTests {
         }
         let plan = try confirmationPlan(failure)
 
-        #expect(plan.environmentName == "Bell")
-        #expect(plan.entries.map(\.identity) == [try makeSupabaseIdentity("bell"), try makeSupabaseIdentity("other")])
+        #expect(plan.environmentName == "Demo")
+        #expect(plan.entries.map(\.identity) == [try makeSupabaseIdentity("demo"), try makeSupabaseIdentity("other")])
         #expect(plan.entries.map(\.action) == [.start, .stop])
         #expect(plan.entries.map(\.stackID) == [service.id, nil])
         #expect(plan.requiresConfirmation)
@@ -134,7 +134,7 @@ struct ManagedStackCoordinatorTests {
             approval: plan.approval
         )
 
-        #expect(mutations(await driver.calls) == ["stop other using bell", "start bell"])
+        #expect(mutations(await driver.calls) == ["stop other using demo", "start demo"])
         #expect(await registry.managedRelationship(stackID: service.id) == .launched)
 
         _ = try await coordinator.stop(project, registeredProjects: [project])
@@ -167,7 +167,7 @@ struct ManagedStackCoordinatorTests {
 
         #expect(latest != approved)
         #expect(latest.entries.map(\.identity)
-            == [try makeSupabaseIdentity("bell"), try makeSupabaseIdentity("other"), try makeSupabaseIdentity("zeta")])
+            == [try makeSupabaseIdentity("demo"), try makeSupabaseIdentity("other"), try makeSupabaseIdentity("zeta")])
         #expect(mutations(await driver.calls).isEmpty)
     }
 
@@ -195,10 +195,10 @@ struct ManagedStackCoordinatorTests {
             )
         })
 
-        #expect(latest.entries.map(\.identity) == [try makeSupabaseIdentity("bell"), try makeSupabaseIdentity("zeta")])
+        #expect(latest.entries.map(\.identity) == [try makeSupabaseIdentity("demo"), try makeSupabaseIdentity("zeta")])
         #expect(latest.entries.map(\.action) == [.start, .stop])
         // 承認済みの other は停止済み。対象は起動しない。
-        #expect(mutations(await base.calls) == ["stop other using bell"])
+        #expect(mutations(await base.calls) == ["stop other using demo"])
     }
 
     @Test("停止行が無く引き継ぐだけの承認でも、引き継ぐ直前に notRunning なら引き継がず最新の plan で確認し直す")
@@ -209,7 +209,7 @@ struct ManagedStackCoordinatorTests {
         let service = try #require(project.launchUnits.first)
         let base = FakeManagedStackDriver(
             type: .supabase,
-            states: [try makeSupabaseIdentity("bell"): .running]
+            states: [try makeSupabaseIdentity("demo"): .running]
         )
         let driver = ScriptedStackDriver(base: base)
         let (registry, coordinator) = makeCoordinator(driver: driver, logDirectory: directory)
@@ -221,7 +221,7 @@ struct ManagedStackCoordinatorTests {
 
         // 承認後の観測は、起動前の実測・確認時の照合・引き継ぐ直前の再観測の 3 回。
         // 3 回目の直前に対象が止まる。
-        await driver.changeState(try makeSupabaseIdentity("bell"), to: nil, beforeObserveCall: 3)
+        await driver.changeState(try makeSupabaseIdentity("demo"), to: nil, beforeObserveCall: 3)
         let latest = try confirmationPlan(try await switchFailure {
             try await coordinator.start(
                 project,
@@ -232,7 +232,7 @@ struct ManagedStackCoordinatorTests {
 
         #expect(await driver.observeCalls == 3)
         #expect(await driver.appliedChangeAtObserveCall == 3)
-        #expect(latest.entries.map(\.identity) == [try makeSupabaseIdentity("bell")])
+        #expect(latest.entries.map(\.identity) == [try makeSupabaseIdentity("demo")])
         #expect(latest.entries.map(\.state) == [.notRunning])
         #expect(latest.entries.map(\.action) == [.start])
         #expect(mutations(await base.calls).isEmpty)
@@ -323,7 +323,7 @@ struct ManagedStackCoordinatorTests {
         #expect(stopIdentity == (try makeSupabaseIdentity("beta")))
         #expect(stopped == ["alpha"])
         #expect(remaining == ["gamma"])
-        #expect(mutations(await base.calls) == ["stop alpha using bell"])
+        #expect(mutations(await base.calls) == ["stop alpha using demo"])
         #expect(await driver.failedStopAttempts == [try makeSupabaseIdentity("beta")])
     }
 
@@ -377,7 +377,7 @@ struct ManagedStackCoordinatorTests {
         let service = try #require(project.launchUnits.first)
         let driver = FakeManagedStackDriver(
             type: .supabase,
-            states: [try makeSupabaseIdentity("bell"): .running]
+            states: [try makeSupabaseIdentity("demo"): .running]
         )
         let (registry, coordinator) = makeCoordinator(driver: driver, logDirectory: directory)
         let approved = try confirmationPlan(try await switchFailure {
@@ -402,7 +402,7 @@ struct ManagedStackCoordinatorTests {
         #expect(await coordinator.servicePhase(service, in: project) == .residual)
 
         _ = try await coordinator.stop(project, registeredProjects: [project])
-        #expect(mutations(await driver.calls) == ["stop bell using bell"])
+        #expect(mutations(await driver.calls) == ["stop demo using demo"])
     }
 
     // MARK: - 切替元の管理下スタック
@@ -411,13 +411,13 @@ struct ManagedStackCoordinatorTests {
     func switchSourceManagedStackIsNotAStopEntry() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let sourceDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let targetDirectory = root.appendingPathComponent("penta", isDirectory: true)
+        let sourceDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let targetDirectory = root.appendingPathComponent("sample", isDirectory: true)
         for directory in [sourceDirectory, targetDirectory] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         let source = try makeStackProject(directory: sourceDirectory)
-        let target = try makeStackProject(name: "Penta", stackValue: "penta", directory: targetDirectory)
+        let target = try makeStackProject(name: "Sample", stackValue: "sample", directory: targetDirectory)
         let driver = FakeManagedStackDriver(type: .supabase)
         let (_, coordinator) = makeCoordinator(driver: driver, logDirectory: root)
 
@@ -432,7 +432,7 @@ struct ManagedStackCoordinatorTests {
                 registeredProjects: [source, target]
             )
         })
-        #expect(approved.entries.map(\.identity) == [try makeSupabaseIdentity("penta"), try makeSupabaseIdentity("other")])
+        #expect(approved.entries.map(\.identity) == [try makeSupabaseIdentity("sample"), try makeSupabaseIdentity("other")])
         #expect(approved.entries.map(\.action) == [.start, .stop])
         #expect(mutations(await driver.calls).isEmpty)
 
@@ -444,7 +444,7 @@ struct ManagedStackCoordinatorTests {
         )
 
         #expect(mutations(await driver.calls)
-            == ["stop bell using bell", "stop other using penta", "start penta"])
+            == ["stop demo using demo", "stop other using sample", "start sample"])
 
         _ = try await coordinator.stop(target, registeredProjects: [source, target])
     }

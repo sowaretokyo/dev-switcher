@@ -123,7 +123,7 @@ public struct ProjectFact: Equatable, Sendable {
         self.warnings = warnings
     }
 
-    /// 「Bell は停止しました。」のように、いまどうなっているかを1行で断言する。
+    /// 「shop-web は停止しました。」のように、いまどうなっているかを1行で断言する。
     public var statement: String {
         switch phase {
         case .stopped: L10n.text("「\(projectName)」は停止しました。")

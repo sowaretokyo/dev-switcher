@@ -12,8 +12,8 @@ import Testing
 @MainActor
 struct AppStateHandoffTests {
     /// テスト用の`project_id`。`#require`のネストを避けるため定数で持つ。
-    private var bellStackID: SupabaseProjectID {
-        guard let projectID = SupabaseProjectID(rawValue: "bell") else {
+    private var demoStackID: SupabaseProjectID {
+        guard let projectID = SupabaseProjectID(rawValue: "demo") else {
             preconditionFailure("テスト用の project_id が不正です。")
         }
         return projectID
@@ -21,8 +21,8 @@ struct AppStateHandoffTests {
 
     /// Supabase 1件だけの開発環境。`project_id`は`supabase/config.toml`から解決する。
     private func makeSupabaseProject(
-        name: String = "Bell",
-        projectID: String = "bell",
+        name: String = "Demo",
+        projectID: String = "demo",
         directory: URL
     ) throws -> ProjectDefinition {
         try writeSupabaseConfig(projectID: projectID, in: directory)
@@ -41,7 +41,7 @@ struct AppStateHandoffTests {
         let project = try makeSupabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
         // 手掛かりなしで同一スタックが動いている＝外部スタック。
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -59,13 +59,13 @@ struct AppStateHandoffTests {
         #expect(state.canStart)
         #expect(try RuntimeHintStore(directory: directory).load().managed.isEmpty)
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
 
         // フォアグラウンド復帰でも確認は出さない。
         await state.applicationDidBecomeActive()
         #expect(state.managedStackConfirmation == nil)
 
-        await world.setStack("bell", .degraded(reason: "DB unhealthy"))
+        await world.setStack("demo", .degraded(reason: "DB unhealthy"))
         await state.applicationDidBecomeActive()
         #expect(state.state(of: serviceID).managedStack?.label == "外部・一部だけ稼働")
         #expect(state.state(of: serviceID).managedStack?.detail == "DB unhealthy")
@@ -77,7 +77,7 @@ struct AppStateHandoffTests {
         #expect(state.hasManagedResources(in: project) == false)
 
         await world.failInventory(nil)
-        await world.setStack("bell", nil)
+        await world.setStack("demo", nil)
         await state.applicationDidBecomeActive()
         #expect(state.state(of: serviceID).managedStack?.state == .notRunning)
         #expect(state.managedStackObservationError == nil)
@@ -102,7 +102,7 @@ struct AppStateHandoffTests {
         #expect(state.state(of: serviceID).managedStack?.relationship == .launched)
 
         if observedStop {
-            await world.setStack("bell", nil)
+            await world.setStack("demo", nil)
             await state.applicationDidBecomeActive()
         } else {
             state.stopProject(project)
@@ -111,7 +111,7 @@ struct AppStateHandoffTests {
         #expect(state.state(of: serviceID).managedStack?.relationship == nil)
         #expect(try hintStore.load().managed.isEmpty)
 
-        await world.setStack("bell", .databaseHealthy)
+        await world.setStack("demo", .databaseHealthy)
         await world.resetCommands()
         await state.applicationDidBecomeActive()
         #expect(state.state(of: serviceID).managedStack?.label == "外部・稼働中")
@@ -127,7 +127,7 @@ struct AppStateHandoffTests {
         #expect(confirmation.plan.primaryEntry.action == .adopt)
         state.cancelManagedStackConfirmation()
         #expect(await world.commandLines.allSatisfy { $0.contains("status") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
 
         // 停止確認で破棄した手掛かりを、次回起動時に復元しない。
         let relaunched = makeAppState(directory: directory, supabaseWorld: world)
@@ -161,7 +161,7 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -172,7 +172,7 @@ struct AppStateHandoffTests {
 
         let presentation = try #require(state.managedStackConfirmation)
         #expect(presentation.plan.primaryEntry.action == .adopt)
-        #expect(presentation.plan.primaryEntry.identity.value == "bell")
+        #expect(presentation.plan.primaryEntry.identity.value == "demo")
         #expect(presentation.plan.stopEntries.isEmpty)
         #expect(state.canStart == false)
         #expect(state.canChangeConfiguration == false)
@@ -184,7 +184,7 @@ struct AppStateHandoffTests {
         // 確認をキャンセルした場合、start/stopは1件も実行しない。
         #expect(await world.commandLines.allSatisfy { !$0.contains("start") })
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     @Test("引き継ぎを承認するとstartを実行せず、開発環境の停止でstopできる")
@@ -193,7 +193,7 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let hintStore = RuntimeHintStore(directory: directory)
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
@@ -213,7 +213,7 @@ struct AppStateHandoffTests {
         // 引き継いだスタックは、通常の停止操作で停止できる。
         let hint = try #require(hintStore.load().managed.first)
         #expect(hint.relationship == .adopted)
-        #expect(hint.identity?.value == "bell")
+        #expect(hint.identity?.value == "demo")
 
         state.stopProject(project)
         await state.waitForPendingOperation()
@@ -227,7 +227,7 @@ struct AppStateHandoffTests {
     func adoptedSupabaseSurvivesBlockingFailureAsResidual() async throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let supabase = makeAppStateSupabaseService(workingDirectory: directory)
         let failing = LaunchUnit(
             name: "Web",
@@ -242,13 +242,13 @@ struct AppStateHandoffTests {
             failurePolicy: .block
         )
         let project = ProjectDefinition(
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             directory: directory,
             services: [supabase, failing]
         )
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -260,7 +260,7 @@ struct AppStateHandoffTests {
 
         // 引き継いだスタックは巻き戻さない。残存ありとして停止導線を残す。
         #expect(state.phase(of: project) == .residual)
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(state.canStop)
 
         state.stopProject(project)
@@ -285,13 +285,13 @@ struct AppStateHandoffTests {
                     makeManagedStackHint(
                         projectID: project.id,
                         service: service,
-                        supabaseProjectID: bellStackID,
+                        supabaseProjectID: demoStackID,
                         relationship: .launched
                     )
                 ),
             ]
         )
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -315,7 +315,7 @@ struct AppStateHandoffTests {
         let currentDirectory = directory.appendingPathComponent("current", isDirectory: true)
         for path in [originalDirectory, currentDirectory] {
             try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
-            try writeSupabaseConfig(projectID: "bell", in: path)
+            try writeSupabaseConfig(projectID: "demo", in: path)
         }
 
         let originalService = makeAppStateSupabaseService(workingDirectory: originalDirectory)
@@ -323,7 +323,7 @@ struct AppStateHandoffTests {
             makeManagedStackHint(
                 projectID: UUID(),
                 service: originalService,
-                supabaseProjectID: bellStackID,
+                supabaseProjectID: demoStackID,
                 relationship: .launched
             )
         )
@@ -331,14 +331,14 @@ struct AppStateHandoffTests {
         currentService.start.workingDirectory = currentDirectory
         let project = ProjectDefinition(
             id: hint.projectID,
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             directory: currentDirectory,
             services: [currentService]
         )
         try ProjectStore(directory: directory).save([project])
         try RuntimeHintStore(directory: directory).save([], legacy: [], managed: [hint])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -354,7 +354,7 @@ struct AppStateHandoffTests {
     func changedProjectIDHintCanBeDiscarded() async throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let project = try makeSupabaseProject(projectID: "bell", directory: directory)
+        let project = try makeSupabaseProject(projectID: "demo", directory: directory)
         let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         let hintStore = RuntimeHintStore(directory: directory)
@@ -362,15 +362,15 @@ struct AppStateHandoffTests {
             makeManagedStackHint(
                 projectID: project.id,
                 service: service,
-                supabaseProjectID: bellStackID,
+                supabaseProjectID: demoStackID,
                 relationship: .launched
             )
         )
         try hintStore.save([], legacy: [], managed: [hint])
 
         // サービス定義とコマンドは同じまま、config.tomlのIDだけが変わった状態。
-        try writeSupabaseConfig(projectID: "penta", in: directory)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        try writeSupabaseConfig(projectID: "sample", in: directory)
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let state = makeAppState(directory: directory, supabaseWorld: world)
 
         await state.bootstrap()
@@ -409,7 +409,7 @@ struct AppStateHandoffTests {
             }
             """
         try Data(json.utf8).write(to: hintStore.fileURL)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
 
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
@@ -435,7 +435,7 @@ struct AppStateHandoffTests {
                     makeManagedStackHint(
                         projectID: project.id,
                         service: service,
-                        supabaseProjectID: bellStackID,
+                        supabaseProjectID: demoStackID,
                         relationship: .launched
                     )
                 ),
@@ -460,13 +460,13 @@ struct AppStateHandoffTests {
         let project = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
         let hintStore = ControllableHintStore(directory: directory)
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let missingService = makeAppStateSupabaseService(workingDirectory: directory)
         let missing = try #require(
             makeManagedStackHint(
                 projectID: UUID(),
                 service: missingService,
-                supabaseProjectID: bellStackID,
+                supabaseProjectID: demoStackID,
                 relationship: .launched
             )
         )
@@ -1999,7 +1999,7 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: adopting ? ["bell": .databaseHealthy] : [:])
+        let world = FakeSupabaseWorld(stacks: adopting ? ["demo": .databaseHealthy] : [:])
         let hintStore = ControllableHintStore(directory: directory)
         let state = makeAppState(directory: directory, hintStore: hintStore, supabaseWorld: world)
         await state.bootstrap()
@@ -2019,7 +2019,7 @@ struct AppStateHandoffTests {
         await state.waitForPendingOperation()
 
         #expect(state.operationError != nil)
-        #expect(await world.runningProjectIDs == (adopting ? ["bell"] : []))
+        #expect(await world.runningProjectIDs == (adopting ? ["demo"] : []))
         #expect(await world.commandLines.contains { $0.contains("stop") } == !adopting)
         #expect(state.phase(of: project) == (adopting ? .residual : .stopped))
         if adopting {
@@ -2039,7 +2039,7 @@ struct AppStateHandoffTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try makeSupabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let hintStore = ControllableHintStore(directory: directory)
         let state = makeAppState(directory: directory, hintStore: hintStore, supabaseWorld: world)
         await state.bootstrap()
@@ -2056,7 +2056,7 @@ struct AppStateHandoffTests {
         #expect(state.hintError != nil)
         #expect(state.canStart == false)
         #expect(await state.flushRuntimeHintsBeforeTermination() == false)
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
         #expect(await world.commandLines.allSatisfy { !$0.contains("stop") })
 
         hintStore.allowSaves()
@@ -2129,8 +2129,8 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let source = makeWorkerProject(name: "Bell", directory: directory)
-        let target = makeWorkerProject(name: "Penta", directory: directory)
+        let source = makeWorkerProject(name: "Demo", directory: directory)
+        let target = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([source, target])
         let hintStore = ControllableHintStore(directory: directory)
 
@@ -2164,8 +2164,8 @@ struct AppStateHandoffTests {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let source = makeWorkerProject(name: "Bell", directory: directory)
-        let target = makeWorkerProject(name: "Penta", directory: directory)
+        let source = makeWorkerProject(name: "Demo", directory: directory)
+        let target = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([source, target])
         let hintStore = ControllableHintStore(directory: directory)
 

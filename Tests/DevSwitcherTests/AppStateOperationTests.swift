@@ -125,7 +125,7 @@ struct AppStateOperationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let fixture = makeSyntheticFixture(directory: directory)
-        let target = makeWorkerProject(name: "Penta", directory: directory)
+        let target = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([fixture.project, target])
         let hintStore = ControllableHintStore(directory: directory)
         try hintStore.save([fixture.hint], legacy: [])
@@ -171,7 +171,7 @@ struct AppStateOperationTests {
                 return []
             }
         )
-        let other = makeWorkerProject(name: "Penta", directory: directory)
+        let other = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([fixture.project, other])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 
@@ -236,7 +236,7 @@ struct AppStateOperationTests {
                 return []
             }
         )
-        let target = makeWorkerProject(name: "Penta", directory: directory)
+        let target = makeWorkerProject(name: "Sample", directory: directory)
         try ProjectStore(directory: directory).save([fixture.project, target])
         try RuntimeHintStore(directory: directory).save([fixture.hint])
 

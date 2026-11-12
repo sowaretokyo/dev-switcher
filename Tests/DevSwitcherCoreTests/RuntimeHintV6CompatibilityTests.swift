@@ -76,27 +76,27 @@ struct RuntimeHintV6CompatibilityTests {
               "projectID": "\(launchedEnvironmentID)",
               "serviceID": "\(launchedStackID)",
               "serviceName": "Supabase",
-              "supabaseProjectID": "bell",
-              "configDirectory": "file:///tmp/dev-switcher-compat/bell/",
+              "supabaseProjectID": "demo",
+              "configDirectory": "file:///tmp/dev-switcher-compat/demo/",
               "fingerprint": {
                 "executable": "supabase",
                 "startArguments": ["start"],
-                "startWorkingDirectory": "file:///tmp/dev-switcher-compat/bell/",
-                "configDirectory": "file:///tmp/dev-switcher-compat/bell/"
+                "startWorkingDirectory": "file:///tmp/dev-switcher-compat/demo/",
+                "configDirectory": "file:///tmp/dev-switcher-compat/demo/"
               },
               "relationship": "launched"
             },
             {
               "projectID": "\(adoptedEnvironmentID)",
               "serviceID": "\(adoptedStackID)",
-              "serviceName": "Penta DB",
-              "supabaseProjectID": "penta-db",
-              "configDirectory": "file:///tmp/dev-switcher-compat/penta/backend/",
+              "serviceName": "Sample DB",
+              "supabaseProjectID": "sample-db",
+              "configDirectory": "file:///tmp/dev-switcher-compat/sample/backend/",
               "fingerprint": {
                 "executable": "pnpm",
                 "startArguments": ["exec", "supabase", "start", "--workdir", "backend"],
-                "startWorkingDirectory": "file:///tmp/dev-switcher-compat/penta/",
-                "configDirectory": "file:///tmp/dev-switcher-compat/penta/backend/"
+                "startWorkingDirectory": "file:///tmp/dev-switcher-compat/sample/",
+                "configDirectory": "file:///tmp/dev-switcher-compat/sample/backend/"
               },
               "relationship": "adopted"
             }
@@ -134,24 +134,24 @@ struct RuntimeHintV6CompatibilityTests {
                     stackID: try #require(UUID(uuidString: launchedStackID)),
                     name: "Supabase",
                     kind: "supabase",
-                    identifier: "bell",
+                    identifier: "demo",
                     relationship: "launched",
                     executable: "supabase",
                     startArguments: ["start"],
-                    startWorkingDirectory: "/tmp/dev-switcher-compat/bell",
-                    configDirectory: "/tmp/dev-switcher-compat/bell"
+                    startWorkingDirectory: "/tmp/dev-switcher-compat/demo",
+                    configDirectory: "/tmp/dev-switcher-compat/demo"
                 ),
                 ExtractedManagedHint(
                     environmentID: try #require(UUID(uuidString: adoptedEnvironmentID)),
                     stackID: try #require(UUID(uuidString: adoptedStackID)),
-                    name: "Penta DB",
+                    name: "Sample DB",
                     kind: "supabase",
-                    identifier: "penta-db",
+                    identifier: "sample-db",
                     relationship: "adopted",
                     executable: "pnpm",
                     startArguments: ["exec", "supabase", "start", "--workdir", "backend"],
-                    startWorkingDirectory: "/tmp/dev-switcher-compat/penta",
-                    configDirectory: "/tmp/dev-switcher-compat/penta/backend"
+                    startWorkingDirectory: "/tmp/dev-switcher-compat/sample",
+                    configDirectory: "/tmp/dev-switcher-compat/sample/backend"
                 ),
             ]
         )

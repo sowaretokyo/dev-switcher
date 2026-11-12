@@ -37,10 +37,10 @@ struct SupabaseValidationCharacterizationTests {
         )
         #expect(
             ValidationError.duplicateManagedStackIdentity(
-                identity: try ManagedStackIdentity(type: .supabase, value: "bell"),
-                otherProject: "Bell"
+                identity: try ManagedStackIdentity(type: .supabase, value: "demo"),
+                otherProject: "Demo"
             ).description
-                == "Supabase の `project_id`「bell」は開発環境「Bell」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。"
+                == "Supabase の `project_id`「demo」は開発環境「Demo」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。"
         )
     }
 
@@ -150,7 +150,7 @@ struct SupabaseValidationCharacterizationTests {
     func unreadableConfigFileIsAnError() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let configURL = try writeSupabaseConfig(projectID: "bell", in: directory)
+        let configURL = try writeSupabaseConfig(projectID: "demo", in: directory)
         try Data([0xFF, 0xFE, 0xFD]).write(to: configURL)
         let project = makeProject(
             directory: directory,
@@ -173,7 +173,7 @@ struct SupabaseValidationCharacterizationTests {
     func missingProjectIDInConfigIsAnError() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let configURL = try writeSupabaseConfig(projectID: "bell", in: directory)
+        let configURL = try writeSupabaseConfig(projectID: "demo", in: directory)
         try Data("[db]\nport = 54322\n".utf8).write(to: configURL)
         let project = makeProject(
             directory: directory,

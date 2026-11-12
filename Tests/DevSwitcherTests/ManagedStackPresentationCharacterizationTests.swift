@@ -10,8 +10,8 @@ import Testing
 @MainActor
 struct ManagedStackPresentationCharacterizationTests {
     private func supabaseProject(
-        name: String = "Bell",
-        projectID: String = "bell",
+        name: String = "Demo",
+        projectID: String = "demo",
         directory: URL,
         arguments: [String] = ["start"]
     ) throws -> ProjectDefinition {
@@ -30,23 +30,23 @@ struct ManagedStackPresentationCharacterizationTests {
         action: ManagedStackConfirmationTarget.Action,
         withStopTargets: Bool
     ) throws -> AppState.ManagedStackConfirmationPresentation {
-        let directory = URL(fileURLWithPath: "/tmp/bell")
+        let directory = URL(fileURLWithPath: "/tmp/demo")
         let stopTargets = withStopTargets
             ? [
                 ManagedStackConfirmationTarget(
-                    stackID: nil, identity: try makeSupabaseIdentity("penta"), state: .running, action: .stop,
+                    stackID: nil, identity: try makeSupabaseIdentity("sample"), state: .running, action: .stop,
                     registration: nil
                 ),
             ]
             : []
         let serviceID = UUID()
         let plan = ManagedStackConfirmationPlan(
-            environmentName: "Bell",
+            environmentName: "Demo",
             entries: [
                 ManagedStackConfirmationTarget(
-                    stackID: serviceID, identity: try makeSupabaseIdentity("bell"), state: .running, action: action,
+                    stackID: serviceID, identity: try makeSupabaseIdentity("demo"), state: .running, action: action,
                     registration: .init(
-                        environmentName: "Bell", stackName: "Supabase", directory: directory
+                        environmentName: "Demo", stackName: "Supabase", directory: directory
                     )
                 ),
             ] + stopTargets,
@@ -98,27 +98,27 @@ struct ManagedStackPresentationCharacterizationTests {
 
     @Test("ManagedStackUIState.label は外部なら「外部・」を付け、管理下なら状態だけを出す")
     func uiStateLabel() throws {
-        let bell = try makeSupabaseIdentity("bell")
+        let demo = try makeSupabaseIdentity("demo")
         let external = AppState.ManagedStackUIState(
-            identity: bell, state: .running, relationship: nil, detail: nil
+            identity: demo, state: .running, relationship: nil, detail: nil
         )
         #expect(external.isExternal)
         #expect(external.label == "外部・稼働中")
 
         let externalDegraded = AppState.ManagedStackUIState(
-            identity: bell, state: .degraded, relationship: nil, detail: nil
+            identity: demo, state: .degraded, relationship: nil, detail: nil
         )
         #expect(externalDegraded.label == "外部・一部だけ稼働")
 
         let managed = AppState.ManagedStackUIState(
-            identity: bell, state: .running, relationship: .launched, detail: nil
+            identity: demo, state: .running, relationship: .launched, detail: nil
         )
         #expect(managed.isExternal == false)
         #expect(managed.label == "稼働中")
 
         // 停止中は外部扱いにしない。ID不明（解決失敗）も同様。
         let notRunning = AppState.ManagedStackUIState(
-            identity: bell, state: .notRunning, relationship: nil, detail: nil
+            identity: demo, state: .notRunning, relationship: nil, detail: nil
         )
         #expect(notRunning.label == "停止中")
         let unresolved = AppState.ManagedStackUIState(
@@ -172,7 +172,7 @@ struct ManagedStackPresentationCharacterizationTests {
 
         let serviceID = try #require(project.launchUnits.first?.id)
         let ui = try #require(state.state(of: serviceID).managedStack)
-        #expect(ui.identity?.value == "bell")
+        #expect(ui.identity?.value == "demo")
         #expect(ui.state == .unknown)
         #expect(ui.relationship == nil)
         #expect(ui.detail == "Supabaseの状態をまだ観測できていません。")
@@ -184,7 +184,7 @@ struct ManagedStackPresentationCharacterizationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
         try ProjectStore(directory: directory).save([project])
-        let world = FakeSupabaseWorld(stacks: ["bell": .degraded(reason: "DBコンテナが exited 状態です。")])
+        let world = FakeSupabaseWorld(stacks: ["demo": .degraded(reason: "DBコンテナが exited 状態です。")])
         let state = makeAppState(directory: directory, supabaseWorld: world)
         await state.bootstrap()
         let serviceID = try #require(project.launchUnits.first?.id)
@@ -236,7 +236,7 @@ struct ManagedStackPresentationCharacterizationTests {
         )
 
         var edited = project
-        edited.name = "Bell (edited)"
+        edited.name = "Demo (edited)"
         #expect(
             state.restartBlockedReason(for: service, in: edited)
                 == "対象のプロセス設定が現在の登録内容と一致しません。"
@@ -265,7 +265,7 @@ struct ManagedStackPresentationCharacterizationTests {
             }
             """
         try Data(json.utf8).write(to: RuntimeHintStore(directory: directory).fileURL)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let state = makeAppState(directory: directory, supabaseWorld: world)
 
         await state.bootstrap()
@@ -287,15 +287,15 @@ struct ManagedStackPresentationCharacterizationTests {
         let hint = try #require(
             makeManagedStackHint(
                 projectID: project.id, service: service,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .launched
             )
         )
         try RuntimeHintStore(directory: directory).save([], legacy: [], managed: [hint])
         // 保存後に config.toml の project_id だけが変わった。
-        try writeSupabaseConfig(projectID: "penta", in: directory)
+        try writeSupabaseConfig(projectID: "sample", in: directory)
         let state = makeAppState(
             directory: directory,
-            supabaseWorld: FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+            supabaseWorld: FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         )
 
         await state.bootstrap()
@@ -312,12 +312,12 @@ struct ManagedStackPresentationCharacterizationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let worker = makeWorkerProject(directory: directory)
         try ProjectStore(directory: directory).save([worker])
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let orphanService = makeAppStateSupabaseService(workingDirectory: directory)
         let orphan = try #require(
             makeManagedStackHint(
                 projectID: UUID(), service: orphanService,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .adopted
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .adopted
             )
         )
         try RuntimeHintStore(directory: directory).save([], legacy: [], managed: [orphan])
@@ -382,9 +382,9 @@ struct ManagedStackPresentationCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         try writeV6Hint(
-            project: project, service: service, stackID: "bell", relationship: "launched", directory: directory
+            project: project, service: service, stackID: "demo", relationship: "launched", directory: directory
         )
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let state = makeAppState(directory: directory, supabaseWorld: world)
 
         await state.bootstrap()
@@ -408,9 +408,9 @@ struct ManagedStackPresentationCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         try ProjectStore(directory: directory).save([project])
         try writeV6Hint(
-            project: project, service: service, stackID: "bell", relationship: "adopted", directory: directory
+            project: project, service: service, stackID: "demo", relationship: "adopted", directory: directory
         )
-        let world = FakeSupabaseWorld(stacks: ["bell": .degraded(reason: "DBコンテナがありません")])
+        let world = FakeSupabaseWorld(stacks: ["demo": .degraded(reason: "DBコンテナがありません")])
         let state = makeAppState(directory: directory, supabaseWorld: world)
 
         await state.bootstrap()

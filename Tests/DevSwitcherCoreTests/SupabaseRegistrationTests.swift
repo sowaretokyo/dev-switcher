@@ -22,7 +22,7 @@ struct SupabaseRegistrationTests {
     func rejectsTwoSupabaseServicesInOneProject() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
 
         var disabled = makeSupabaseService(name: "Supabase 2", workingDirectory: directory)
         disabled.enabledByDefault = false
@@ -42,47 +42,47 @@ struct SupabaseRegistrationTests {
     func rejectsDuplicateProjectIDAcrossProjects() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let pentaDirectory = root.appendingPathComponent("penta", isDirectory: true)
-        for directory in [bellDirectory, pentaDirectory] {
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let sampleDirectory = root.appendingPathComponent("sample", isDirectory: true)
+        for directory in [demoDirectory, sampleDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
             )
         }
 
-        let bell = try makeSupabaseProject(name: "Bell", projectID: "bell", directory: bellDirectory)
+        let demo = try makeSupabaseProject(name: "Demo", projectID: "demo", directory: demoDirectory)
         let duplicate = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "bell",
-            directory: pentaDirectory
+            name: "Sample",
+            projectID: "demo",
+            directory: sampleDirectory
         )
 
-        let duplicateErrors = ProjectValidator.validate(duplicate, existingProjects: [bell])
+        let duplicateErrors = ProjectValidator.validate(duplicate, existingProjects: [demo])
         #expect(duplicateErrors.contains(
             .duplicateManagedStackIdentity(
-                identity: try ManagedStackIdentity(type: .supabase, value: "bell"),
-                otherProject: "Bell"
+                identity: try ManagedStackIdentity(type: .supabase, value: "demo"),
+                otherProject: "Demo"
             )
         ))
 
         // 別IDなら保存できる。
-        try writeSupabaseConfig(projectID: "penta", in: pentaDirectory)
+        try writeSupabaseConfig(projectID: "sample", in: sampleDirectory)
         let distinct = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "penta",
-            directory: pentaDirectory
+            name: "Sample",
+            projectID: "sample",
+            directory: sampleDirectory
         )
-        #expect(ProjectValidator.validate(distinct, existingProjects: [bell]).isEmpty)
+        #expect(ProjectValidator.validate(distinct, existingProjects: [demo]).isEmpty)
     }
 
     @Test("project_id を解決できない開発環境があれば、一意性を確認できたことにしない")
     func rejectsSaveWhenProjectIDCannotBeResolved() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
         let brokenDirectory = root.appendingPathComponent("broken", isDirectory: true)
-        for directory in [bellDirectory, brokenDirectory] {
+        for directory in [demoDirectory, brokenDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
@@ -94,13 +94,13 @@ struct SupabaseRegistrationTests {
             directory: brokenDirectory,
             services: [makeSupabaseService(workingDirectory: brokenDirectory)]
         )
-        let bell = try makeSupabaseProject(
-            name: "Bell",
-            projectID: "bell",
-            directory: bellDirectory
+        let demo = try makeSupabaseProject(
+            name: "Demo",
+            projectID: "demo",
+            directory: demoDirectory
         )
 
-        let errors = ProjectValidator.validate(bell, existingProjects: [broken])
+        let errors = ProjectValidator.validate(demo, existingProjects: [broken])
 
         #expect(errors.contains { error in
             if case .managedStackIdentityUnresolved = error { return true }
@@ -112,25 +112,25 @@ struct SupabaseRegistrationTests {
     func ignoresStructuralIssuesOfExistingProjectsForCandidate() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let pentaDirectory = root.appendingPathComponent("penta", isDirectory: true)
-        for directory in [bellDirectory, pentaDirectory] {
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let sampleDirectory = root.appendingPathComponent("sample", isDirectory: true)
+        for directory in [demoDirectory, sampleDirectory] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
             )
         }
         // 既存側は config.toml があり、start サブコマンドだけが欠けている。
-        try writeSupabaseConfig(projectID: "bell", in: bellDirectory)
+        try writeSupabaseConfig(projectID: "demo", in: demoDirectory)
         let broken = makeProject(
-            name: "Bell",
-            directory: bellDirectory,
-            services: [makeSupabaseService(workingDirectory: bellDirectory, arguments: [])]
+            name: "Demo",
+            directory: demoDirectory,
+            services: [makeSupabaseService(workingDirectory: demoDirectory, arguments: [])]
         )
         let candidate = try makeSupabaseProject(
-            name: "Penta",
-            projectID: "penta",
-            directory: pentaDirectory
+            name: "Sample",
+            projectID: "sample",
+            directory: sampleDirectory
         )
 
         // 既存側の構造不備が実際に構造エラーとして現れる前提を固定する（空振り防止）。

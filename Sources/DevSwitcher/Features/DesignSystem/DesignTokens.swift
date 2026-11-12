@@ -27,11 +27,10 @@ enum Typography {
 
 /// 4pt グリッド（docs/SPEC.md 16.3）。グリッド外の値を新しく足さない。
 enum Spacing {
-    /// 記号と値の行間。`mock.html` が密な縦積みに使う 2〜5px に対応する、
-    /// グリッドの例外。ラベルと値のように「1つの塊」に見せたい箇所だけで使う。
+    /// 記号と値の行間。密な縦積みのためのグリッドの例外。ラベルと値のように「1つの塊」に見せたい箇所だけで使う。
     static let hairline: CGFloat = 2
     static let xs: CGFloat = 4
-    /// 記号と語の間（状態の点とラベルなど）。`mock.html:352,401` の `gap:6px`。
+    /// 記号と語の間（状態の点とラベルなど）。
     /// 4pt では点と語がくっつき、8pt では別の要素に見える。意図したグリッドの例外。
     static let tight: CGFloat = 6
     static let s: CGFloat = 8

@@ -13,7 +13,7 @@ struct SupabaseStackTests {
         let url = try writeSupabaseConfigText(
             """
             # project_id = "commented-out"
-            project_id = "bell" # 使うのはこの行だけ
+            project_id = "demo" # 使うのはこの行だけ
             [db]
             project_id = "other-section"
             """,
@@ -22,7 +22,7 @@ struct SupabaseStackTests {
 
         let projectID = try SupabaseConfigFile.projectID(inConfigDirectory: directory)
 
-        #expect(projectID.rawValue == "bell")
+        #expect(projectID.rawValue == "demo")
         #expect(url.lastPathComponent == "config.toml")
     }
 
@@ -40,17 +40,17 @@ struct SupabaseStackTests {
         "欠落・空・重複・解釈不能な project_id を具体的なエラーで拒否する",
         arguments: [
             // トップレベルに project_id が無い
-            "[db]\nproject_id = \"bell\"",
+            "[db]\nproject_id = \"demo\"",
             // 空文字
             "project_id = \"\"",
             // トップレベルで重複
-            "project_id = \"bell\"\nproject_id = \"penta\"",
+            "project_id = \"demo\"\nproject_id = \"sample\"",
             // 引用符が無い裸の値
-            "project_id = bell",
+            "project_id = demo",
             // 閉じていない
-            "project_id = \"bell",
+            "project_id = \"demo",
             // 複数行文字列
-            "project_id = \"\"\"bell\"\"\"",
+            "project_id = \"\"\"demo\"\"\"",
             // 正しいTOMLエスケープも、未対応の間は誤変換せず拒否する
             #"project_id = "\u0062ell""#,
             // 不正なTOMLエスケープ
@@ -77,15 +77,15 @@ struct SupabaseStackTests {
             try SupabaseConfigFile.projectID(inConfigDirectory: directory)
         }
         #expect(SupabaseProjectID(rawValue: "--all") == nil)
-        #expect(SupabaseProjectID(rawValue: "bell stack") == nil)
-        #expect(SupabaseProjectID(rawValue: "bell-2.stack_x")?.rawValue == "bell-2.stack_x")
+        #expect(SupabaseProjectID(rawValue: "demo stack") == nil)
+        #expect(SupabaseProjectID(rawValue: "demo-2.stack_x")?.rawValue == "demo-2.stack_x")
     }
 
     // MARK: - Docker inventory の分類
 
     private func record(
         name: String,
-        label: String? = "bell",
+        label: String? = "demo",
         status: String = "running",
         health: String? = "healthy"
     ) -> SupabaseContainerRecord {
@@ -104,7 +104,7 @@ struct SupabaseStackTests {
         guard case let .observed(result) = SupabaseDockerContract.classify(records) else {
             return nil
         }
-        return result[try #require(SupabaseProjectID(rawValue: "bell"))]
+        return result[try #require(SupabaseProjectID(rawValue: "demo"))]
     }
 
     @Test("コンテナ0件は停止中として扱い、volumeを数えない")
@@ -115,50 +115,50 @@ struct SupabaseStackTests {
         }
         #expect(result.isEmpty)
         #expect(ManagedStackSnapshot(type: .supabase, observations: []).state(
-            of: ManagedStackIdentity(try #require(SupabaseProjectID(rawValue: "bell")))
+            of: ManagedStackIdentity(try #require(SupabaseProjectID(rawValue: "demo")))
         ) == .notRunning)
     }
 
     @Test("DBコンテナがrunningかつhealthyならDB健全として扱う")
     func classifiesHealthyDatabase() throws {
         let result = try observation([
-            record(name: "supabase_db_bell"),
-            record(name: "supabase_kong_bell"),
+            record(name: "supabase_db_demo"),
+            record(name: "supabase_kong_demo"),
         ])
         #expect(result == .databaseHealthy)
     }
 
     @Test("DB欠損・停止・unhealthyはdegradedにする")
     func classifiesDegradedDatabase() throws {
-        #expect(isDegraded(try observation([record(name: "supabase_kong_bell")])))
+        #expect(isDegraded(try observation([record(name: "supabase_kong_demo")])))
         #expect(isDegraded(try observation([
-            record(name: "supabase_db_bell", status: "exited", health: nil),
+            record(name: "supabase_db_demo", status: "exited", health: nil),
         ])))
         #expect(isDegraded(try observation([
-            record(name: "supabase_db_bell", health: "unhealthy"),
+            record(name: "supabase_db_demo", health: "unhealthy"),
         ])))
     }
 
     @Test("health不明・DB候補重複・未対応stateは停止中へ倒さずunknownにする")
     func classifiesIndeterminateStates() throws {
-        #expect(isIndeterminate(try observation([record(name: "supabase_db_bell", health: nil)])))
+        #expect(isIndeterminate(try observation([record(name: "supabase_db_demo", health: nil)])))
         #expect(isIndeterminate(try observation([
-            record(name: "supabase_db_bell", health: "starting"),
+            record(name: "supabase_db_demo", health: "starting"),
         ])))
         #expect(isIndeterminate(try observation([
-            record(name: "supabase_db_bell"),
-            record(name: "supabase_db_bell_2"),
+            record(name: "supabase_db_demo"),
+            record(name: "supabase_db_demo_2"),
         ])))
         #expect(isIndeterminate(try observation([
-            record(name: "supabase_db_bell", status: "unknown-state", health: nil),
+            record(name: "supabase_db_demo", status: "unknown-state", health: nil),
         ])))
     }
 
     @Test("ラベル欠落や解釈不能なラベルは観測全体を失敗にする")
     func rejectsMissingOrUnparsableLabel() {
-        for label in [nil, "bell stack"] {
+        for label in [nil, "demo stack"] {
             let result = SupabaseDockerContract.classify([
-                record(name: "supabase_db_bell", label: label),
+                record(name: "supabase_db_demo", label: label),
             ])
             guard case .unobservable = result else {
                 Issue.record("ラベル「\(String(describing: label))」を停止中へ倒した")
@@ -180,17 +180,17 @@ struct SupabaseStackTests {
     @Test("docker出力からIDとラベル・状態を読み取る")
     func parsesDockerOutput() throws {
         let ids = try SupabaseDockerContract.containerIDs(
-            fromListOutput: "{\"ID\":\"abc\",\"Names\":\"supabase_db_bell\"}\n"
+            fromListOutput: "{\"ID\":\"abc\",\"Names\":\"supabase_db_demo\"}\n"
         )
         #expect(ids == ["abc"])
 
         let records = try SupabaseDockerContract.records(
             fromInspectOutput: """
-                {"Id":"abc","Name":"/supabase_db_bell","Config":{"Labels":{"com.supabase.cli.project":"bell"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}
+                {"Id":"abc","Name":"/supabase_db_demo","Config":{"Labels":{"com.supabase.cli.project":"demo"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}
                 """
         )
         #expect(records.count == 1)
-        #expect(records[0].projectLabel == "bell")
+        #expect(records[0].projectLabel == "demo")
         #expect(records[0].status == "running")
         #expect(records[0].health == "healthy")
     }
@@ -223,11 +223,11 @@ struct SupabaseStackTests {
     func requiresStatusSuccessForKnownStack() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let driver = makeDriver(world)
 
         let running = await driver.observe(known: [stack])
@@ -247,10 +247,10 @@ struct SupabaseStackTests {
     func unobservableDockerYieldsUnknown() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let world = FakeSupabaseWorld()
         await world.failInventory("docker daemon が応答しません。")
 
@@ -264,11 +264,11 @@ struct SupabaseStackTests {
     func stopRequiresNotRunningConfirmation() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let service = makeSupabaseService(workingDirectory: directory)
-        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let stack = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         await world.keepStackAfterStop(true)
         let driver = makeDriver(world)
 
@@ -279,7 +279,7 @@ struct SupabaseStackTests {
                 known: [stack]
             )
         }
-        #expect(await world.commandLines.contains { $0.contains("--project-id bell") })
+        #expect(await world.commandLines.contains { $0.contains("--project-id demo") })
     }
 
     @Test("inventory全体の観測失敗は、設定のないIDもunknownとして保持する")

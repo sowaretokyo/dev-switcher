@@ -12,7 +12,7 @@ struct ProjectSchemaMigrationTests {
           "projects" : [
             {
               "id" : "\(projectID.uuidString)",
-              "name" : "Bell",
+              "name" : "Demo",
               "color" : "blue",
               "directory" : "\(directory.absoluteString)",
               "services" : [
@@ -105,7 +105,7 @@ struct ProjectSchemaMigrationTests {
           "projects" : [
             {
               "id" : "\(projectID.uuidString)",
-              "name" : "Bell",
+              "name" : "Demo",
               "color" : "blue",
               "directory" : "\(directory.absoluteString)",
               "enabledNow" : { "\(nativeID.uuidString)" : false },
@@ -227,7 +227,7 @@ struct ProjectSchemaMigrationTests {
           "projects" : [
             {
               "id" : "\(UUID().uuidString)",
-              "name" : "Bell",
+              "name" : "Demo",
               "color" : "blue",
               "directory" : "\(directory.absoluteString)",
               "enabledNow" : { "not-a-uuid" : false },

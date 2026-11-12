@@ -61,7 +61,7 @@ struct ProjectFormView: View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             SectionLabel(L10n.text("開発環境"))
             FormRow(L10n.text("名前（必須）")) {
-                TextField("Bell", text: model.name)
+                TextField("shop-web", text: model.name)
                     .textFieldStyle(.roundedBorder)
             }
             FormRow(L10n.text("識別色")) {

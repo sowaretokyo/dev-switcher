@@ -215,7 +215,7 @@ struct ProjectValidationTests {
         let web = makeService(name: "Web", workingDirectory: directory)
         let worker = makeService(name: "Worker", kind: .worker, workingDirectory: directory)
         let project = ProjectDefinition(
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             workingDirectories: [
                 WorkingDirectoryDefinition(name: "App", directory: directory, serviceIDs: [web.id]),
@@ -238,7 +238,7 @@ struct ProjectValidationTests {
 
         let web = makeService(name: "Web", workingDirectory: otherDirectory)
         let project = ProjectDefinition(
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             workingDirectories: [
                 WorkingDirectoryDefinition(name: "Web", directory: directory, serviceIDs: [web.id]),
@@ -262,11 +262,11 @@ struct ProjectValidationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let existing = makeProject(name: "Bell", directory: directory)
-        let added = makeProject(name: "bell", directory: directory)
+        let existing = makeProject(name: "Demo", directory: directory)
+        let added = makeProject(name: "demo", directory: directory)
         #expect(
             ProjectValidator.structuralErrors(added, existingProjects: [existing])
-                .contains(.duplicateProjectName("Bell"))
+                .contains(.duplicateProjectName("Demo"))
         )
     }
 
@@ -376,7 +376,7 @@ struct ProjectValidationTests {
         )
 
         let configuration = try #require(service.derivedSupabaseConfiguration)
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
 
         #expect(configuration.configDirectory == directory.standardizedFileURL)
         #expect(configuration.statusCommand.executable == "pnpm")
@@ -389,7 +389,7 @@ struct ProjectValidationTests {
         #expect(configuration.stopCommand(projectID: projectID).arguments == [
             "exec", "supabase@latest", "stop",
             "--workdir", directory.standardizedFileURL.path,
-            "--project-id", "bell",
+            "--project-id", "demo",
         ])
     }
 
@@ -405,7 +405,7 @@ struct ProjectValidationTests {
             workingDirectory: directory
         )
         let configuration = try #require(service.derivedSupabaseConfiguration)
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
 
         for command in [configuration.statusCommand, configuration.stopCommand(projectID: projectID)] {
             #expect(!command.arguments.contains("--all"))
@@ -452,7 +452,7 @@ struct ProjectValidationTests {
         )
 
         let configuration = try #require(service.derivedSupabaseConfiguration)
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
 
         // `--workdir`があれば、そこが`project_id`を読む設定ディレクトリになる。
         #expect(configuration.configDirectory.path == target.standardizedFileURL.path)
@@ -462,7 +462,7 @@ struct ProjectValidationTests {
         ])
         #expect(configuration.stopCommand(projectID: projectID).arguments == [
             "exec", "supabase@latest", "stop", "--workdir", configuration.configDirectory.path,
-            "--project-id", "bell",
+            "--project-id", "demo",
         ])
     }
 

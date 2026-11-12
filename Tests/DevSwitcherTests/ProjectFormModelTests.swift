@@ -44,7 +44,7 @@ struct ProjectFormModelTests {
         enabledNow: [UUID: Bool] = [:]
     ) -> ProjectDefinition {
         ProjectDefinition(
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             directory: directory,
             services: services,
@@ -61,7 +61,7 @@ struct ProjectFormModelTests {
             withIntermediateDirectories: true
         )
         // `project_id`は設定ファイルから解決する。保存前に用意しておく。
-        try writeSupabaseConfig(projectID: "bell", in: supabaseDirectory)
+        try writeSupabaseConfig(projectID: "demo", in: supabaseDirectory)
 
         let supabase = makeService(
             name: "Supabase",
@@ -220,7 +220,7 @@ struct ProjectFormModelTests {
         #expect(model.services.map(\.name) == ["Web", "Native", "Worker"])
         #expect(model.hasCrossDirectoryServiceOrder)
 
-        model.name = "Bell 2"
+        model.name = "Demo 2"
         let rebuilt = try model.build()
         #expect(rebuilt.services.map(\.id) == [web.id, native.id, worker.id])
         #expect(rebuilt.startupOrder.map(\.name) == ["Web", "Native", "Worker"])
@@ -278,7 +278,7 @@ struct ProjectFormModelTests {
     func servicesCanBeAddedRemovedAndReordered() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
 
         let project = makeProject(
             with: [
@@ -331,7 +331,7 @@ struct ProjectFormModelTests {
         }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].name = "API"
         model.workingDirectories[0].directory = apiDirectory
         model.workingDirectories[0].services[0].name = "API Server"
@@ -398,7 +398,7 @@ struct ProjectFormModelTests {
 
         let model = ProjectFormModel(project: project)
         #expect(model.hasExplicitStopOrder)
-        model.name = "Bell 2"
+        model.name = "Demo 2"
 
         let rebuilt = try model.build()
         #expect(rebuilt.services[0].stop == stop)
@@ -446,7 +446,7 @@ struct ProjectFormModelTests {
     func stopOrderAndEnabledNowFollowServiceChanges() throws {
         let directory = try makeTemporaryTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
 
         let first = makeService(
             name: "Supabase",
@@ -564,7 +564,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
@@ -600,7 +600,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Inngest"
@@ -660,7 +660,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Web"
@@ -688,7 +688,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.services[0].name = "Supabase"
@@ -719,7 +719,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         // 1件目: 名前あり、実行ファイルなし、ポートが数値でない。
@@ -775,7 +775,7 @@ struct ProjectFormModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let model = ProjectFormModel()
-        model.name = "Bell"
+        model.name = "Demo"
         model.workingDirectories[0].directory = directory
         model.workingDirectories[0].name = "App"
         model.removeService(model.services[0].id)

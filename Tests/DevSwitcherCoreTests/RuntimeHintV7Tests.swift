@@ -14,8 +14,8 @@ struct RuntimeHintV7Tests {
         {
           "executable": "supabase",
           "startArguments": ["start"],
-          "startWorkingDirectory": "file:///tmp/dev-switcher-v7/bell/",
-          "configDirectory": "file:///tmp/dev-switcher-v7/bell/"
+          "startWorkingDirectory": "file:///tmp/dev-switcher-v7/demo/",
+          "configDirectory": "file:///tmp/dev-switcher-v7/demo/"
         }
         """
 
@@ -32,14 +32,14 @@ struct RuntimeHintV7Tests {
               "stackID": "\(stackID)",
               "stackName": "Supabase",
               "type": "supabase",
-              "identity": { "type": "supabase", "value": "bell" },
+              "identity": { "type": "supabase", "value": "demo" },
               "fingerprint": { "type": "supabase", "supabase": \(supabaseFingerprintJSON) },
               "relationship": "launched"
             },
             {
               "projectID": "\(otherEnvironmentID)",
               "stackID": "\(otherStackID)",
-              "stackName": "Penta DB",
+              "stackName": "Sample DB",
               "type": "supabase",
               "identity": null,
               "fingerprint": null,
@@ -89,8 +89,8 @@ struct RuntimeHintV7Tests {
                     "projectID": "\(environmentID)",
                     "serviceID": "\(stackID)",
                     "serviceName": "Supabase",
-                    "supabaseProjectID": "bell",
-                    "configDirectory": "file:///tmp/dev-switcher-v7/bell/",
+                    "supabaseProjectID": "demo",
+                    "configDirectory": "file:///tmp/dev-switcher-v7/demo/",
                     "fingerprint": \(supabaseFingerprintJSON),
                     "relationship": "adopted"
                   }]
@@ -105,13 +105,13 @@ struct RuntimeHintV7Tests {
         #expect(hint.stackID == UUID(uuidString: stackID))
         #expect(hint.stackName == "Supabase")
         #expect(hint.type == .supabase)
-        #expect(hint.identity == (try ManagedStackIdentity(type: .supabase, value: "bell")))
+        #expect(hint.identity == (try ManagedStackIdentity(type: .supabase, value: "demo")))
         #expect(hint.relationship == .adopted)
         let fingerprint = try supabaseFingerprint(hint)
         #expect(fingerprint.executable == "supabase")
         #expect(fingerprint.startArguments == ["start"])
-        #expect(fingerprint.startWorkingDirectory.path == "/tmp/dev-switcher-v7/bell")
-        #expect(fingerprint.configDirectory.path == "/tmp/dev-switcher-v7/bell")
+        #expect(fingerprint.startWorkingDirectory.path == "/tmp/dev-switcher-v7/demo")
+        #expect(fingerprint.configDirectory.path == "/tmp/dev-switcher-v7/demo")
     }
 
     @Test("v6 で設定ディレクトリと構成同一性が食い違う手掛かりは未検証にし、同じファイルの他の手掛かりは読める")
@@ -129,7 +129,7 @@ struct RuntimeHintV7Tests {
                       "projectID": "\(environmentID)",
                       "serviceID": "\(stackID)",
                       "serviceName": "Supabase",
-                      "supabaseProjectID": "bell",
+                      "supabaseProjectID": "demo",
                       "configDirectory": "file:///tmp/dev-switcher-v7/elsewhere/",
                       "fingerprint": \(supabaseFingerprintJSON),
                       "relationship": "launched"
@@ -137,9 +137,9 @@ struct RuntimeHintV7Tests {
                     {
                       "projectID": "\(otherEnvironmentID)",
                       "serviceID": "\(otherStackID)",
-                      "serviceName": "Penta DB",
-                      "supabaseProjectID": "penta",
-                      "configDirectory": "file:///tmp/dev-switcher-v7/bell/",
+                      "serviceName": "Sample DB",
+                      "supabaseProjectID": "sample",
+                      "configDirectory": "file:///tmp/dev-switcher-v7/demo/",
                       "fingerprint": \(supabaseFingerprintJSON),
                       "relationship": "launched"
                     }
@@ -160,7 +160,7 @@ struct RuntimeHintV7Tests {
         #expect(mismatched.fingerprint == nil)
         #expect(mismatched.relationship == nil)
         let intact = try #require(managed.first { $0.stackID == UUID(uuidString: otherStackID) })
-        #expect(intact.identity?.value == "penta")
+        #expect(intact.identity?.value == "sample")
         #expect(intact.relationship == .launched)
         #expect(intact.fingerprint != nil)
     }
@@ -173,8 +173,8 @@ struct RuntimeHintV7Tests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let values: [String: String] = [
-            "supabaseProjectID": "\"bell\"",
-            "configDirectory": "\"file:///tmp/dev-switcher-v7/bell/\"",
+            "supabaseProjectID": "\"demo\"",
+            "configDirectory": "\"file:///tmp/dev-switcher-v7/demo/\"",
             "fingerprint": supabaseFingerprintJSON,
             "relationship": "\"launched\"",
         ]
@@ -200,9 +200,9 @@ struct RuntimeHintV7Tests {
                     {
                       "projectID": "\(otherEnvironmentID)",
                       "serviceID": "\(otherStackID)",
-                      "serviceName": "Penta DB",
-                      "supabaseProjectID": "penta",
-                      "configDirectory": "file:///tmp/dev-switcher-v7/bell/",
+                      "serviceName": "Sample DB",
+                      "supabaseProjectID": "sample",
+                      "configDirectory": "file:///tmp/dev-switcher-v7/demo/",
                       "fingerprint": \(supabaseFingerprintJSON),
                       "relationship": "launched"
                     }
@@ -223,7 +223,7 @@ struct RuntimeHintV7Tests {
         #expect(partial.fingerprint == nil)
         #expect(partial.relationship == nil)
         let intact = try #require(managed.first { $0.stackID == UUID(uuidString: otherStackID) })
-        #expect(intact.identity?.value == "penta")
+        #expect(intact.identity?.value == "sample")
         #expect(intact.relationship == .launched)
         #expect(intact.fingerprint != nil)
     }
@@ -272,9 +272,9 @@ struct RuntimeHintV7Tests {
         let loaded = try store.load()
         #expect(loaded.managed.count == 2)
         let launched = try #require(loaded.managed.first)
-        #expect(launched.identity?.value == "bell")
+        #expect(launched.identity?.value == "demo")
         #expect(launched.relationship == .launched)
-        #expect(try supabaseFingerprint(launched).configDirectory.path == "/tmp/dev-switcher-v7/bell")
+        #expect(try supabaseFingerprint(launched).configDirectory.path == "/tmp/dev-switcher-v7/demo")
         let unverified = try #require(loaded.managed.last)
         #expect(unverified.identity == nil)
         #expect(unverified.fingerprint == nil)
@@ -294,7 +294,7 @@ struct RuntimeHintV7Tests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = makeSupabaseService(workingDirectory: directory)
-        let supabaseProjectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let supabaseProjectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let hint = try makeManagedStackHint(
                 projectID: UUID(),
                 service: service,
@@ -365,7 +365,7 @@ struct RuntimeHintV7Tests {
     @Test("identity や fingerprint の種類が type と食い違えば読み込みを失敗させる")
     func v7RejectsTypeMismatch() throws {
         let mismatches: [(key: String, value: Any)] = [
-            ("identity", ["type": "dockerCompose", "value": "bell"]),
+            ("identity", ["type": "dockerCompose", "value": "demo"]),
             ("fingerprint", ["type": "dockerCompose", "supabase": try jsonObject(supabaseFingerprintJSON)]),
             ("type", "dockerCompose"),
         ]
@@ -389,7 +389,7 @@ struct RuntimeHintV7Tests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = makeSupabaseService(workingDirectory: directory)
-        let supabaseProjectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let supabaseProjectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let managed = try makeManagedStackHint(
                 projectID: UUID(),
                 service: service,

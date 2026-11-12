@@ -10,7 +10,7 @@ struct ProjectStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // Supabaseは`project_id`を設定ファイルから解決する。保存前に用意する。
-        try writeSupabaseConfig(projectID: "bell", in: directory)
+        try writeSupabaseConfig(projectID: "demo", in: directory)
         let store = ProjectStore(directory: directory.appendingPathComponent("store", isDirectory: true))
         let service = makeService(
             name: "Supabase",
@@ -99,7 +99,7 @@ struct ProjectStoreTests {
               "color" : "blue",
               "directory" : "file://\(directory.path)",
               "id" : "\(UUID().uuidString)",
-              "name" : "Bell",
+              "name" : "Demo",
               "services" : [
                 {
                   "enabledByDefault" : true,
@@ -138,14 +138,14 @@ struct ProjectStoreTests {
         let sharedID = UUID()
         let first = ProjectDefinition(
             id: sharedID,
-            name: "Bell",
+            name: "Demo",
             color: .blue,
             directory: directory,
             services: [makeService(workingDirectory: directory)]
         )
         let second = ProjectDefinition(
             id: sharedID,
-            name: "Penta",
+            name: "Sample",
             color: .green,
             directory: directory,
             services: [makeService(workingDirectory: directory)]
@@ -192,7 +192,7 @@ struct ProjectStoreTests {
             """
         }
         let json = """
-        { "projects" : [ \(projectJSON(name: "Bell")), \(projectJSON(name: "Penta")) ], "schemaVersion" : 1 }
+        { "projects" : [ \(projectJSON(name: "Demo")), \(projectJSON(name: "Sample")) ], "schemaVersion" : 1 }
         """
         try Data(json.utf8).write(to: store.fileURL)
 

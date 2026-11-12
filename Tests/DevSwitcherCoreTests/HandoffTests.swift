@@ -653,7 +653,7 @@ struct HandoffTests {
             arguments: ["start"],
             workingDirectory: directory
         )
-        let projectID = try #require(SupabaseProjectID(rawValue: "bell"))
+        let projectID = try #require(SupabaseProjectID(rawValue: "demo"))
         let environmentID = UUID()
         let hint = try makeManagedStackHint(
                 projectID: environmentID,
@@ -694,7 +694,7 @@ struct HandoffTests {
         #expect(!hint.matches(try resolved(changedService, projectID)))
         #expect(hint.matches(try resolved(service, projectID)))
         // `project_id`が変わっていたら再検証しない。
-        let otherID = try #require(SupabaseProjectID(rawValue: "penta"))
+        let otherID = try #require(SupabaseProjectID(rawValue: "sample"))
         #expect(!hint.matches(try resolved(service, otherID)))
         #expect(!hint.matches(try resolved(service, otherID)))
     }

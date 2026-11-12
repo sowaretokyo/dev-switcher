@@ -24,7 +24,7 @@ struct RootView: View {
             }
         }
         .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
-        // ツールバーの先頭は稼働中の開発環境そのものにする（`mock.html` の `toolbar()`）。
+        // ツールバーの先頭は稼働中の開発環境そのものにする。
         // アプリ名はいま見ている画面から自明で、識別情報の前に置くと
         // 「起動中の開発環境はありません Dev Switcher」と読むことになる。
         // ウィンドウ自体の題名は `WindowGroup` に残るので、ウィンドウメニューと

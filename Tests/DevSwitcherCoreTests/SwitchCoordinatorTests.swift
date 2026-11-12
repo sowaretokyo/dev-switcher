@@ -263,7 +263,7 @@ struct SwitchCoordinatorTests {
             arguments: ["-l", String(sourcePort)],
             workingDirectory: directory
         )
-        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let source = makeProject(name: "Demo", directory: directory, services: [sourceService])
 
         let targetService = makeOrderedService(
             name: "Target",
@@ -271,7 +271,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let target = makeProject(name: "Penta", directory: directory, services: [targetService])
+        let target = makeProject(name: "Sample", directory: directory, services: [targetService])
 
         let (registry, coordinator) = makeStack(logDirectory: directory, world: world)
 
@@ -557,7 +557,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let source = makeProject(name: "Demo", directory: directory, services: [sourceService])
         let targetService = makeOrderedService(
             name: "Target",
             ports: [PortSpec(port: 3301, isPrimary: true)],
@@ -565,7 +565,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let target = makeProject(name: "Penta", directory: directory, services: [targetService])
+        let target = makeProject(name: "Sample", directory: directory, services: [targetService])
 
         let world = FakePortWorld()
         let gate = TestGate()
@@ -668,7 +668,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let source = makeProject(name: "Demo", directory: directory, services: [sourceService])
         let targetService = makeOrderedService(
             name: "Target",
             ports: [PortSpec(port: 3501, isPrimary: true)],
@@ -676,7 +676,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let target = makeProject(name: "Penta", directory: directory, services: [targetService])
+        let target = makeProject(name: "Sample", directory: directory, services: [targetService])
 
         let world = FakePortWorld()
         // 切替元が 3500 を listen していたことにする。解放確認の対象は実測から決まる。
@@ -776,10 +776,10 @@ struct SwitchCoordinatorTests {
         let startLog = directory.appendingPathComponent("start.log")
         let stopLog = directory.appendingPathComponent("stop.log")
         let sourceService = makeOrderedService(name: "Source", workingDirectory: directory, startLog: startLog, stopLog: stopLog)
-        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let source = makeProject(name: "Demo", directory: directory, services: [sourceService])
         let process = makeService(name: "Custom", kind: .other, ports: [], executable: "/bin/sh", arguments: ["-c", "while [ ! -f finished ]; do sleep 0.02; done"], workingDirectory: directory,
             stop: CommandSpec(executable: "/usr/bin/touch", arguments: ["finished"], workingDirectory: directory))
-        let target = makeProject(name: "Penta", directory: directory, services: [process])
+        let target = makeProject(name: "Sample", directory: directory, services: [process])
         let (registry, coordinator) = makeStack(logDirectory: directory)
         _ = try await coordinator.start(source)
         _ = try await coordinator.switchProject(from: source, to: target)
@@ -1114,7 +1114,7 @@ struct SwitchCoordinatorTests {
                 failurePolicy: .block
             )
             let project = makeProject(
-                name: "Bell\(attempt)",
+                name: "Demo\(attempt)",
                 directory: directory,
                 services: [broken]
             )
@@ -1156,7 +1156,7 @@ struct SwitchCoordinatorTests {
                 failurePolicy: .continue
             )
             let project = makeProject(
-                name: "Bell\(attempt)",
+                name: "Demo\(attempt)",
                 directory: directory,
                 services: [first, second]
             )
@@ -1258,7 +1258,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let source = makeProject(name: "Bell", directory: directory, services: [sourceService])
+        let source = makeProject(name: "Demo", directory: directory, services: [sourceService])
         let targetService = makeOrderedService(
             name: "Target",
             ports: [PortSpec(port: 3701, isPrimary: true)],
@@ -1266,7 +1266,7 @@ struct SwitchCoordinatorTests {
             startLog: startLog,
             stopLog: stopLog
         )
-        let target = makeProject(name: "Penta", directory: directory, services: [targetService])
+        let target = makeProject(name: "Sample", directory: directory, services: [targetService])
 
         let (registry, coordinator) = makeStack(
             logDirectory: directory,

@@ -542,7 +542,7 @@ Compose は 6.7 の規則で基本ファイルと override を解決し、1ス�
 | 停止中 | systemGray |
 | 選択・遷移中 | accentColor |
 
-状態は塗った丸、対象外は色を持たない中空の丸、開発環境の識別は頭文字と利用者が選ぶ 8 色の角丸四角で描き、状態色と形で分離する。文字色は `labelColor` / `secondaryLabelColor` / `tertiaryLabelColor` の 3 段階とする。数字が並ぶ箇所は等幅数字にし、ポート・PID・ログ本文は SF Mono を使う。余白は 4pt グリッド、角丸は 10 / 7 / 6（ウィンドウ / カード / 行・ボタン）とする。アニメーションは遷移中を示す用途に限り（150〜200ms の ease-out）、視差効果を減らす設定ではスピナーだけを低速で残す。詳細な数値は `Sources/DevSwitcher/Features/DesignSystem/DesignTokens.swift` を正とし、`mock.html` と `DevSwitcher.tsx` は見た目の参考資料とする。
+状態は塗った丸、対象外は色を持たない中空の丸、開発環境の識別は頭文字と利用者が選ぶ 8 色の角丸四角で描き、状態色と形で分離する。文字色は `labelColor` / `secondaryLabelColor` / `tertiaryLabelColor` の 3 段階とする。数字が並ぶ箇所は等幅数字にし、ポート・PID・ログ本文は SF Mono を使う。余白は 4pt グリッド、角丸は 10 / 7 / 6（ウィンドウ / カード / 行・ボタン）とする。アニメーションは遷移中を示す用途に限り（150〜200ms の ease-out）、視差効果を減らす設定ではスピナーだけを低速で残す。詳細な数値は `Sources/DevSwitcher/Features/DesignSystem/DesignTokens.swift` を正とする。
 
 ### 16.4 日本語・英語
 

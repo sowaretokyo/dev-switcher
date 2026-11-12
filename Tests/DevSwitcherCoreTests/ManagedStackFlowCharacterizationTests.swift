@@ -42,8 +42,8 @@ struct ManagedStackFlowCharacterizationTests {
     }
 
     private func supabaseProject(
-        name: String = "Bell",
-        projectID: String = "bell",
+        name: String = "Demo",
+        projectID: String = "demo",
         directory: URL
     ) throws -> ProjectDefinition {
         try writeSupabaseConfig(projectID: projectID, in: directory)
@@ -71,7 +71,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = makeProject(
-            name: "Bell",
+            name: "Demo",
             directory: directory,
             services: [makeSupabaseService(workingDirectory: directory, arguments: ["status"])]
         )
@@ -86,7 +86,7 @@ struct ManagedStackFlowCharacterizationTests {
             thrown.reason
                 == .unsupportedConfiguration(
                     "Supabaseの`project_id`を確認できません。\n"
-                        + "「Bell」の Supabase: 起動コマンドに `start` サブコマンドがありません。"
+                        + "「Demo」の Supabase: 起動コマンドに `start` サブコマンドがありません。"
                 )
         )
     }
@@ -96,7 +96,7 @@ struct ManagedStackFlowCharacterizationTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = makeProject(
-            name: "Bell",
+            name: "Demo",
             directory: directory,
             services: [makeSupabaseService(workingDirectory: directory)]
         )
@@ -111,7 +111,7 @@ struct ManagedStackFlowCharacterizationTests {
             thrown.reason
                 == .unsupportedConfiguration(
                     "Supabaseの`project_id`を確認できません。\n"
-                        + "「Bell」の Supabase: Supabaseの設定ファイルがありません（\(configPath)）。"
+                        + "「Demo」の Supabase: Supabaseの設定ファイルがありません（\(configPath)）。"
                 )
         )
     }
@@ -120,33 +120,33 @@ struct ManagedStackFlowCharacterizationTests {
     func multipleResolutionErrorsAreJoinedByNewline() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        let pentaDirectory = root.appendingPathComponent("penta", isDirectory: true)
-        for directory in [bellDirectory, pentaDirectory] {
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        let sampleDirectory = root.appendingPathComponent("sample", isDirectory: true)
+        for directory in [demoDirectory, sampleDirectory] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        let bell = makeProject(
-            name: "Bell",
-            directory: bellDirectory,
-            services: [makeSupabaseService(workingDirectory: bellDirectory, arguments: ["status"])]
+        let demo = makeProject(
+            name: "Demo",
+            directory: demoDirectory,
+            services: [makeSupabaseService(workingDirectory: demoDirectory, arguments: ["status"])]
         )
-        let penta = makeProject(
-            name: "Penta",
-            directory: pentaDirectory,
-            services: [makeSupabaseService(workingDirectory: pentaDirectory, arguments: ["start", "--all"])]
+        let sample = makeProject(
+            name: "Sample",
+            directory: sampleDirectory,
+            services: [makeSupabaseService(workingDirectory: sampleDirectory, arguments: ["start", "--all"])]
         )
         let (_, coordinator, _) = makeStack(world: FakeSupabaseWorld(), logDirectory: root)
 
         let thrown = try await failure {
-            try await coordinator.start(bell, registeredProjects: [bell, penta])
+            try await coordinator.start(demo, registeredProjects: [demo, sample])
         }
 
         #expect(
             thrown.reason
                 == .unsupportedConfiguration(
                     "Supabaseの`project_id`を確認できません。\n"
-                        + "「Bell」の Supabase: 起動コマンドに `start` サブコマンドがありません。\n"
-                        + "「Penta」の Supabase: 起動コマンドに `--all` と `--no-backup` は指定できません。"
+                        + "「Demo」の Supabase: 起動コマンドに `start` サブコマンドがありません。\n"
+                        + "「Sample」の Supabase: 起動コマンドに `--all` と `--no-backup` は指定できません。"
                 )
         )
     }
@@ -227,7 +227,7 @@ struct ManagedStackFlowCharacterizationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
         let service = try #require(project.launchUnits.first)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (_, coordinator, _) = makeStack(world: world, logDirectory: directory)
         let hint = try decodeUnverifiedManagedHint(project: project, service: service)
 
@@ -252,11 +252,11 @@ struct ManagedStackFlowCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .launched
             )
         // 保存後に config.toml を失った状態。
         try FileManager.default.removeItem(at: directory.appendingPathComponent("supabase"))
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (_, coordinator, _) = makeStack(world: world, logDirectory: directory)
 
         let outcome = await coordinator.restoreManagedStack(
@@ -280,11 +280,11 @@ struct ManagedStackFlowCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .adopted
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .adopted
             )
         // サービス定義は同じまま、config.toml の project_id だけが変わった状態。
-        try writeSupabaseConfig(projectID: "penta", in: directory)
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        try writeSupabaseConfig(projectID: "sample", in: directory)
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (_, coordinator, _) = makeStack(world: world, logDirectory: directory)
 
         let outcome = await coordinator.restoreManagedStack(
@@ -311,9 +311,9 @@ struct ManagedStackFlowCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .launched
             )
-        let world = FakeSupabaseWorld(stacks: ["bell": .degraded(reason: "DBコンテナがありません")])
+        let world = FakeSupabaseWorld(stacks: ["demo": .degraded(reason: "DBコンテナがありません")])
         let (registry, coordinator, _) = makeStack(world: world, logDirectory: directory)
 
         let outcome = await coordinator.restoreManagedStack(
@@ -334,9 +334,9 @@ struct ManagedStackFlowCharacterizationTests {
         let service = try #require(project.launchUnits.first)
         let hint = try makeManagedStackHint(
                 projectID: project.id, service: service,
-                supabaseProjectID: try makeSupabaseProjectID("bell"), relationship: .launched
+                supabaseProjectID: try makeSupabaseProjectID("demo"), relationship: .launched
             )
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (registry, coordinator, _) = makeStack(world: world, logDirectory: directory)
 
         let restored = await coordinator.restoreManagedStack(
@@ -377,11 +377,11 @@ struct ManagedStackFlowCharacterizationTests {
     func approvedStopsEmitProgressInOrder() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let bellDirectory = root.appendingPathComponent("bell", isDirectory: true)
-        try FileManager.default.createDirectory(at: bellDirectory, withIntermediateDirectories: true)
-        let project = try supabaseProject(directory: bellDirectory)
+        let demoDirectory = root.appendingPathComponent("demo", isDirectory: true)
+        try FileManager.default.createDirectory(at: demoDirectory, withIntermediateDirectories: true)
+        let project = try supabaseProject(directory: demoDirectory)
         let world = FakeSupabaseWorld(stacks: [
-            "penta": .databaseHealthy,
+            "sample": .databaseHealthy,
             "legacy": .degraded(reason: "DBコンテナが exited 状態です。"),
         ])
         let (_, coordinator, _) = makeStack(world: world, logDirectory: root)
@@ -394,7 +394,7 @@ struct ManagedStackFlowCharacterizationTests {
             return
         }
         #expect(plan.primaryEntry.action == .start)
-        #expect(plan.stopEntries.map(\.identity.value) == ["legacy", "penta"])
+        #expect(plan.stopEntries.map(\.identity.value) == ["legacy", "sample"])
 
         let recorder = ProgressRecorder()
         _ = try await coordinator.start(
@@ -411,16 +411,16 @@ struct ManagedStackFlowCharacterizationTests {
         #expect(
             stopping == [
                 .stopping(service: "Supabase legacy", index: 1, total: 2),
-                .stopping(service: "Supabase penta", index: 2, total: 2),
+                .stopping(service: "Supabase sample", index: 2, total: 2),
             ]
         )
         #expect(
             stopping.map(\.label) == [
                 "Supabase legacy を停止（1/2）",
-                "Supabase penta を停止（2/2）",
+                "Supabase sample を停止（2/2）",
             ]
         )
-        #expect(await world.runningProjectIDs == ["bell"])
+        #expect(await world.runningProjectIDs == ["demo"])
     }
 
     // MARK: - (g) 観測 detail
@@ -431,21 +431,21 @@ struct ManagedStackFlowCharacterizationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
         let service = try #require(project.launchUnits.first)
-        let bell = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let demo = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         await world.failStatus(.exit(code: 1))
         let (_, _, controller) = makeStack(world: world, logDirectory: directory)
 
-        let snapshot = await controller.observe(known: [bell])
+        let snapshot = await controller.observe(known: [demo])
 
-        let observation = snapshot.observation(of: try makeSupabaseIdentity("bell"))
+        let observation = snapshot.observation(of: try makeSupabaseIdentity("demo"))
         #expect(observation.state == .unknown)
         #expect(
             observation.detail
                 == "DBコンテナはhealthyですが `supabase status` が失敗しました（終了コード 1）。\nfailed"
         )
         #expect(snapshot.failureDetails == [
-            "bell: DBコンテナはhealthyですが `supabase status` が失敗しました（終了コード 1）。\nfailed",
+            "demo: DBコンテナはhealthyですが `supabase status` が失敗しました（終了コード 1）。\nfailed",
         ])
     }
 
@@ -455,17 +455,17 @@ struct ManagedStackFlowCharacterizationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let project = try supabaseProject(directory: directory)
         let service = try #require(project.launchUnits.first)
-        let bell = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("bell"))
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let demo = try makeResolvedSupabaseStack(service, projectID: makeSupabaseProjectID("demo"))
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         await world.failStatus(.unavailable("supabase が PATH にありません。"))
         let (_, _, controller) = makeStack(world: world, logDirectory: directory)
 
-        let snapshot = await controller.observe(known: [bell])
+        let snapshot = await controller.observe(known: [demo])
 
         let workdir = directory.standardizedFileURL.path
-        #expect(snapshot.state(of: try makeSupabaseIdentity("bell")) == .unknown)
+        #expect(snapshot.state(of: try makeSupabaseIdentity("demo")) == .unknown)
         #expect(
-            snapshot.observation(of: try makeSupabaseIdentity("bell")).detail
+            snapshot.observation(of: try makeSupabaseIdentity("demo")).detail
                 == "`supabase status` を実行できません。\n"
                 + "コマンド「supabase status --workdir \(workdir) --output json」を実行できません。\n"
                 + "supabase が PATH にありません。"
@@ -476,13 +476,13 @@ struct ManagedStackFlowCharacterizationTests {
     func unknownConfigurationStackIsRunningByInventoryOnly() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let world = FakeSupabaseWorld(stacks: ["bell": .databaseHealthy])
+        let world = FakeSupabaseWorld(stacks: ["demo": .databaseHealthy])
         let (_, _, controller) = makeStack(world: world, logDirectory: directory)
 
         let snapshot = await controller.observe(known: [])
 
-        #expect(snapshot.state(of: try makeSupabaseIdentity("bell")) == .running)
-        #expect(snapshot.observation(of: try makeSupabaseIdentity("bell")).detail == nil)
+        #expect(snapshot.state(of: try makeSupabaseIdentity("demo")) == .running)
+        #expect(snapshot.observation(of: try makeSupabaseIdentity("demo")).detail == nil)
         #expect(await world.commandLines.isEmpty)
     }
 }
