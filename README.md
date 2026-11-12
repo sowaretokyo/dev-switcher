@@ -10,8 +10,6 @@
 
 **👉 [DevSwitcher.dmg をダウンロード](https://github.com/sowaretokyo/dev-switcher/releases/latest/download/DevSwitcher.dmg)**（macOS 15+ / Universal）
 
-公開配布の準備中です。このリンクは、固定名の DMG を含む公開リリースから利用できます。
-
 DMG を開き、`DevSwitcher.app` を Applications へドラッグしてください。更新時は Dev Switcher を終了してから置き換えます。登録済みの設定は保持されます。
 
 Sparkle 対応版では、新版を自動確認して通知します。「Dev Switcher」メニューの「アップデートを確認…」から手動確認もできます。ダウンロード・インストールは利用者が実行します。Sparkle 未搭載の旧版からは、最初の一度だけ DMG で入れ替えてください。
