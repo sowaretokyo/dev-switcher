@@ -430,17 +430,18 @@ struct ProcessGroupIdentificationTests {
     /// A（SIGTERM で終了・記録済み）と B（SIGTERM を無視・後発）を持つグループを作る。
     private func spawnGroupWithLateSurvivor(
         in directory: URL
-    ) throws -> (spawned: SpawnedProcess, readyA: URL, readyB: URL) {
+    ) throws -> (spawned: SpawnedProcess, readyA: URL, readyB: URL, releaseB: URL) {
         let script = directory.appendingPathComponent("group.sh")
         let readyA = directory.appendingPathComponent("a.ready")
         let readyB = directory.appendingPathComponent("b.ready")
+        let releaseB = directory.appendingPathComponent("b.release")
         // 準備完了の合図は、それぞれのプロセス自身に書かせる。
         // 親が代わりに書くと、B が trap を仕掛ける前に SIGTERM が届いて素直に終了し、
         // 「SIGTERM を無視する子孫が残る」状況にならない。
         try """
         #!/bin/sh
         /bin/sh -c 'echo a > "\(readyA.path)"; while true; do sleep 0.2; done' &
-        sleep 1
+        while [ ! -f "\(releaseB.path)" ]; do sleep 0.05; done
         /bin/sh -c 'trap "" TERM; echo b > "\(readyB.path)"; while true; do sleep 0.2; done' &
         sleep 120
         """.write(to: script, atomically: true, encoding: .utf8)
@@ -457,7 +458,7 @@ struct ProcessGroupIdentificationTests {
                 standardError: directory.appendingPathComponent("err.log")
             )
         )
-        return (spawned, readyA, readyB)
+        return (spawned, readyA, readyB, releaseB)
     }
 
     @Test("SIGTERM で古い錨のプロセスだけが終了しても、後発の子孫を根拠に強制終了できる")
@@ -479,6 +480,7 @@ struct ProcessGroupIdentificationTests {
                 processGroupID: group.spawned.processGroupID
             )
         )
+        try "go".write(to: group.releaseB, atomically: true, encoding: .utf8)
         #expect(await waitUntil { FileManager.default.fileExists(atPath: group.readyB.path) })
 
         let supervisor = ResidualGroupSupervisor(
@@ -519,6 +521,7 @@ struct ProcessGroupIdentificationTests {
                 processGroupID: group.spawned.processGroupID
             )
         )
+        try "go".write(to: group.releaseB, atomically: true, encoding: .utf8)
         #expect(await waitUntil { FileManager.default.fileExists(atPath: group.readyB.path) })
 
         // 錨を更新する supervisor で SIGTERM を送り、A を終了させる。
