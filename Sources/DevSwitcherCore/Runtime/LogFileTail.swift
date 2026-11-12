@@ -20,9 +20,9 @@ enum LogFileReadError: Error, Equatable, Sendable, CustomStringConvertible {
     var description: String {
         switch self {
         case let .unreadable(path, code):
-            "ログファイルを読み取れません（\(path) / errno \(code): \(CStringDecoding.errorMessage(code))）。"
+            L10n.text("ログファイルを読み取れません（\(path) / errno \(code): \(CStringDecoding.errorMessage(code))）。")
         case let .notRegularFile(path):
-            "ログの保存先が通常のファイルではありません（\(path)）。"
+            L10n.text("ログの保存先が通常のファイルではありません（\(path)）。")
         }
     }
 }

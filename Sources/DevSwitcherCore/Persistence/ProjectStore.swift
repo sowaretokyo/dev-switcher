@@ -43,18 +43,18 @@ public enum ProjectStoreError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .unsupportedSchemaVersion(found, supported):
-            "設定ファイルのスキーマバージョン \(found) は未対応です（対応バージョン: \(supported)）。"
+            L10n.text("設定ファイルのスキーマバージョン \(found) は未対応です（対応バージョン: \(supported)）。")
         case let .decodingFailed(path, reason):
-            "設定ファイルを読み込めませんでした（\(path)）。\n\(reason)"
+            L10n.text("設定ファイルを読み込めませんでした（\(path)）。\n\(reason)")
         case let .invalidStoredProject(name, errors):
-            "保存済みのプロジェクト「\(name)」の設定が不正です。\n"
+            L10n.text("保存済みのプロジェクト「\(name)」の設定が不正です。\n")
                 + errors.map(\.description).joined(separator: "\n")
         case let .writeFailed(path, reason):
-            "設定ファイルを保存できませんでした（\(path)）。\n\(reason)"
+            L10n.text("設定ファイルを保存できませんでした（\(path)）。\n\(reason)")
         case let .applicationSupportUnavailable(reason):
-            "Application Support ディレクトリを利用できません。\n\(reason)"
+            L10n.text("Application Support ディレクトリを利用できません。\n\(reason)")
         case .emptyImport:
-            "取り込む開発環境がありません。projects に1件以上指定してください。"
+            L10n.text("取り込む開発環境がありません。projects に1件以上指定してください。")
         }
     }
 }

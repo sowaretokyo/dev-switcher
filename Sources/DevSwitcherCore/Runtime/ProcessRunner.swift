@@ -33,13 +33,13 @@ public enum ProcessSpawnError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .pipeCreationFailed(code):
-            "パイプを作成できませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+            L10n.text("パイプを作成できませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。")
         case let .spawnFailed(code, executable):
-            "プロセスを起動できませんでした（\(executable) / errno \(code): \(CStringDecoding.errorMessage(code))）。"
+            L10n.text("プロセスを起動できませんでした（\(executable) / errno \(code): \(CStringDecoding.errorMessage(code))）。")
         case let .attributeSetupFailed(code):
-            "プロセス起動属性を設定できませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+            L10n.text("プロセス起動属性を設定できませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。")
         case let .logFileUnavailable(path):
-            "ログファイルを作成できませんでした（\(path)）。"
+            L10n.text("ログファイルを作成できませんでした（\(path)）。")
         }
     }
 }

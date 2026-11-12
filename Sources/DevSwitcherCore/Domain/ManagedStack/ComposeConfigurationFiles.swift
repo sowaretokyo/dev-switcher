@@ -28,7 +28,7 @@ public struct ComposeProjectName: RawRepresentable, Equatable, Hashable, Sendabl
         }
         guard let name = Self(rawValue: String(decoding: value, as: UTF8.self)) else {
             throw ComposeConfigurationError.invalid(
-                "ディレクトリ名から Compose のプロジェクト名を決められません。projectName を明示してください。"
+                L10n.text("ディレクトリ名から Compose のプロジェクト名を決められません。projectName を明示してください。")
             )
         }
         return name
@@ -43,16 +43,16 @@ public struct ComposeProjectName: RawRepresentable, Equatable, Hashable, Sendabl
 public enum ComposeFileLocator {
     public static func locate(files: [String]?, workingDirectory: URL) throws -> [URL] {
         guard workingDirectory.isFileURL, workingDirectory.path.hasPrefix("/") else {
-            throw ComposeConfigurationError.invalid("Compose の作業ディレクトリは絶対パスで指定してください。")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose の作業ディレクトリは絶対パスで指定してください。"))
         }
         if let files {
             guard !files.isEmpty else {
-                throw ComposeConfigurationError.invalid("Compose の files は1件以上指定してください。")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose の files は1件以上指定してください。"))
             }
             return try files.map { path in
                 guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       !path.hasPrefix("/"), !path.hasPrefix("~"), !path.contains("\0") else {
-                    throw ComposeConfigurationError.invalid("Compose ファイルは空でない相対パスで指定してください（\(path)）。")
+                    throw ComposeConfigurationError.invalid(L10n.text("Compose ファイルは空でない相対パスで指定してください（\(path)）。"))
                 }
                 return try checkedFile(workingDirectory.appendingPathComponent(path).standardizedFileURL)
             }
@@ -74,7 +74,7 @@ public enum ComposeFileLocator {
                 return result
             }
         }
-        throw ComposeConfigurationError.invalid("作業ディレクトリ直下に Compose ファイルがありません。files を明示してください。")
+        throw ComposeConfigurationError.invalid(L10n.text("作業ディレクトリ直下に Compose ファイルがありません。files を明示してください。"))
     }
 
     static func checkedFile(_ url: URL) throws -> URL {
@@ -82,18 +82,18 @@ public enum ComposeFileLocator {
         for candidate in [url, url.resolvingSymlinksInPath()] {
             let name = candidate.lastPathComponent
             guard name != ".env", name != ".envrc", !name.hasPrefix(".env.") else {
-                throw ComposeConfigurationError.invalid("環境設定ファイルを Compose ファイルとして読むことはできません。")
+                throw ComposeConfigurationError.invalid(L10n.text("環境設定ファイルを Compose ファイルとして読むことはできません。"))
             }
         }
         do {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isReadableKey])
             guard values.isRegularFile == true, values.isReadable == true else {
-                throw ComposeConfigurationError.invalid("Compose ファイルを読み取れません（\(url.path)）。")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose ファイルを読み取れません（\(url.path)）。"))
             }
         } catch let error as ComposeConfigurationError {
             throw error
         } catch {
-            throw ComposeConfigurationError.invalid("Compose ファイルを読み取れません（\(url.path)）。\n\(error)")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose ファイルを読み取れません（\(url.path)）。\n\(error)"))
         }
         return url.standardizedFileURL
     }
@@ -103,7 +103,7 @@ public enum ComposeFileLocator {
 public enum ComposeProjectNameReader {
     public static func resolve(explicit: String?, files: [URL]) throws -> ComposeProjectName {
         guard let first = files.first else {
-            throw ComposeConfigurationError.invalid("Compose ファイルが指定されていません。")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose ファイルが指定されていません。"))
         }
         if let explicit {
             return try validated(explicit)
@@ -115,12 +115,12 @@ public enum ComposeProjectNameReader {
             do {
                 text = try String(contentsOf: file, encoding: .utf8)
             } catch {
-                throw ComposeConfigurationError.invalid("Compose ファイルを UTF-8 として読めません（\(file.path)）。\n\(error)")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose ファイルを UTF-8 として読めません（\(file.path)）。\n\(error)"))
             }
             if let name = try read(text) { names.append(name) }
         }
         guard Set(names).count <= 1 else {
-            throw ComposeConfigurationError.invalid("Compose ファイル間で name: が異なります。projectName を明示してください。")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose ファイル間で name: が異なります。projectName を明示してください。"))
         }
         if let name = names.first { return try validated(name) }
         return try ComposeProjectName.fromDirectory(first.deletingLastPathComponent())
@@ -185,12 +185,12 @@ public enum ComposeProjectNameReader {
 
     private static func validated(_ value: String) throws -> ComposeProjectName {
         guard let name = ComposeProjectName(rawValue: value) else {
-            throw ComposeConfigurationError.invalid("Compose のプロジェクト名「\(value)」は不正です。英小文字または数字で始まる英小文字・数字・-・_で指定してください。")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose のプロジェクト名「\(value)」は不正です。英小文字または数字で始まる英小文字・数字・-・_で指定してください。"))
         }
         return name
     }
 
     private static func unreadableName() -> ComposeConfigurationError {
-        .invalid("Compose の name: を一意な名前として解釈できません。projectName を明示してください。")
+        .invalid(L10n.text("Compose の name: を一意な名前として解釈できません。projectName を明示してください。"))
     }
 }

@@ -3,6 +3,7 @@
 - ステータス: 確定（汎用化版の初版）
 - 作成日: 2026-10-16
 - 関連文書: `docs/SPEC.md`（振る舞いの正）、`docs/SCHEMA.md`（JSON 形式の正）、`docs/ROADMAP.md`（実装段階）
+- English: [Architecture](en/ARCHITECTURE.md)
 
 この文書は `docs/SPEC.md` の振る舞いを Swift の実装へ写像する（How）。型名と signature は設計の意図を固定するための案であり、実装時に責務を変えない範囲で名前や分割を調整してよい。状態、観測、停止権限を 1 つの Bool や 1 つの値にまとめる変更は、調整の範囲に含めない。
 
@@ -412,6 +413,14 @@ public struct ProcessStopOptions: Sendable {
 - キャンセルできるのは切替先の起動フェーズに入る前まで
 - detached task へ所有権不明の状態を渡さない
 - エラーをログだけに残さず、型付きエラーとして UI へ返す
+
+### 9.1 言語と表示文言
+
+`LocalizedMessage` は翻訳キーと埋め込み引数を分離した値で、`L10n.text` がアプリの renderer に渡す。Core は翻訳リソースを持たず、既存のエラー・状態の型と判定を維持する。単独の Core 利用と既存テストでは日本語の原文を診断表示に使う。アプリは `AppLocalization` で起動時に言語を選び、選択言語のリソースを読み、`AppState` の生成前に renderer を一度だけ設定する。既存の `reason: String` にはその時点の表示文言が入るため、実行途中の言語変更は提供しない。
+
+翻訳の正は UI 側の `Localization/Localizable.xcstrings` とする。文の断片を翻訳して連結せず、語順を変えられる文全体をキーにする。`python3 scripts/localization.py` で既存リソース bundle 内の `ja.lproj/Localizable.strings` と `en.lproj/Localizable.strings` を生成し、SwiftPM CLI でも利用できる状態でコミットする。CI は `--check` で未翻訳・引数不一致・古い生成物を検出する。英語の取り込みガイドも `docs/en/SCHEMA.md` から生成する。入力不備で一部だけ更新されないよう、翻訳とガイドの検証をすべて終えてから書き込む。
+
+埋め込み引数は一度だけ置換し、利用者の名前や外部出力に含まれる `{0}`、`%`、日本語などを再解釈しない。UI・Core の診断表示・コピー用ガイドは起動時に選択した言語を共有し、設定の保存値と外部ログ本文は変更しない。`L10n.override` はテスト用の task-local 指定であり、並行テスト間で言語を共有しない。同梱翻訳が欠けた場合は開発マシンの bundle や別言語へフォールバックしない。
 
 ## 10. テスト方針
 

@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DevSwitcher",
+    defaultLocalization: "ja",
     platforms: [
         .macOS(.v15)
     ],

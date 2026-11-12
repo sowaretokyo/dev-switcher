@@ -24,17 +24,19 @@ public enum PortInspectorError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .executableMissing(path):
-            "\(path) が見つかりません。ポートの実測ができません。"
+            L10n.text("\(path) が見つかりません。ポートの実測ができません。")
         case let .failed(standardError):
-            "lsof の実行に失敗しました。\n\(standardError)"
+            L10n.text("lsof の実行に失敗しました。\n\(standardError)")
         case let .abnormalTermination(status, standardError):
-            "lsof が異常終了しました（\(status.description)）。"
-                + "出力が空でも「ポートなし」とは判断できません。"
+            L10n.text("""
+                lsof が異常終了しました（\(status.description)）。\
+                出力が空でも「ポートなし」とは判断できません。
+                """)
                 + (standardError.isEmpty ? "" : "\n\(standardError)")
         case let .unparsableOutput(line):
-            "lsof の出力を解析できませんでした（\(line)）。"
+            L10n.text("lsof の出力を解析できませんでした（\(line)）。")
         case let .timedOut(seconds):
-            "lsof が \(Int(seconds)) 秒以内に終了しませんでした。"
+            L10n.text("lsof が \(Int(seconds)) 秒以内に終了しませんでした。")
         }
     }
 }

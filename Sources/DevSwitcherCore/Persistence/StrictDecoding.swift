@@ -12,7 +12,7 @@ extension Decoder {
         let container = try self.container(keyedBy: JSONKey.self)
         let unknown = container.allKeys.map(\.stringValue).filter { !allowed.contains($0) }.sorted()
         guard unknown.isEmpty else {
-            throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "未知のキー: \(unknown.joined(separator: ", "))"))
+            throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: L10n.text("未知のキー: \(unknown.joined(separator: ", "))")))
         }
     }
 }

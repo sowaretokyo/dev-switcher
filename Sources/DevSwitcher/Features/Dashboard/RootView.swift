@@ -109,14 +109,14 @@ private struct BannerArea: View {
     private var banners: some View {
         VStack(spacing: 0) {
             if !state.runtimeWarnings.isEmpty {
-                Banner(title: "停止コマンドの結果", message: state.runtimeWarnings.joined(separator: "\n"), tint: .orange) { EmptyView() }
+                Banner(title: L10n.text("停止コマンドの結果"), message: state.runtimeWarnings.joined(separator: "\n"), tint: .orange) { EmptyView() }
             }
             ForEach(state.projects.compactMap(\.migrationNotice), id: \.self) { message in
-                Banner(title: "設定の形式を変換しました", message: message, tint: .orange) { EmptyView() }
+                Banner(title: L10n.text("設定の形式を変換しました"), message: message, tint: .orange) { EmptyView() }
             }
             ForEach(state.managedStackObservationFailures, id: \.type) { failure in
-                Banner(title: "\(failure.type.displayName)を観測できません", message: failure.reason, tint: .orange) {
-                    Button("再観測") {
+                Banner(title: L10n.text("\(failure.type.displayName)を観測できません"), message: failure.reason, tint: .orange) {
+                    Button(L10n.text("再観測")) {
                         Task { await state.applicationDidBecomeActive() }
                     }
                 }
@@ -127,7 +127,7 @@ private struct BannerArea: View {
                 }
                 if !observations.isEmpty {
                     Banner(
-                        title: "未登録の外部\(type.displayName)",
+                        title: L10n.text("未登録の外部\(type.displayName)"),
                         message: observations.map {
                             let label = "\($0.identity): \($0.state.label)"
                             return $0.detail.map { label + "\n" + $0 } ?? label
@@ -140,13 +140,13 @@ private struct BannerArea: View {
             }
             if let incident = state.runtimeIncident {
                 Banner(
-                    title: "プロセスが予期せず終了しました",
+                    title: L10n.text("プロセスが予期せず終了しました"),
                     message: "\(incident.serviceName): \(incident.status)",
                     tint: .red,
                     messageLineLimit: 3
                 ) {
                     HStack(spacing: Spacing.s) {
-                        Button("ログを開く") {
+                        Button(L10n.text("ログを開く")) {
                             state.openLogTarget(
                                 .service(
                                     projectID: incident.projectID,
@@ -154,57 +154,57 @@ private struct BannerArea: View {
                                 )
                             )
                         }
-                        Button("閉じる") { state.dismissRuntimeIncident() }
+                        Button(L10n.text("閉じる")) { state.dismissRuntimeIncident() }
                     }
                 }
             }
             if let operationError = state.operationError {
                 Banner(
-                    title: "操作に失敗しました",
+                    title: L10n.text("操作に失敗しました"),
                     message: operationError,
                     tint: .red,
                     messageLineLimit: 4
                 ) {
-                    Button("閉じる") { state.operationError = nil }
+                    Button(L10n.text("閉じる")) { state.operationError = nil }
                 }
             }
             if let storeError = state.storeError {
                 Banner(
-                    title: "設定を読み込めません",
+                    title: L10n.text("設定を読み込めません"),
                     message: storeError,
                     tint: .red
                 ) {
-                    Button("再読み込み") {
+                    Button(L10n.text("再読み込み")) {
                         Task { await state.retryLoadingProjects() }
                     }
                 }
             }
             if let hintError = state.hintError {
                 Banner(
-                    title: "再検証の手掛かりを扱えません",
-                    message: "\(hintError)\nアプリ再起動後の引き継ぎや次回保存に影響する可能性があります。原因を解消して再試行してください。",
+                    title: L10n.text("再検証の手掛かりを扱えません"),
+                    message: L10n.text("\(hintError)\nアプリ再起動後の引き継ぎや次回保存に影響する可能性があります。原因を解消して再試行してください。"),
                     tint: .orange,
                     messageLineLimit: 3
                 ) {
-                    Button("再試行") {
+                    Button(L10n.text("再試行")) {
                         Task { await state.retryLoadingHints() }
                     }
                 }
             }
             if let managedHintError = state.managedHintError {
                 Banner(
-                    title: "Supabaseの状態を再検証できません",
+                    title: L10n.text("Supabaseの状態を再検証できません"),
                     message: managedHintMessage(managedHintError),
                     tint: .orange,
                     messageLineLimit: 5
                 ) {
                     HStack(spacing: Spacing.s) {
                         if state.hasDiscardableManagedHints {
-                            Button("手掛かりを破棄", role: .destructive) {
+                            Button(L10n.text("手掛かりを破棄"), role: .destructive) {
                                 Task { await state.discardUnmatchedManagedHints() }
                             }
                         }
-                        Button("再試行") {
+                        Button(L10n.text("再試行")) {
                             Task { await state.retryLoadingHints() }
                         }
                     }
@@ -213,7 +213,7 @@ private struct BannerArea: View {
             switch state.environmentState {
             case .loading:
                 Banner(
-                    title: "ログインシェルの環境を取得しています",
+                    title: L10n.text("ログインシェルの環境を取得しています"),
                     message: loginShellCommandMessage,
                     tint: .accentColor
                 ) {
@@ -221,11 +221,11 @@ private struct BannerArea: View {
                 }
             case let .failed(reason):
                 Banner(
-                    title: "ログインシェルの環境を取得できません",
-                    message: "\(reason)\n最小限の PATH では起動しません。原因を解消してから再試行してください。",
+                    title: L10n.text("ログインシェルの環境を取得できません"),
+                    message: L10n.text("\(reason)\n最小限の PATH では起動しません。原因を解消してから再試行してください。"),
                     tint: .red
                 ) {
-                    Button("再試行") {
+                    Button(L10n.text("再試行")) {
                         Task { await state.loadEnvironment() }
                     }
                 }
@@ -247,10 +247,10 @@ private struct BannerArea: View {
     private func managedHintMessage(_ error: String) -> String {
         var lines = [
             error,
-            "該当するSupabaseが起動中か停止中か判定できないため、設定変更と新しい起動を停止しています。",
+            L10n.text("該当するSupabaseが起動中か停止中か判定できないため、設定変更と新しい起動を停止しています。"),
         ]
         if state.hasDiscardableManagedHints {
-            lines.append("保存時の設定を確認してSupabaseを手動停止するか、手掛かりを破棄してください。破棄してもSupabase自体は停止しません。")
+            lines.append(L10n.text("保存時の設定を確認してSupabaseを手動停止するか、手掛かりを破棄してください。破棄してもSupabase自体は停止しません。"))
         }
         return lines.joined(separator: "\n")
     }

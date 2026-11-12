@@ -51,7 +51,7 @@ public enum ComposeCommandRules {
         guard !forbiddenSubcommands.contains(suffix[0]) else { throw invalid(suffix[0]) }
         if suffix == ["stop"] {
             guard profiles == stopProfiles else {
-                throw ComposeConfigurationError.invalid("Compose の停止には --profile '*' を指定してください。同じプロジェクト名の全 profile が停止対象です。")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose の停止には --profile '*' を指定してください。同じプロジェクト名の全 profile が停止対象です。"))
             }
             return
         }
@@ -70,7 +70,7 @@ public enum ComposeCommandRules {
         }
     }
     private static func invalid(_ value: String) -> ComposeConfigurationError {
-        .invalid("Compose の upArguments に「\(value)」は指定できません。許可されたオプションとサービス名だけを指定してください。")
+        .invalid(L10n.text("Compose の upArguments に「\(value)」は指定できません。許可されたオプションとサービス名だけを指定してください。"))
     }
 }
 
@@ -85,16 +85,16 @@ public struct DockerComposeStackConfiguration: Equatable, Sendable, Codable {
     }
     public func validate() throws {
         if let projectName, ComposeProjectName(rawValue: projectName) == nil {
-            throw ComposeConfigurationError.invalid("Compose の projectName「\(projectName)」は不正です。")
+            throw ComposeConfigurationError.invalid(L10n.text("Compose の projectName「\(projectName)」は不正です。"))
         }
         if let files {
             guard !files.isEmpty, files.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.hasPrefix("/") && !$0.hasPrefix("~") && !$0.contains("\0") }) else {
-                throw ComposeConfigurationError.invalid("Compose の files は1件以上の相対パスで指定してください。")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose の files は1件以上の相対パスで指定してください。"))
             }
         }
         if let profiles {
             guard !profiles.isEmpty, profiles.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.contains("\0") }) else {
-                throw ComposeConfigurationError.invalid("Compose の profiles は1件以上の空でない文字列で指定してください。")
+                throw ComposeConfigurationError.invalid(L10n.text("Compose の profiles は1件以上の空でない文字列で指定してください。"))
             }
         }
         try ComposeCommandRules.validateUpArguments(upArguments)

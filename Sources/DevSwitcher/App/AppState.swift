@@ -31,9 +31,9 @@ enum AppError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case let .storeUnavailable(reason):
-            "設定の保存先を利用できません。\n\(reason)"
+            L10n.text("設定の保存先を利用できません。\n\(reason)")
         case let .projectNotFound(id):
-            "編集対象のプロジェクトが見つかりません（\(id.uuidString)）。"
+            L10n.text("編集対象のプロジェクトが見つかりません（\(id.uuidString)）。")
         case let .busy(reason):
             reason
         }
@@ -77,15 +77,15 @@ final class AppState {
         var blockingDescription: String {
             switch self {
             case .bootstrap:
-                "起動時の読み込みと既存プロセスの再検証を実行中です。"
+                L10n.text("起動時の読み込みと既存プロセスの再検証を実行中です。")
             case .review:
-                "既存プロセスを再検証中です。"
+                L10n.text("既存プロセスを再検証中です。")
             case .retry:
-                "再検証の手掛かりを読み直しています。"
+                L10n.text("再検証の手掛かりを読み直しています。")
             case .handoffDecision:
-                "検出した既存プロセスへの操作を実行中です。"
+                L10n.text("検出した既存プロセスへの操作を実行中です。")
             case .operation:
-                "ほかの起動・停止・切替を実行中です。"
+                L10n.text("ほかの起動・停止・切替を実行中です。")
             }
         }
     }
@@ -106,7 +106,7 @@ final class AppState {
         var isExternal: Bool { identity != nil && relationship == nil && state != .notRunning }
 
         var label: String {
-            isExternal ? "外部・\(state.label)" : state.label
+            isExternal ? L10n.text("外部・\(state.label)") : state.label
         }
     }
 
@@ -125,8 +125,8 @@ final class AppState {
         /// 詳細画面と一覧で共通の観測状態表示。観測不能を空配列へ潰さない。
         var observedPortsAvailabilityText: String? {
             guard phase.isActive else { return "—" }
-            guard case let .observed(ports) = observedPortRecord else { return "取得不能" }
-            return ports.isEmpty ? "listen なし" : nil
+            guard case let .observed(ports) = observedPortRecord else { return L10n.text("取得不能") }
+            return ports.isEmpty ? L10n.text("listen なし") : nil
         }
     }
 
@@ -160,8 +160,8 @@ final class AppState {
 
             var label: String {
                 switch self {
-                case .starting: "起動中"
-                case .stopping: "停止中"
+                case .starting: L10n.text("起動中")
+                case .stopping: L10n.text("停止処理中")
                 }
             }
         }
@@ -178,7 +178,7 @@ final class AppState {
             case starting
             case restarting
 
-            var action: String { self == .starting ? "起動" : "再起動" }
+            var action: String { self == .starting ? L10n.text("起動") : L10n.text("再起動") }
         }
 
         let projectID: UUID
@@ -187,8 +187,8 @@ final class AppState {
         var state: SwitchState = .idle
 
         var label: String {
-            if case .stopping = state { return "停止中" }
-            return kind.action + "中"
+            if case .stopping = state { return L10n.text("停止処理中") }
+            return kind == .starting ? L10n.text("起動中") : L10n.text("再起動中")
         }
     }
 
@@ -220,20 +220,20 @@ final class AppState {
         private var typeName: String { plan.primaryEntry.identity.type.displayName }
 
         var title: String {
-            if plan.entries.filter({ $0.action != .stop }).count > 1 { return "管理対象スタックの操作を確認" }
+            if plan.entries.filter({ $0.action != .stop }).count > 1 { return L10n.text("管理対象スタックの操作を確認") }
             return switch plan.primaryEntry.action {
-            case .adopt: "既存の\(typeName)を引き継ぎますか？"
-            case .restart: "既存の\(typeName)を復旧しますか？"
-            case .start, .stop: "既存の\(typeName)を停止して切り替えますか？"
+            case .adopt: L10n.text("既存の\(typeName)を引き継ぎますか？")
+            case .restart: L10n.text("既存の\(typeName)を復旧しますか？")
+            case .start, .stop: L10n.text("既存の\(typeName)を停止して切り替えますか？")
             }
         }
 
         var confirmButtonTitle: String {
-            if plan.entries.filter({ $0.action != .stop }).count > 1 { return "確認した操作を実行" }
+            if plan.entries.filter({ $0.action != .stop }).count > 1 { return L10n.text("確認した操作を実行") }
             return switch plan.primaryEntry.action {
-            case .adopt: "引き継ぐ"
-            case .restart: "停止して起動し直す"
-            case .start, .stop: "停止して切り替える"
+            case .adopt: L10n.text("引き継ぐ")
+            case .restart: L10n.text("停止して起動し直す")
+            case .start, .stop: L10n.text("停止して切り替える")
             }
         }
 
@@ -252,9 +252,9 @@ final class AppState {
 
         var progressDescription: String {
             switch self {
-            case .adopt: "そのまま使う準備をしています…"
-            case .stopAll: "検出したプロセスを停止しています…"
-            case .ignore: "手掛かりを破棄しています…"
+            case .adopt: L10n.text("そのまま使う準備をしています…")
+            case .stopAll: L10n.text("検出したプロセスを停止しています…")
+            case .ignore: L10n.text("手掛かりを破棄しています…")
             }
         }
     }
@@ -452,7 +452,7 @@ final class AppState {
     }
 
     var storeLocation: String {
-        store?.fileURL.path ?? "未設定"
+        store?.fileURL.path ?? L10n.text("未設定")
     }
 
     private func refreshHintError() {
@@ -848,7 +848,7 @@ final class AppState {
             $0.stackID.uuidString < $1.stackID.uuidString
         }) {
             guard let (project, service, _) = registeredStack(for: hint) else {
-                failures[hint.stackID] = "\(hint.stackName): 対応する\(hint.type.displayName)設定が見つからないため状態を確認できません。"
+                failures[hint.stackID] = L10n.text("\(hint.stackName): 対応する\(hint.type.displayName)設定が見つからないため状態を確認できません。")
                 continue
             }
             switch await coordinator.restoreManagedStack(
@@ -965,8 +965,8 @@ final class AppState {
         else { return }
 
         guard let token = beginActivity(.handoffDecision) else {
-            operationError = (activityKind?.blockingDescription ?? "ほかの処理を実行中です。")
-                + "\n完了してからもう一度選んでください。"
+            operationError = (activityKind?.blockingDescription ?? L10n.text("ほかの処理を実行中です。"))
+                + L10n.text("\n完了してからもう一度選んでください。")
             return
         }
         // 取得できたときだけ、同期的に awaiting → resolving へ移す。
@@ -1017,7 +1017,7 @@ final class AppState {
         }
 
         if !failures.isEmpty {
-            operationError = "そのまま使えないサービスがあります。\n"
+            operationError = L10n.text("そのまま使えないサービスがあります。\n")
                 + failures.joined(separator: "\n")
         }
         await refreshPhases()
@@ -1078,7 +1078,7 @@ final class AppState {
 
         // 1件でも止まらなければ黙って終わらせない。
         if !failures.isEmpty {
-            operationError = "停止できなかったプロセスがあります。\n"
+            operationError = L10n.text("停止できなかったプロセスがあります。\n")
                 + failures.joined(separator: "\n")
         }
         await refreshPhases()
@@ -1134,7 +1134,7 @@ final class AppState {
     func addProject(_ project: ProjectDefinition) throws {
         if let reason = configurationBlockedReason { throw AppError.busy(reason) }
         guard let store else {
-            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+            throw AppError.storeUnavailable(storeError ?? L10n.text("保存先が初期化されていません。"))
         }
         try store.save(projects + [project])
         projects.append(project)
@@ -1145,7 +1145,7 @@ final class AppState {
 
     func presentProjectImport() {
         if let reason = configurationBlockedReason {
-            operationError = "開発環境を取り込めません。\n\(reason)"
+            operationError = L10n.text("開発環境を取り込めません。\n\(reason)")
             return
         }
         isProjectImportPresented = true
@@ -1162,7 +1162,7 @@ final class AppState {
         if let reason = configurationBlockedReason { throw AppError.busy(reason) }
         guard let first = imported.first else { throw ProjectStoreError.emptyImport }
         guard let store else {
-            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+            throw AppError.storeUnavailable(storeError ?? L10n.text("保存先が初期化されていません。"))
         }
         let updated = projects + imported
         try store.save(updated)
@@ -1180,7 +1180,7 @@ final class AppState {
 
     private func applyProjectUpdate(_ project: ProjectDefinition) throws {
         guard let store else {
-            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+            throw AppError.storeUnavailable(storeError ?? L10n.text("保存先が初期化されていません。"))
         }
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else {
             throw AppError.projectNotFound(project.id)
@@ -1211,7 +1211,7 @@ final class AppState {
     func unregisterProject(_ project: ProjectDefinition) throws {
         if let reason = configurationBlockedReason(for: project) { throw AppError.busy(reason) }
         guard let store else {
-            throw AppError.storeUnavailable(storeError ?? "保存先が初期化されていません。")
+            throw AppError.storeUnavailable(storeError ?? L10n.text("保存先が初期化されていません。"))
         }
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else {
             throw AppError.projectNotFound(project.id)
@@ -1241,7 +1241,7 @@ final class AppState {
     /// 登録解除の確認を出す。拒否理由はここでも API 境界と同じ判断を使う。
     func presentUnregisterConfirmation(for project: ProjectDefinition) {
         if let reason = configurationBlockedReason(for: project) {
-            operationError = "プロジェクトの登録を解除できません。\n\(reason)"
+            operationError = L10n.text("プロジェクトの登録を解除できません。\n\(reason)")
             return
         }
         unregisterPresentation = UnregisterPresentation(project: project)
@@ -1257,7 +1257,7 @@ final class AppState {
         let blocked = project.map { configurationBlockedReason(for: $0) }
             ?? configurationBlockedReason
         if let blocked {
-            operationError = "プロジェクト設定を変更できません。\n\(blocked)"
+            operationError = L10n.text("プロジェクト設定を変更できません。\n\(blocked)")
             return
         }
         projectFormPresentation = ProjectFormPresentation(project: project)
@@ -1279,7 +1279,7 @@ final class AppState {
 
     private func applyProjectChange(_ updated: ProjectDefinition) {
         if let reason = configurationBlockedReason(for: updated) {
-            operationError = "プロジェクト設定を変更できません。\n\(reason)"
+            operationError = L10n.text("プロジェクト設定を変更できません。\n\(reason)")
             return
         }
         do {
@@ -1347,17 +1347,17 @@ final class AppState {
     private var runtimeHintBlockReason: String? {
         switch hintLoadState {
         case .notLoaded:
-            return "再検証の手掛かりをまだ読み込んでいません。"
+            return L10n.text("再検証の手掛かりをまだ読み込んでいません。")
         case let .failed(reason):
-            return "再検証の手掛かりを読み込めません。\n\(reason)"
+            return L10n.text("再検証の手掛かりを読み込めません。\n\(reason)")
         case .loaded:
             break
         }
         if case let .unavailable(reason) = hintStorage {
-            return "再検証の手掛かりの保存先を利用できません。\n\(reason)"
+            return L10n.text("再検証の手掛かりの保存先を利用できません。\n\(reason)")
         }
         if let hintStorageFailure {
-            return "再検証の手掛かりを保存できていません。\n\(hintStorageFailure)"
+            return L10n.text("再検証の手掛かりを保存できていません。\n\(hintStorageFailure)")
         }
         return nil
     }
@@ -1369,10 +1369,12 @@ final class AppState {
     private var projectLoadBlockedReason: String? {
         switch projectLoadState {
         case .notLoaded:
-            return "プロジェクト設定をまだ読み込んでいません。"
+            return L10n.text("プロジェクト設定をまだ読み込んでいません。")
         case let .failed(reason):
-            return "プロジェクト設定を読み込めません。"
-                + "読み込めていない一覧で保存すると、既存の定義を失います。\n\(reason)"
+            return L10n.text("""
+                プロジェクト設定を読み込めません。\
+                読み込めていない一覧で保存すると、既存の定義を失います。\n\(reason)
+                """)
         case .loaded:
             return nil
         }
@@ -1381,25 +1383,29 @@ final class AppState {
     /// 検出した既存プロセスの決着が済んでいない状態。
     private var unresolvedHandoffReason: String? {
         if handoffPresentation != nil {
-            return "検出した既存プロセスの扱いが決まっていません。シートで選んでください。"
+            return L10n.text("検出した既存プロセスの扱いが決まっていません。シートで選んでください。")
         }
         if !pendingHints.isEmpty || !pendingLegacyHints.isEmpty {
-            return "決着していない既存プロセスの手掛かりが残っています。"
-                + "「再検証の手掛かりを扱えません」の再試行から再検証してください。"
+            return L10n.text("""
+                決着していない既存プロセスの手掛かりが残っています。\
+                「再検証の手掛かりを扱えません」の再試行から再検証してください。
+                """)
         }
         if !pendingManagedHints.isEmpty {
-            return "状態を判定できない管理対象スタックの手掛かりが残っています。"
-                + "画面上部の案内から再試行するか、設定が無い手掛かりを破棄してください。"
+            return L10n.text("""
+                状態を判定できない管理対象スタックの手掛かりが残っています。\
+                画面上部の案内から再試行するか、設定が無い手掛かりを破棄してください。
+                """)
         }
         return nil
     }
 
     /// プロジェクト定義と起動対象を変更できない理由（プロジェクトによらない条件）。
     var configurationBlockedReason: String? {
-        if isTerminating { return "アプリの終了処理を実行中です。" }
+        if isTerminating { return L10n.text("アプリの終了処理を実行中です。") }
         if let activityKind { return activityKind.blockingDescription }
         if managedStackConfirmation != nil {
-            return "既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。"
+            return L10n.text("既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。")
         }
         if let reason = projectLoadBlockedReason { return reason }
         if let reason = unresolvedHandoffReason { return reason }
@@ -1415,8 +1421,10 @@ final class AppState {
     func configurationBlockedReason(for project: ProjectDefinition) -> String? {
         if let reason = configurationBlockedReason { return reason }
         if hasManagedResources(in: project) {
-            return "「\(project.name)」には動作中のプロセスがあります。"
-                + "設定値と実測がずれるため、停止してから変更してください。"
+            return L10n.text("""
+                「\(project.name)」には動作中のプロセスがあります。\
+                設定値と実測がずれるため、停止してから変更してください。
+                """)
         }
         return nil
     }
@@ -1429,9 +1437,9 @@ final class AppState {
     var startBlockedReason: String? {
         switch environmentState {
         case .loading:
-            return "ログインシェルの環境を取得しています。"
+            return L10n.text("ログインシェルの環境を取得しています。")
         case let .failed(reason):
-            return "ログインシェルの環境を取得できません。\n\(reason)"
+            return L10n.text("ログインシェルの環境を取得できません。\n\(reason)")
         case .ready:
             break
         }
@@ -1442,8 +1450,10 @@ final class AppState {
     /// 禁止理由ではないので `startBlockedReason` と混ぜない。
     func switchNotice(for project: ProjectDefinition) -> String? {
         guard let activeProject, activeProject.id != project.id else { return nil }
-        return "プロジェクト「\(activeProject.name)」は起動済みです。切り替えると、"
-            + "先に「\(activeProject.name)」を停止し、ポートの解放を確認してから起動します。"
+        return L10n.text("""
+            プロジェクト「\(activeProject.name)」は起動済みです。切り替えると、\
+            先に「\(activeProject.name)」を停止し、ポートの解放を確認してから起動します。
+            """)
     }
 
     /// 起動にはログインシェル環境が要る。実行ファイルを PATH から解決するため。
@@ -1454,14 +1464,16 @@ final class AppState {
     /// 停止は復旧手段なので、手掛かりの保存失敗を理由に禁止しない。
     /// 起動時の確認中だけは、シートの「停止する」へ導線を一本化する。
     var stopBlockedReason: String? {
-        if isTerminating { return "アプリの終了処理を実行中です。" }
+        if isTerminating { return L10n.text("アプリの終了処理を実行中です。") }
         if let activityKind { return activityKind.blockingDescription }
         if managedStackConfirmation != nil {
-            return "既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。"
+            return L10n.text("既存の管理対象スタックをどう扱うか決まっていません。シートで選んでください。")
         }
         if handoffPresentation != nil {
-            return "検出した既存プロセスの扱いが決まっていません。"
-                + "停止はシートの「停止する」から行ってください。"
+            return L10n.text("""
+                検出した既存プロセスの扱いが決まっていません。\
+                停止はシートの「停止する」から行ってください。
+                """)
         }
         return nil
     }
@@ -1477,16 +1489,16 @@ final class AppState {
     ) -> String? {
         guard self.project(project.id) == project,
               project.entry(id: service.id) == service else {
-            return "対象のプロセス設定が現在の登録内容と一致しません。"
+            return L10n.text("対象のプロセス設定が現在の登録内容と一致しません。")
         }
         if let definition = service.managedStackDefinition {
-            return "\(definition.type.displayName)は専用の停止・状態確認を使うため、単体の起動・再起動はできません。"
+            return L10n.text("\(definition.type.displayName)は専用の停止・状態確認を使うため、単体の起動・再起動はできません。")
         }
 
         if let reason = startBlockedReason { return reason }
 
         guard hasManagedResources(in: project) else {
-            return "停止中の開発環境は、開発環境単位で起動してください。"
+            return L10n.text("停止中の開発環境は、開発環境単位で起動してください。")
         }
         return nil
     }
@@ -1500,9 +1512,9 @@ final class AppState {
         case .excluded, .stopped:
             return nil
         case .starting, .stopping:
-            return "プロセスの起動・停止が完了してから操作してください。"
+            return L10n.text("プロセスの起動・停止が完了してから操作してください。")
         case .running, .healthy, .failed, .residual:
-            return "動作中または失敗したプロセスには再起動を使ってください。"
+            return L10n.text("動作中または失敗したプロセスには再起動を使ってください。")
         }
     }
 
@@ -1519,9 +1531,9 @@ final class AppState {
         case .running, .healthy, .failed, .residual:
             return nil
         case .starting, .stopping:
-            return "プロセスの起動・停止が完了してから再起動してください。"
+            return L10n.text("プロセスの起動・停止が完了してから再起動してください。")
         case .excluded, .stopped:
-            return "このプロセスは現在の起動対象として動作していません。"
+            return L10n.text("このプロセスは現在の起動対象として動作していません。")
         }
     }
 
@@ -1546,12 +1558,12 @@ final class AppState {
             ? serviceStartBlockedReason(for: service, in: project)
             : restartBlockedReason(for: service, in: project)
         if let reason = blockedReason {
-            operationError = "\(service.name) を\(kind.action)できません。\n\(reason)"
+            operationError = L10n.text("\(service.name) を\(kind.action)できません。\n\(reason)")
             return
         }
         guard let token = beginActivity(.operation) else {
-            operationError = (activityKind?.blockingDescription ?? "ほかの処理を実行中です。")
-                + "\n完了してからもう一度操作してください。"
+            operationError = (activityKind?.blockingDescription ?? L10n.text("ほかの処理を実行中です。"))
+                + L10n.text("\n完了してからもう一度操作してください。")
             return
         }
         serviceOperation = ServiceOperation(
@@ -1566,8 +1578,10 @@ final class AppState {
 
             // PIDが変わる前の完全な手掛かりを残す。保存不能なら何も停止しない。
             guard await persistRuntimeHints() else {
-                operationError = "再検証の手掛かりを保存できないため、\(service.name) の\(kind.action)を中止しました。"
-                    + "プロセスは停止していません。\n"
+                operationError = L10n.text("""
+                    再検証の手掛かりを保存できないため、\(service.name) の\(kind.action)を中止しました。\
+                    プロセスは停止していません。\n
+                    """)
                     + (hintStorageFailure ?? "")
                 return
             }
@@ -1633,8 +1647,10 @@ final class AppState {
             // 手掛かりも残せない状態になりうる。
             guard await persistRuntimeHints() else {
                 switchPresentation = nil
-                operationError = "再検証の手掛かりを保存できないため、起動を中止しました。"
-                    + "プロセスは1つも起動・停止していません。\n"
+                operationError = L10n.text("""
+                    再検証の手掛かりを保存できないため、起動を中止しました。\
+                    プロセスは1つも起動・停止していません。\n
+                    """)
                     + (hintStorageFailure ?? "")
                 await refreshPhases()
                 return
@@ -1710,14 +1726,14 @@ final class AppState {
         token: ActivityToken
     ) async {
         guard await registry.occupyingServiceIDs(projectID: target.id).isEmpty == false else {
-            operationError = "再検証の手掛かりを保存できませんでした。\n"
+            operationError = L10n.text("再検証の手掛かりを保存できませんでした。\n")
                 + (hintStorageFailure ?? "")
             return
         }
 
         var messages = [
-            "起動したプロセスの手掛かりを保存できませんでした。",
-            "「\(target.name)」で今回起動したプロセスだけを停止します。",
+            L10n.text("起動したプロセスの手掛かりを保存できませんでした。"),
+            L10n.text("「\(target.name)」で今回起動したプロセスだけを停止します。"),
             hintStorageFailure ?? "",
         ].filter { !$0.isEmpty }
 
@@ -1738,31 +1754,33 @@ final class AppState {
         } catch let failure as SwitchFailure {
             stopFailure = failure
             compensationFailed = true
-            messages.append("補償のための停止に失敗しました。\n\(failure.reason.detail)")
+            messages.append(L10n.text("補償のための停止に失敗しました。\n\(failure.reason.detail)"))
         } catch {
             compensationFailed = true
-            messages.append("補償のための停止に失敗しました。\n\(error)")
+            messages.append(L10n.text("補償のための停止に失敗しました。\n\(error)"))
         }
         await refreshPhases()
 
         let hasRemainingResources = await registry.occupyingServiceIDs(projectID: target.id).isEmpty == false
         if hasRemainingResources, !compensationFailed {
-            messages.append("引き継いだスタックと操作前から管理していたサービスは稼働を維持しています。")
+            messages.append(L10n.text("引き継いだスタックと操作前から管理していたサービスは稼働を維持しています。"))
         }
         if !compensationFailed {
             if await persistRuntimeHints(refreshingPorts: false) {
-                messages.append("停止後の手掛かりを保存しました。")
+                messages.append(L10n.text("停止後の手掛かりを保存しました。"))
             } else if hasRemainingResources {
-                messages.append("残っているサービスの手掛かりを保存できません。保存を再試行するか、明示的に停止するまでアプリを終了しないでください。")
+                messages.append(L10n.text("残っているサービスの手掛かりを保存できません。保存を再試行するか、明示的に停止するまでアプリを終了しないでください。"))
             } else {
                 messages.append(
-                    "停止後の手掛かりも保存できませんでした。起動前のスナップショットは残っています。"
-                        + "古い手掛かりは次回起動時の再検証で整理されます。"
+                    L10n.text("""
+                        停止後の手掛かりも保存できませんでした。起動前のスナップショットは残っています。\
+                        古い手掛かりは次回起動時の再検証で整理されます。
+                        """)
                 )
             }
         } else {
             messages.append(
-                "停止できなかったプロセスが残っています。手掛かりを保存できるまでアプリを終了しないでください。"
+                L10n.text("停止できなかったプロセスが残っています。手掛かりを保存できるまでアプリを終了しないでください。")
             )
         }
         operationError = messages.joined(separator: "\n")
@@ -1778,8 +1796,8 @@ final class AppState {
         token: ActivityToken
     ) async {
         var messages = [
-            "\(kind.action)した \(service.name) の手掛かりを保存できませんでした。",
-            "記録に無いプロセスを残さないため、\(service.name) だけを停止します。",
+            L10n.text("\(kind.action)した \(service.name) の手掛かりを保存できませんでした。"),
+            L10n.text("記録に無いプロセスを残さないため、\(service.name) だけを停止します。"),
             hintStorageFailure ?? "",
         ].filter { !$0.isEmpty }
 
@@ -1794,19 +1812,19 @@ final class AppState {
         } catch let failure as SwitchFailure {
             stopFailure = failure
             compensationFailed = true
-            messages.append("補償のための停止に失敗しました。\n\(failure.reason.detail)")
+            messages.append(L10n.text("補償のための停止に失敗しました。\n\(failure.reason.detail)"))
         } catch {
             compensationFailed = true
-            messages.append("補償のための停止に失敗しました。\n\(error)")
+            messages.append(L10n.text("補償のための停止に失敗しました。\n\(error)"))
         }
         await refreshPhases()
 
         if !compensationFailed, await persistRuntimeHints(refreshingPorts: false) {
-            messages.append("停止後の手掛かりを保存しました。")
+            messages.append(L10n.text("停止後の手掛かりを保存しました。"))
         } else if !compensationFailed {
-            messages.append("停止後の手掛かりも保存できませんでした。")
+            messages.append(L10n.text("停止後の手掛かりも保存できませんでした。"))
         } else {
-            messages.append("停止できなかったプロセスが残っています。")
+            messages.append(L10n.text("停止できなかったプロセスが残っています。"))
         }
         operationError = messages.joined(separator: "\n")
         if let stopFailure { present(stopFailure) }
@@ -1865,7 +1883,7 @@ final class AppState {
                     }
                 }
                 if !remaining.isEmpty {
-                    operationError = "強制終了しても停止できませんでした。\n"
+                    operationError = L10n.text("強制終了しても停止できませんでした。\n")
                         + remaining.joined(separator: "\n")
                 }
             } catch {
@@ -1885,9 +1903,11 @@ final class AppState {
             if !accepted {
                 // 起動フェーズへ入った直後は受け付けられない。黙って無視せず理由を残す。
                 switchPresentation?.cancelRequested = false
-                operationError = "中止を受け付けられませんでした。"
-                    + "起動フェーズに入ったか、すでに処理が完了しています。"
-                    + "送出済みの停止処理は取り消せません。"
+                operationError = L10n.text("""
+                    中止を受け付けられませんでした。\
+                    起動フェーズに入ったか、すでに処理が完了しています。\
+                    送出済みの停止処理は取り消せません。
+                    """)
             }
         }
     }
@@ -1948,8 +1968,10 @@ final class AppState {
 
         guard await waitForActivitiesToFinish(timeout: timeout) else {
             isTerminating = false
-            operationError = "起動・停止・再検証の処理が完了していないため終了できません。"
-                + "処理の完了を待ってから終了してください。"
+            operationError = L10n.text("""
+                起動・停止・再検証の処理が完了していないため終了できません。\
+                処理の完了を待ってから終了してください。
+                """)
             return false
         }
 
@@ -2030,7 +2052,7 @@ final class AppState {
                 // 残存グループでは作れない。表示できる情報を落とさないよう snapshot を使う。
                 let snapshot = await registry.runtimeSnapshot(serviceID: serviceFact.serviceID)
                 guard let service = project.entry(id: serviceFact.serviceID) else {
-                    preconditionFailure("観測結果に登録のないサービスが含まれています。")
+                    preconditionFailure(L10n.text("観測結果に登録のないサービスが含まれています。"))
                 }
                 let managedStack = await managedStackUIState(for: service)
                 if let identity = managedStack?.identity { displayedStackIDs.insert(identity) }
@@ -2049,7 +2071,7 @@ final class AppState {
                     // 孫が残ってポートを握っている場合も、実測値をそのまま出す。
                     current.observedPortRecord = snapshot.observedPortRecord
                     current.observedPorts = snapshot.observedPorts
-                    let portWarning = "listen ポートを取得できません。取得できるまで「ポートなし」とは判断しません。"
+                    let portWarning = L10n.text("listen ポートを取得できません。取得できるまで「ポートなし」とは判断しません。")
                     let isManaged = service.managedStackDefinition != nil
                     if snapshot.observedPortRecord == .unavailable, !isManaged {
                         current.warning = portWarning
@@ -2139,7 +2161,7 @@ final class AppState {
             }
             hintPortWarning = failures.isEmpty
                 ? nil
-                : "listen ポートを更新できないサービスがあります。\n"
+                : L10n.text("listen ポートを更新できないサービスがあります。\n")
                     + failures.joined(separator: "\n")
             refreshHintError()
         }
@@ -2266,8 +2288,10 @@ final class AppState {
             atPath: workingDirectory.directory.path,
             isDirectory: &isDirectory
         ), isDirectory.boolValue else {
-            operationError = "作業ディレクトリ「\(workingDirectory.name)」を利用できません"
-                + "（\(workingDirectory.directory.path)）。"
+            operationError = L10n.text("""
+                作業ディレクトリ「\(workingDirectory.name)」を利用できません\
+                （\(workingDirectory.directory.path)）。
+                """)
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([workingDirectory.directory])

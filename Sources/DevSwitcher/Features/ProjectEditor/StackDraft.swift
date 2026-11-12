@@ -51,12 +51,12 @@ extension ProjectFormModel {
         }
         static func array(_ text: String) throws -> [String] {
             do { return try JSONDecoder().decode([String].self, from: Data(text.utf8)) }
-            catch { throw ComposeConfigurationError.invalid("引数・ファイル・profile は JSON の文字列配列で指定してください。\n\(error)") }
+            catch { throw ComposeConfigurationError.invalid(L10n.text("引数・ファイル・profile は JSON の文字列配列で指定してください。\n\(error)")) }
         }
         static func json(_ strings: [String]) -> String {
             // [String] の JSON エンコードは常に可能。失敗を空欄へ置き換えない。
             do { return String(decoding: try JSONEncoder().encode(strings), as: UTF8.self) }
-            catch { preconditionFailure("文字列配列を JSON にできません。\(error)") }
+            catch { preconditionFailure(L10n.text("文字列配列を JSON にできません。\(error)")) }
         }
     }
 }
@@ -83,6 +83,6 @@ extension ProjectFormModel.ServiceDraft {
                 messages.append(ValidationWarning.possibleSupabaseStart(service: name).description)
             }
             return messages
-        } catch { return ["引数を解析できません。\(error)"] }
+        } catch { return [L10n.text("引数を解析できません。\(error)")] }
     }
 }

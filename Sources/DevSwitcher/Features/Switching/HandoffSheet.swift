@@ -20,10 +20,10 @@ struct HandoffSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            Text("プロセスが動いています")
+            Text(L10n.text("プロセスが動いています"))
                 .font(Typography.title)
 
-            Text("前回 Dev Switcher が起動したプロセスを確認しました。停止するか、そのまま使うか選んでください。")
+            Text(L10n.text("前回 Dev Switcher が起動したプロセスを確認しました。停止するか、そのまま使うか選んでください。"))
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -31,7 +31,7 @@ struct HandoffSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.m) {
                     if !review.candidates.isEmpty {
-                        section("そのまま使えるプロセス") {
+                        section(L10n.text("そのまま使えるプロセス")) {
                             ForEach(review.candidates) { candidate in
                                 CandidateRow(candidate: candidate)
                             }
@@ -41,7 +41,7 @@ struct HandoffSheet: View {
                     // 引き継げないが資源を握っているものを黙って捨てない。
                     // 停止手段を出さないと、GUI から復旧できないプロセスが残る。
                     if !review.stoppable.isEmpty {
-                        section("停止が必要なプロセス") {
+                        section(L10n.text("停止が必要なプロセス")) {
                             ForEach(review.stoppable) { finding in
                                 StoppableRow(finding: finding)
                             }
@@ -49,10 +49,10 @@ struct HandoffSheet: View {
                     }
 
                     if !review.rejected.isEmpty {
-                        section("操作できないプロセス") {
+                        section(L10n.text("操作できないプロセス")) {
                             ForEach(Array(review.rejected.enumerated()), id: \.offset) { _, record in
                                 VStack(alignment: .leading, spacing: Spacing.hairline) {
-                                    Text("\(record.serviceName)（PID \(record.processID)）")
+                                    Text(L10n.text("\(record.serviceName)（PID \(record.processID)）"))
                                         .font(Typography.row)
                                     Text(record.reason.description)
                                         .font(Typography.support)
@@ -71,7 +71,7 @@ struct HandoffSheet: View {
             HStack {
                 if hasStoppable {
                     // このシート自体が停止前の確認。確認を二重に重ねない。
-                    Button("停止する", role: .destructive) {
+                    Button(L10n.text("停止する"), role: .destructive) {
                         state.performHandoffAction(.stopAll, presentationID: live.id)
                     }
                 }
@@ -85,13 +85,13 @@ struct HandoffSheet: View {
                 }
                 Spacer()
                 if review.candidates.isEmpty {
-                    Button("停止しない") {
+                    Button(L10n.text("停止しない")) {
                         // 破棄できたときだけ AppState がシートを閉じる。
                         state.performHandoffAction(.ignore, presentationID: live.id)
                     }
                     .keyboardShortcut(.defaultAction)
                 } else {
-                    Button("そのまま使う") {
+                    Button(L10n.text("そのまま使う")) {
                         state.performHandoffAction(.adopt, presentationID: live.id)
                     }
                     .keyboardShortcut(.defaultAction)
@@ -152,7 +152,7 @@ private struct StoppableRow: View {
         case let .matchedLeader(identity):
             "PID \(identity.pid)"
         case let .verifiedGroup(livePIDs):
-            "PGID \(finding.hint.processGroupID) / 残り "
+            L10n.text("PGID \(finding.hint.processGroupID) / 残り ")
                 + livePIDs.map(String.init).joined(separator: ", ")
         }
     }
@@ -183,7 +183,7 @@ private struct CandidateRow: View {
 
     /// 表示するのは実測ポート。保存値ではない。
     private var portSummary: String {
-        guard !candidate.observedPorts.isEmpty else { return "listen ポートなし" }
+        guard !candidate.observedPorts.isEmpty else { return L10n.text("listen ポートなし") }
         return candidate.observedPorts.map { ":\($0.port)" }.joined(separator: " · ")
     }
 }

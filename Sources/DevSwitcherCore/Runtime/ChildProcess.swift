@@ -14,9 +14,9 @@ public enum ExitStatus: Equatable, Sendable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case let .exited(code): "終了コード \(code)"
-        case let .signaled(signal): "シグナル \(signal) で終了"
-        case .unknown: "終了状態を取得できませんでした"
+        case let .exited(code): L10n.text("終了コード \(code)")
+        case let .signaled(signal): L10n.text("シグナル \(signal) で終了")
+        case .unknown: L10n.text("終了状態を取得できませんでした")
         }
     }
 }

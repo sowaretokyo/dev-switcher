@@ -23,19 +23,19 @@ public enum ComposePsParser {
             var ids: Set<String> = []
             for container in containers {
                 guard !container.ID.isEmpty, ids.insert(container.ID).inserted, container.Project == identity.value else {
-                    throw ComposeConfigurationError.invalid("コンテナの ID またはプロジェクト名が不正です。")
+                    throw ComposeConfigurationError.invalid(L10n.text("コンテナの ID またはプロジェクト名が不正です。"))
                 }
                 switch (container.State, container.Health) {
                 case ("running", ""), ("running", "healthy"): normal += 1
                 case ("running", "unhealthy"), ("restarting", _), ("paused", _): abnormal += 1
                 case ("exited", _), ("created", _), ("dead", _): stopped += 1
-                default: throw ComposeConfigurationError.invalid("コンテナ「\(container.ID)」の状態を確定できません（\(container.State), health: \(container.Health)）。")
+                default: throw ComposeConfigurationError.invalid(L10n.text("コンテナ「\(container.ID)」の状態を確定できません（\(container.State), health: \(container.Health)）。"))
                 }
             }
             let state: ManagedStackState = normal + abnormal == 0 ? .notRunning : (abnormal > 0 || stopped > 0 ? .degraded : .running)
             return ManagedStackObservation(identity: identity, state: state)
         } catch {
-            return ManagedStackObservation(identity: identity, state: .unknown, detail: "Compose の観測結果を解釈できません。\n\(error)")
+            return ManagedStackObservation(identity: identity, state: .unknown, detail: L10n.text("Compose の観測結果を解釈できません。\n\(error)"))
         }
     }
 }

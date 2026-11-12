@@ -35,18 +35,20 @@ final class ProjectImportModel {
             let data = try ProjectsDocument(projects: projects).jsonData()
             preview = Preview(projects: projects, json: String(decoding: data, as: UTF8.self))
         } catch {
-            errorMessage = "取り込めません。\n\(error)"
+            errorMessage = L10n.text("取り込めません。\n\(error)")
         }
     }
 
-    static func creationGuide() throws -> String {
+    static func creationGuide(language: AppLocalization.Language = AppLocalization.selectedLanguage) throws -> String {
         let resources = try AppResources.bundle()
-        guard let guideURL = resources.url(forResource: "ProjectImportGuide", withExtension: "md"),
+        let guideName = language == .japanese ? "ProjectImportGuide" : "ProjectImportGuide.en"
+        guard let guideURL = resources.url(forResource: guideName, withExtension: "md"),
               let exampleURL = resources.url(forResource: "ProjectImportExample", withExtension: "json") else {
             throw CocoaError(.fileNoSuchFile)
         }
         let guide = try String(contentsOf: guideURL, encoding: .utf8)
         let example = try String(contentsOf: exampleURL, encoding: .utf8)
-        return guide + "\n\n## サンプル\n\n```json\n" + example + "\n```\n"
+        let localization = try AppLocalization(language: language, resources: resources)
+        return guide + localization.render("\n\n## サンプル\n\n```json\n") + example + "\n```\n"
     }
 }

@@ -19,7 +19,7 @@ enum ProjectSchemaV3 {
             case .inngest: "Inngest"
             case .docker: "Docker"
             case .worker: "Worker / Watcher"
-            case .other: "その他"
+            case .other: L10n.text("その他")
             }
         }
     }
@@ -69,16 +69,16 @@ enum ProjectSchemaV3 {
         stopOrder: [UUID]?, enabledNow: [String: Bool]?) throws -> ProjectDefinition {
         let stacks = services.filter { $0.kind == .supabase }
         guard stacks.count <= 1 else {
-            throw ComposeConfigurationError.invalid("開発環境「\(name)」に Supabase が複数あります。変換できません。")
+            throw ComposeConfigurationError.invalid(L10n.text("開発環境「\(name)」に Supabase が複数あります。変換できません。"))
         }
         if let invalid = stacks.first(where: { $0.stop != nil }) {
-            throw ComposeConfigurationError.invalid("開発環境「\(name)」の Supabase「\(invalid.name)」に stop があるため変換できません。")
+            throw ComposeConfigurationError.invalid(L10n.text("開発環境「\(name)」の Supabase「\(invalid.name)」に stop があるため変換できません。"))
         }
         let stackIDs = Set(stacks.map(\.id))
         var enabled: [UUID: Bool] = [:]
         for (key, value) in enabledNow ?? [:] {
             guard let uuid = UUID(uuidString: key), enabled[uuid] == nil else {
-                throw ComposeConfigurationError.invalid("起動対象の ID が不正または重複しています（\(key)）。")
+                throw ComposeConfigurationError.invalid(L10n.text("起動対象の ID が不正または重複しています（\(key)）。"))
             }
             enabled[uuid] = value
         }
@@ -101,7 +101,7 @@ enum ProjectSchemaV3 {
         let newStart = stacks.map(\.id) + result.services.map(\.id)
         let newStop = (result.stopOrder ?? Array(result.services.map(\.id).reversed())) + stacks.reversed().map(\.id)
         if oldStart != newStart || oldStop != newStop {
-            result.migrationNotice = "開発環境「\(name)」の起動・停止順を変換しました。スタックを先に起動し、プロセスの後に停止します。プロセス同士の順序は維持しています。"
+            result.migrationNotice = L10n.text("開発環境「\(name)」の起動・停止順を変換しました。スタックを先に起動し、プロセスの後に停止します。プロセス同士の順序は維持しています。")
         }
         return result
     }

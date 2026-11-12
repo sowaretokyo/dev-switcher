@@ -46,7 +46,7 @@ enum ProjectSchemaV2 {
         var description: String {
             switch self {
             case let .invalidEnabledNowKey(key):
-                "起動対象のキー「\(key)」をサービス ID として解釈できません。"
+                L10n.text("起動対象のキー「\(key)」をサービス ID として解釈できません。")
             }
         }
     }

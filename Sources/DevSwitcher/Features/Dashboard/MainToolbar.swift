@@ -19,7 +19,7 @@ struct ToolbarIdentity: View {
                 ToolbarProjectStatus(phase: state.phase(of: project))
             }
         } else {
-            Text("起動中の開発環境はありません")
+            Text(L10n.text("起動中の開発環境はありません"))
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -69,11 +69,11 @@ struct ToolbarActions: View {
                         }
                     }
                 } label: {
-                    Label("開く", systemImage: "arrow.up.forward.app")
+                    Label(L10n.text("開く"), systemImage: "arrow.up.forward.app")
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(state.isOperationInFlight)
-                .help("起動中のプロセスの URL を開きます")
+                .help(L10n.text("起動中のプロセスの URL を開きます"))
             }
 
             // 詳細ペインと同じ判定を使う。ここだけ別に書くと、片方にだけ停止が出る状態が起きうる。
@@ -82,13 +82,13 @@ struct ToolbarActions: View {
                 Button(role: .destructive) {
                     state.stopProject(project)
                 } label: {
-                    Label("停止", systemImage: "stop.fill")
+                    Label(L10n.text("停止"), systemImage: "stop.fill")
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(!state.canStop)
-                .help(state.stopBlockedReason ?? "\(project.name) のプロセスをすべて停止します")
+                .help(state.stopBlockedReason ?? L10n.text("\(project.name) のプロセスをすべて停止します"))
             case .start, .noAction:
-                preconditionFailure("ツールバーの開発環境に起動・停止の進捗または停止以外の操作が選ばれました。")
+                preconditionFailure(L10n.text("ツールバーの開発環境に起動・停止の進捗または停止以外の操作が選ばれました。"))
             }
         }
     }
@@ -100,7 +100,7 @@ extension AppState {
     var toolbarProject: ProjectDefinition? {
         if let operation = inlineOperation {
             guard let project = project(operation.projectID) else {
-                preconditionFailure("起動・停止中の開発環境の定義がありません。")
+                preconditionFailure(L10n.text("起動・停止中の開発環境の定義がありません。"))
             }
             return project
         }

@@ -54,9 +54,9 @@ public enum ManagedStackCommandError: Error, Equatable, Sendable, CustomStringCo
     public var description: String {
         switch self {
         case let .forbiddenOption(command, option):
-            "`\(option)` は実行できません（\(command)）。"
+            L10n.text("`\(option)` は実行できません（\(command)）。")
         case let .unresolvable(command, reason):
-            "コマンド「\(command)」を実行できません。\n\(reason)"
+            L10n.text("コマンド「\(command)」を実行できません。\n\(reason)")
         }
     }
 }

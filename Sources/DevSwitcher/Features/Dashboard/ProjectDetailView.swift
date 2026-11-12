@@ -38,7 +38,7 @@ struct ProjectDetailView: View {
                 Spacer(minLength: Spacing.s)
                 moreMenu
             }
-            Text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件・スタック \(project.managedStacks.count) 件")
+            Text(L10n.text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件・スタック \(project.managedStacks.count) 件"))
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
         }
@@ -47,11 +47,11 @@ struct ProjectDetailView: View {
     /// 編集と登録解除の導線（`docs/SPEC.md` 15.1、15.3）。複製はPost-MVPなので出さない。
     private var moreMenu: some View {
         Menu {
-            Button("編集…") {
+            Button(L10n.text("編集…")) {
                 state.presentProjectForm(editing: project)
             }
             .disabled(!state.canEdit(project))
-            Menu("Finder で表示") {
+            Menu(L10n.text("Finder で表示")) {
                 ForEach(project.workingDirectories) { workingDirectory in
                     Button(workingDirectory.name) {
                         state.revealInFinder(workingDirectory)
@@ -59,7 +59,7 @@ struct ProjectDetailView: View {
                 }
             }
             Divider()
-            Button("登録を解除…") {
+            Button(L10n.text("登録を解除…")) {
                 state.presentUnregisterConfirmation(for: project)
             }
             .disabled(!state.canUnregister(project))
@@ -72,7 +72,7 @@ struct ProjectDetailView: View {
         // 無効なときに嘘の案内を出すことになる。
         .help(
             state.configurationBlockedReason(for: project)
-                ?? "開発環境の編集・Finder 表示・登録解除"
+                ?? L10n.text("開発環境の編集・Finder 表示・登録解除")
         )
     }
 
@@ -107,12 +107,12 @@ struct ProjectDetailView: View {
                 case .stop:
                     // 起動と同じ場所に置く。ツールバーだけにすると、ここを見ている人が
                     // 停止の場所を探すことになる。止める操作なので既定ボタンにはしない。
-                    Button("停止", role: .destructive) {
+                    Button(L10n.text("停止"), role: .destructive) {
                         state.stopProject(project)
                     }
                     .disabled(!state.canStop)
                 case .start:
-                    Button(state.activeProject == nil ? "起動" : "切り替える") {
+                    Button(state.activeProject == nil ? L10n.text("起動") : L10n.text("切り替える")) {
                         state.startOrSwitch(to: project)
                     }
                     .keyboardShortcut(.defaultAction)
@@ -136,7 +136,7 @@ struct ProjectDetailView: View {
                 NoteText(notice, tint: .secondary)
             }
             if primaryControl == .start, enabledCount == 0 {
-                NoteText("今回起動するプロセスが選ばれていません。1つ以上チェックしてください。", tint: .orange)
+                NoteText(L10n.text("今回起動するプロセスが選ばれていません。1つ以上チェックしてください。"), tint: .orange)
             }
         }
     }
@@ -157,8 +157,10 @@ struct ProjectDetailView: View {
 
     private var startSummary: String {
         let excluded = project.launchUnits.filter { !project.isEnabledNow($0.id) }.count
-        let base = "起動対象 \(enabledCount) / \(project.launchUnits.count) 件"
-        return excluded > 0 ? base + "（対象外 \(excluded)）" : base
+        if excluded > 0 {
+            return L10n.text("起動対象 \(enabledCount) / \(project.launchUnits.count) 件（対象外 \(excluded)）")
+        }
+        return L10n.text("起動対象 \(enabledCount) / \(project.launchUnits.count) 件")
     }
 
     // MARK: - サービス
@@ -166,10 +168,10 @@ struct ProjectDetailView: View {
     private var servicesSection: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack {
-                SectionLabel("作業ディレクトリとプロセス")
+                SectionLabel(L10n.text("作業ディレクトリとプロセス"))
                 Spacer()
                 if isStopped {
-                    Button("既定に戻す") {
+                    Button(L10n.text("既定に戻す")) {
                         state.resetEnabledNow(in: project)
                     }
                     .buttonStyle(.link)
@@ -177,7 +179,7 @@ struct ProjectDetailView: View {
                     .disabled(state.configurationBlockedReason(for: project) != nil)
                     .help(
                         state.configurationBlockedReason(for: project)
-                            ?? "今回の起動対象の指定を消し、プロセスごとの既定に従わせます。"
+                            ?? L10n.text("今回の起動対象の指定を消し、プロセスごとの既定に従わせます。")
                     )
                 }
             }
@@ -185,13 +187,13 @@ struct ProjectDetailView: View {
             // 読み切れず、「今回どれを起動するか」という本来の判断が埋もれる。
             Text(
                 isStopped
-                    ? "チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。"
-                    : "コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。"
+                    ? L10n.text("チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。")
+                    : L10n.text("コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。")
             )
             .font(Typography.caption)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
-            Text("左端の番号は起動順です。")
+            Text(L10n.text("左端の番号は起動順です。"))
                 .font(Typography.caption)
                 .foregroundStyle(.tertiary)
 
@@ -207,12 +209,12 @@ struct ProjectDetailView: View {
     /// 既定の終了順は起動順の逆。読み取り専用で併記する。
     private var shutdownOrderNote: some View {
         VStack(alignment: .leading, spacing: Spacing.hairline) {
-            SectionLabel("終了順")
+            SectionLabel(L10n.text("終了順"))
             Text(project.shutdownUnits.map(\.name).joined(separator: " → "))
                 .font(Typography.mono)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(project.stopOrder == nil ? "起動順の逆（既定）" : "終了順を明示的に指定しています")
+            Text(project.stopOrder == nil ? L10n.text("起動順の逆（既定）") : L10n.text("終了順を明示的に指定しています"))
                 .font(Typography.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -226,7 +228,7 @@ private struct WorkingDirectorySummary: View {
     private var services: [LaunchUnit] {
         (workingDirectory.stackIDs + workingDirectory.serviceIDs).map { serviceID in
             guard let service = project.entry(id: serviceID) else {
-                preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
+                preconditionFailure(L10n.text("作業ディレクトリに存在しないプロセス ID が含まれています。"))
             }
             return service
         }
@@ -248,7 +250,7 @@ private struct WorkingDirectorySummary: View {
                 Text(workingDirectory.name)
                     .font(Typography.heading)
                 Spacer(minLength: Spacing.s)
-                Text("プロセス \(workingDirectory.serviceIDs.count) 件・スタック \(workingDirectory.stackIDs.count) 件")
+                Text(L10n.text("プロセス \(workingDirectory.serviceIDs.count) 件・スタック \(workingDirectory.stackIDs.count) 件"))
                     .font(Typography.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -261,7 +263,7 @@ private struct WorkingDirectorySummary: View {
                 .help(workingDirectory.directory.path)
 
             if !directoryIsAvailable {
-                NoteText("このディレクトリを利用できません。", tint: .red)
+                NoteText(L10n.text("このディレクトリを利用できません。"), tint: .red)
             }
 
             ForEach(services) { service in
@@ -288,7 +290,7 @@ struct ServiceSummaryRow: View {
 
     private var startupPosition: Int {
         guard let index = project.launchUnits.firstIndex(where: { $0.id == service.id }) else {
-            preconditionFailure("存在しないプロセスの起動順は表示できません。")
+            preconditionFailure(L10n.text("存在しないプロセスの起動順は表示できません。"))
         }
         return index + 1
     }
@@ -312,10 +314,10 @@ struct ServiceSummaryRow: View {
                 .labelsHidden()
                 .toggleStyle(.checkbox)
                 .disabled(state.configurationBlockedReason(for: project) != nil)
-                .accessibilityLabel("\(service.name) を今回起動する")
+                .accessibilityLabel(L10n.text("\(service.name) を今回起動する"))
                 .help(
                     state.configurationBlockedReason(for: project)
-                        ?? "今回このサービスを起動するかどうかを切り替えます。"
+                        ?? L10n.text("今回このサービスを起動するかどうかを切り替えます。")
                 )
 
                 Text(service.name)
@@ -330,16 +332,16 @@ struct ServiceSummaryRow: View {
 
             // 補助情報は固定の横並びにしない。狭い詳細ペインで黙って切れる。
             FlowRow(horizontalSpacing: Spacing.m, verticalSpacing: Spacing.xs) {
-                Text(service.displayTag ?? "プロセス")
+                Text(service.displayTag ?? L10n.text("プロセス"))
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                 Text(configuredPorts)
                     .font(Typography.monoSmall)
                     .foregroundStyle(.secondary)
-                    .help("設定ポート")
+                    .help(L10n.text("設定ポート"))
                 // failurePolicy は日常的に見る情報ではないので、この行にだけ小さく出す。
                 if isEnabled {
-                    Text(service.failurePolicy == .block ? "失敗で全体を停止" : "失敗しても続行")
+                    Text(service.failurePolicy == .block ? L10n.text("失敗で全体を停止") : L10n.text("失敗しても続行"))
                         .font(Typography.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -363,7 +365,7 @@ struct ServiceSummaryRow: View {
     }
 
     private var configuredPorts: String {
-        guard !service.ports.isEmpty else { return "ポートなし" }
+        guard !service.ports.isEmpty else { return L10n.text("ポートなし") }
         return service.ports
             .map { port in
                 let name = port.label.flatMap { $0.isEmpty ? nil : $0 }

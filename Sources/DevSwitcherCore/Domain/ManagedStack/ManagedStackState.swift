@@ -12,10 +12,10 @@ public enum ManagedStackState: String, Equatable, Sendable {
 
     public var label: String {
         switch self {
-        case .notRunning: "停止中"
-        case .running: "稼働中"
-        case .degraded: "一部だけ稼働"
-        case .unknown: "判定不能"
+        case .notRunning: L10n.text("停止中")
+        case .running: L10n.text("稼働中")
+        case .degraded: L10n.text("一部だけ稼働")
+        case .unknown: L10n.text("判定不能")
         }
     }
 }
@@ -31,9 +31,9 @@ public enum ManagedStackRelationship: String, Equatable, Sendable, Codable {
 
     public var label: String {
         switch self {
-        case .launched: "今回起動"
-        case .adopted: "引き継ぎ"
-        case .restored: "再検証済み"
+        case .launched: L10n.text("今回起動")
+        case .adopted: L10n.text("引き継ぎ")
+        case .restored: L10n.text("再検証済み")
         }
     }
 }
@@ -81,7 +81,7 @@ public struct ManagedStackSnapshot: Equatable, Sendable {
     public init(type: ManagedStackType, observations: [ManagedStackObservation]) {
         precondition(
             observations.allSatisfy { $0.identity.type == type },
-            "\(type.rawValue) の snapshot に別の種類の観測が含まれています。"
+            L10n.text("\(type.rawValue) の snapshot に別の種類の観測が含まれています。")
         )
         results = [type: .observed(observations.sorted { $0.identity < $1.identity })]
     }
@@ -99,7 +99,7 @@ public struct ManagedStackSnapshot: Equatable, Sendable {
     public func merging(_ other: ManagedStackSnapshot) -> ManagedStackSnapshot {
         precondition(
             Set(results.keys).isDisjoint(with: other.results.keys),
-            "同じ種類の観測結果を二重に合わせようとしています。"
+            L10n.text("同じ種類の観測結果を二重に合わせようとしています。")
         )
         return ManagedStackSnapshot(results: results.merging(other.results) { current, _ in current })
     }
@@ -173,7 +173,7 @@ public struct ManagedStackSnapshot: Equatable, Sendable {
                 return [reason]
             case let .observed(observations):
                 return observations.filter { $0.state == .unknown }.map {
-                    "\($0.identity): \($0.detail ?? "理由を取得できませんでした。")"
+                    "\($0.identity): \($0.detail ?? L10n.text("理由を取得できませんでした。"))"
                 }
             case nil:
                 return []
@@ -182,7 +182,7 @@ public struct ManagedStackSnapshot: Equatable, Sendable {
     }
 
     public static func unobservedDetail(_ type: ManagedStackType) -> String {
-        "\(type.displayName)の状態をまだ観測できていません。"
+        L10n.text("\(type.displayName)の状態をまだ観測できていません。")
     }
 }
 
@@ -200,10 +200,10 @@ public struct ManagedStackConfirmationTarget: Equatable, Sendable, Identifiable 
 
         public var label: String {
             switch self {
-            case .adopt: "引き継ぐ"
-            case .restart: "停止して起動し直す"
-            case .stop: "停止する"
-            case .start: "起動する"
+            case .adopt: L10n.text("引き継ぐ")
+            case .restart: L10n.text("停止して起動し直す")
+            case .stop: L10n.text("停止する")
+            case .start: L10n.text("起動する")
             }
         }
     }
@@ -245,7 +245,7 @@ public struct ManagedStackConfirmationTarget: Equatable, Sendable, Identifiable 
     }
 
     public var registrationLabel: String {
-        guard let registration else { return "未登録" }
+        guard let registration else { return L10n.text("未登録") }
         return "\(registration.environmentName) / \(registration.stackName)"
     }
 }
@@ -268,10 +268,10 @@ public struct ManagedStackConfirmationPlan: Equatable, Sendable {
         fingerprints: [UUID: ManagedStackFingerprint]
     ) {
         guard let first = entries.first else {
-            preconditionFailure("確認 plan に行がありません。")
+            preconditionFailure(L10n.text("確認 plan に行がありません。"))
         }
-        precondition(first.stackID != nil, "確認 plan の先頭行(起動先)に stackID がありません。")
-        precondition(first.registration != nil, "確認 plan の先頭行(起動先)に registration がありません。")
+        precondition(first.stackID != nil, L10n.text("確認 plan の先頭行(起動先)に stackID がありません。"))
+        precondition(first.registration != nil, L10n.text("確認 plan の先頭行(起動先)に registration がありません。"))
         self.environmentName = environmentName
         self.entries = entries
         self.snapshot = snapshot

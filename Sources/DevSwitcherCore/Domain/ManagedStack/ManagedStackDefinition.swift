@@ -34,7 +34,7 @@ public enum ManagedStackType: String, Codable, Sendable, CaseIterable {
     public var identityLabel: String {
         switch self {
         case .supabase: "`project_id`"
-        case .dockerCompose: "プロジェクト名"
+        case .dockerCompose: L10n.text("プロジェクト名")
         }
     }
 
@@ -75,9 +75,9 @@ public enum ManagedStackIdentityError: Error, Equatable, Sendable, CustomStringC
     public var description: String {
         switch self {
         case let .invalidValue(type, value):
-            "\(type.displayName)の\(type.identityLabel)「\(value)」を解釈できません。"
+            L10n.text("\(type.displayName)の\(type.identityLabel)「\(value)」を解釈できません。")
         case let .typeMismatch(expected, actual):
-            "\(expected.displayName)のIDが必要ですが、\(actual.displayName)のIDが渡されました。"
+            L10n.text("\(expected.displayName)のIDが必要ですが、\(actual.displayName)のIDが渡されました。")
         }
     }
 }
@@ -170,10 +170,10 @@ public struct ManagedStackDefinition: Codable, Equatable, Sendable, Identifiable
         let type = try c.decode(ManagedStackType.self, forKey: .type)
         switch type {
         case .supabase:
-            guard !c.contains(.dockerCompose) else { throw ComposeConfigurationError.invalid("Supabase に dockerCompose は指定できません。") }
+            guard !c.contains(.dockerCompose) else { throw ComposeConfigurationError.invalid(L10n.text("Supabase に dockerCompose は指定できません。")) }
             configuration = .supabase(try c.decode(SupabaseStackConfiguration.self, forKey: .supabase))
         case .dockerCompose:
-            guard !c.contains(.supabase) else { throw ComposeConfigurationError.invalid("Compose に supabase は指定できません。") }
+            guard !c.contains(.supabase) else { throw ComposeConfigurationError.invalid(L10n.text("Compose に supabase は指定できません。")) }
             configuration = .dockerCompose(try c.decode(DockerComposeStackConfiguration.self, forKey: .dockerCompose))
         }
         ports = try c.decode([PortSpec].self, forKey: .ports)
@@ -258,7 +258,7 @@ public enum ManagedStackConfigurationIssue: Equatable, Sendable {
     public func validationMessage(stackName: String) -> String {
         switch self {
         case let .supabase(issue): issue.validationMessage(stackName: stackName)
-        case let .dockerCompose(reason): "Docker Compose「\(stackName)」: \(reason)"
+        case let .dockerCompose(reason): L10n.text("Docker Compose「\(stackName)」: \(reason)")
         }
     }
 }

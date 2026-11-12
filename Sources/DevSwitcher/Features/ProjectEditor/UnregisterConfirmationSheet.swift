@@ -15,11 +15,11 @@ struct UnregisterConfirmationSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            Text("「\(project.name)」の登録を解除しますか？")
+            Text(L10n.text("「\(project.name)」の登録を解除しますか？"))
                 .font(Typography.title)
 
             VStack(alignment: .leading, spacing: Spacing.tight) {
-                Text("Dev Switcher の一覧から外すだけです。次のディレクトリとその中身は削除されません。")
+                Text(L10n.text("Dev Switcher の一覧から外すだけです。次のディレクトリとその中身は削除されません。"))
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -35,7 +35,7 @@ struct UnregisterConfirmationSheet: View {
                 }
             }
 
-            Text("登録しているプロセス \(project.services.count) 件とスタック \(project.managedStacks.count) 件の設定は失われます。")
+            Text(L10n.text("登録しているプロセス \(project.services.count) 件とスタック \(project.managedStacks.count) 件の設定は失われます。"))
                 .font(Typography.support)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -51,11 +51,11 @@ struct UnregisterConfirmationSheet: View {
             HStack {
                 Spacer()
                 // 既定は安全側。⏎ は「キャンセル」に当たる。
-                Button("キャンセル", role: .cancel) {
+                Button(L10n.text("キャンセル"), role: .cancel) {
                     state.unregisterPresentation = nil
                 }
                 .keyboardShortcut(.cancelAction)
-                Button("登録を解除", role: .destructive) { unregister() }
+                Button(L10n.text("登録を解除"), role: .destructive) { unregister() }
             }
         }
         .padding(Spacing.xl)
@@ -67,7 +67,7 @@ struct UnregisterConfirmationSheet: View {
             try state.unregisterProject(project)
         } catch {
             // 失敗したらシートを閉じない。解除できたと誤認させない。
-            errorMessage = "登録を解除できませんでした。設定ファイルと一覧は変更していません。\n\(error)"
+            errorMessage = L10n.text("登録を解除できませんでした。設定ファイルと一覧は変更していません。\n\(error)")
         }
     }
 }

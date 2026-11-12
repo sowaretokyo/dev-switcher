@@ -1,3 +1,4 @@
+import DevSwitcherCore
 import Foundation
 
 enum AppResources {
@@ -22,7 +23,7 @@ enum AppResources {
         var description: String {
             switch self {
             case let .missingBundle(url):
-                "アプリの同梱リソースが見つかりません。アプリを入れ直してください。\n\(url.path)"
+                L10n.text("アプリの同梱リソースが見つかりません。アプリを入れ直してください。\n\(url.path)")
             }
         }
     }

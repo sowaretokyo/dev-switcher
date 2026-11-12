@@ -21,7 +21,7 @@ struct ManagedStackConfirmationSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: Spacing.s) {
-                SectionLabel("対象のスタック")
+                SectionLabel(L10n.text("対象のスタック"))
                 ForEach(content.rows) { row in
                     StackRow(row: row)
                 }
@@ -43,7 +43,7 @@ struct ManagedStackConfirmationSheet: View {
                     state.approveManagedStackConfirmation(presentation)
                 }
                 Spacer()
-                Button("キャンセル") {
+                Button(L10n.text("キャンセル")) {
                     state.cancelManagedStackConfirmation()
                 }
                 .keyboardShortcut(.defaultAction)

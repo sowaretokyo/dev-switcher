@@ -79,7 +79,7 @@ actor AdoptedSupervisor {
         events: @escaping @Sendable (ServiceSupervisor.Event) -> Void
     ) throws {
         guard !released else { throw RuntimeError.notRunning(service: serviceName) }
-        precondition(logTail == nil, "引き継いだプロセスのログ追尾を二重に開始できません。")
+        precondition(logTail == nil, L10n.text("引き継いだプロセスのログ追尾を二重に開始できません。"))
         logTail = try LogFileTail(
             files: [
                 (url: files.standardOutput, stream: .stdout),
@@ -166,7 +166,7 @@ actor AdoptedSupervisor {
         case .empty: released = true; return false
         case .matched: return true
         case let .notIdentified(reason), let .unobservable(reason):
-            throw RuntimeError.invalidHandoff(service: "停止対象", reason: reason)
+            throw RuntimeError.invalidHandoff(service: L10n.text("停止対象"), reason: reason)
         }
     }
     func waitForCommandStop(grace: Duration) async -> ServiceStopOutcome {
@@ -176,7 +176,7 @@ actor AdoptedSupervisor {
             if ContinuousClock.now >= deadline { break }
             do { try await Task.sleep(for: .milliseconds(50)) } catch { break }
         } while true
-        return .residual(processGroupID: processGroupIdentifier, reason: "停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。")
+        return .residual(processGroupID: processGroupIdentifier, reason: L10n.text("停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。"))
     }
 
     public func stop(grace: Duration = .seconds(10)) async -> ServiceStopOutcome {
@@ -215,20 +215,24 @@ actor AdoptedSupervisor {
         case let .notIdentified(reason):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "プロセスグループ \(processGroupIdentifier) を"
-                    + "引き継ぎ時のものと同定できませんでした。"
-                    + "別のプロセスへシグナルを送らないため、停止操作を行いませんでした。\n\(reason)"
+                reason: L10n.text("""
+                    プロセスグループ \(processGroupIdentifier) を\
+                    引き継ぎ時のものと同定できませんでした。\
+                    別のプロセスへシグナルを送らないため、停止操作を行いませんでした。\n\(reason)
+                    """)
             )
         case let .unobservable(reason):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "\(reason)同定できないため停止操作を行いませんでした。"
+                reason: L10n.text("\(reason)同定できないため停止操作を行いませんでした。")
             )
         case let .failed(code):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "シグナルを送れませんでした（errno \(code): "
-                    + "\(CStringDecoding.errorMessage(code))）。"
+                reason: L10n.text("""
+                    シグナルを送れませんでした（errno \(code): \
+                    \(CStringDecoding.errorMessage(code))）。
+                    """)
             )
         }
 
@@ -248,7 +252,7 @@ actor AdoptedSupervisor {
         }
         return .residual(
             processGroupID: processGroupIdentifier,
-            reason: "猶予内にプロセスグループが空になりませんでした。"
+            reason: L10n.text("猶予内にプロセスグループが空になりませんでした。")
         )
     }
 

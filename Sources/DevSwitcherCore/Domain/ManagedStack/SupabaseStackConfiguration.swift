@@ -36,7 +36,7 @@ public struct SupabaseProjectID: Hashable, Sendable, Codable, CustomStringConver
         guard let value = SupabaseProjectID(rawValue: raw) else {
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "project_id「\(raw)」を解釈できません。"
+                debugDescription: L10n.text("project_id「\(raw)」を解釈できません。")
             )
         }
         self = value
@@ -110,7 +110,7 @@ public struct SupabaseStackConfiguration: Codable, Equatable, Sendable {
     }
     public func encode(to encoder: any Encoder) throws {
         guard stop == nil else {
-            throw EncodingError.invalidValue(self, .init(codingPath: encoder.codingPath, debugDescription: "Supabase の停止コマンドは個別指定できません。"))
+            throw EncodingError.invalidValue(self, .init(codingPath: encoder.codingPath, debugDescription: L10n.text("Supabase の停止コマンドは個別指定できません。")))
         }
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(start, forKey: .start)
@@ -350,34 +350,34 @@ public enum SupabaseConfigurationIssue: Equatable, Sendable {
     /// 起動・切替・手掛かりの再検証で示す理由。
     public var failureReason: String {
         switch self {
-        case .workingDirectoryMismatch: "Supabase の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。"
+        case .workingDirectoryMismatch: L10n.text("Supabase の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。")
         case .customStopUnsupported:
-            "Supabaseの終了コマンドは起動コマンドから導出するため、個別には指定できません。"
+            L10n.text("Supabaseの終了コマンドは起動コマンドから導出するため、個別には指定できません。")
         case .commandUnsupported:
-            "起動コマンドは `supabase start`、`pnpm exec supabase start`、`npx supabase start`、`pnpx supabase start`のいずれかの形式で指定してください。"
+            L10n.text("起動コマンドは `supabase start`、`pnpm exec supabase start`、`npx supabase start`、`pnpx supabase start`のいずれかの形式で指定してください。")
         case .startSubcommandMissing:
-            "起動コマンドに `start` サブコマンドがありません。"
+            L10n.text("起動コマンドに `start` サブコマンドがありません。")
         case .forbiddenStopOption:
-            "起動コマンドに `--all` と `--no-backup` は指定できません。"
+            L10n.text("起動コマンドに `--all` と `--no-backup` は指定できません。")
         case .workdirValueMissing:
-            "`--workdir` にディレクトリが指定されていません。"
+            L10n.text("`--workdir` にディレクトリが指定されていません。")
         }
     }
 
     /// 保存・取り込み時の検証で示す文言。
     public func validationMessage(stackName: String) -> String {
         switch self {
-        case .workingDirectoryMismatch: "Supabase「\(stackName)」の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。"
+        case .workingDirectoryMismatch: L10n.text("Supabase「\(stackName)」の起動コマンドの作業ディレクトリが、所属する作業ディレクトリと一致しません。")
         case .customStopUnsupported:
-            "Supabase「\(stackName)」の終了コマンドは個別に指定できません。起動コマンドから導出した `supabase stop` を使用します。"
+            L10n.text("Supabase「\(stackName)」の終了コマンドは個別に指定できません。起動コマンドから導出した `supabase stop` を使用します。")
         case .commandUnsupported:
-            "Supabase「\(stackName)」の起動コマンドは `supabase start`、`pnpm exec supabase start`、`npx supabase start`、`pnpx supabase start`のいずれかの形式で指定してください。"
+            L10n.text("Supabase「\(stackName)」の起動コマンドは `supabase start`、`pnpm exec supabase start`、`npx supabase start`、`pnpx supabase start`のいずれかの形式で指定してください。")
         case .startSubcommandMissing:
-            "Supabase「\(stackName)」の起動コマンドに `start` サブコマンドがありません。"
+            L10n.text("Supabase「\(stackName)」の起動コマンドに `start` サブコマンドがありません。")
         case let .forbiddenStopOption(option):
-            "Supabase「\(stackName)」の起動コマンドに `\(option)` は指定できません。複数プロジェクトやバックアップを巻き込むため、Dev Switcherでは実行しません。"
+            L10n.text("Supabase「\(stackName)」の起動コマンドに `\(option)` は指定できません。複数プロジェクトやバックアップを巻き込むため、Dev Switcherでは実行しません。")
         case .workdirValueMissing:
-            "Supabase「\(stackName)」の `--workdir` にディレクトリが指定されていません。"
+            L10n.text("Supabase「\(stackName)」の `--workdir` にディレクトリが指定されていません。")
         }
     }
 }

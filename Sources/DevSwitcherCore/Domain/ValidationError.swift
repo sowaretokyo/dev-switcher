@@ -52,97 +52,97 @@ public enum ValidationError: Error, Equatable, Sendable, CustomStringConvertible
 
     public var description: String {
         switch self {
-        case let .invalidCommandDirectory(service): "プロセス「\(service)」のコマンドの作業ディレクトリは絶対パスの file URL で指定してください。"
-        case let .invalidTag(service): "プロセス「\(service)」のタグは空でない32文字以内の文字列で指定してください。"
-        case let .processUsesManagedStackCommand(service, type): "プロセス「\(service)」のコマンドは \(type.displayName) のスタックとして登録してください。"
+        case let .invalidCommandDirectory(service): L10n.text("プロセス「\(service)」のコマンドの作業ディレクトリは絶対パスの file URL で指定してください。")
+        case let .invalidTag(service): L10n.text("プロセス「\(service)」のタグは空でない32文字以内の文字列で指定してください。")
+        case let .processUsesManagedStackCommand(service, type): L10n.text("プロセス「\(service)」のコマンドは \(type.displayName) のスタックとして登録してください。")
         case .projectNameEmpty:
-            "開発環境名が空です。"
+            L10n.text("開発環境名が空です。")
         case let .duplicateProjectName(name):
-            "開発環境名「\(name)」は既に登録されています。"
+            L10n.text("開発環境名「\(name)」は既に登録されています。")
         case let .duplicateProjectID(id):
-            "開発環境 ID が重複しています（\(id.uuidString)）。"
+            L10n.text("開発環境 ID が重複しています（\(id.uuidString)）。")
         case .noWorkingDirectories:
-            "作業ディレクトリが1件も登録されていません。"
+            L10n.text("作業ディレクトリが1件も登録されていません。")
         case let .workingDirectoryNameEmpty(index):
-            "\(index + 1) 番目の作業ディレクトリ名が空です。"
+            L10n.text("\(index + 1) 番目の作業ディレクトリ名が空です。")
         case let .duplicateWorkingDirectoryName(name):
-            "作業ディレクトリ名「\(name)」が開発環境内で重複しています。"
+            L10n.text("作業ディレクトリ名「\(name)」が開発環境内で重複しています。")
         case let .duplicateWorkingDirectoryID(id):
-            "作業ディレクトリ ID が重複しています（\(id.uuidString)）。"
+            L10n.text("作業ディレクトリ ID が重複しています（\(id.uuidString)）。")
         case let .workingDirectoryPathEmpty(name):
-            "作業ディレクトリ「\(name)」の場所が指定されていません。"
+            L10n.text("作業ディレクトリ「\(name)」の場所が指定されていません。")
         case let .workingDirectoryPathNotAbsolute(name, path):
-            "作業ディレクトリ「\(name)」は絶対パスで指定してください（\(path)）。"
+            L10n.text("作業ディレクトリ「\(name)」は絶対パスで指定してください（\(path)）。")
         case let .duplicateWorkingDirectoryPath(url):
-            "同じ作業ディレクトリが複数登録されています（\(url.path)）。"
+            L10n.text("同じ作業ディレクトリが複数登録されています（\(url.path)）。")
         case let .workingDirectoryHasNoServices(name):
-            "作業ディレクトリ「\(name)」にプロセスが1件も登録されていません。"
+            L10n.text("作業ディレクトリ「\(name)」にプロセスが1件も登録されていません。")
         case let .workingDirectoryUnknownService(name, id):
-            "作業ディレクトリ「\(name)」に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
+            L10n.text("作業ディレクトリ「\(name)」に存在しないプロセス ID が含まれています（\(id.uuidString)）。")
         case let .serviceInMultipleWorkingDirectories(service):
-            "プロセス「\(service)」が複数の作業ディレクトリに登録されています。"
+            L10n.text("プロセス「\(service)」が複数の作業ディレクトリに登録されています。")
         case let .serviceWithoutWorkingDirectory(service):
-            "プロセス「\(service)」に作業ディレクトリが割り当てられていません。"
+            L10n.text("プロセス「\(service)」に作業ディレクトリが割り当てられていません。")
         case let .serviceWorkingDirectoryMismatch(service, expected, actual):
-            "プロセス「\(service)」の実行場所が所属ディレクトリと一致しません（所属: \(expected.path)、実行場所: \(actual.path)）。"
+            L10n.text("プロセス「\(service)」の実行場所が所属ディレクトリと一致しません（所属: \(expected.path)、実行場所: \(actual.path)）。")
         case let .namedWorkingDirectoryMissing(name, url):
-            "作業ディレクトリ「\(name)」が存在しません（\(url.path)）。"
+            L10n.text("作業ディレクトリ「\(name)」が存在しません（\(url.path)）。")
         case let .namedWorkingDirectoryNotADirectory(name, url):
-            "作業ディレクトリ「\(name)」のパスがディレクトリではありません（\(url.path)）。"
+            L10n.text("作業ディレクトリ「\(name)」のパスがディレクトリではありません（\(url.path)）。")
         case .noServices:
-            "プロセスが1つも登録されていません。"
+            L10n.text("プロセスが1つも登録されていません。")
         case let .serviceNameEmpty(index):
-            "\(index + 1) 番目のプロセス名が空です。"
+            L10n.text("\(index + 1) 番目のプロセス名が空です。")
         case let .duplicateServiceName(name):
-            "プロセス名「\(name)」が開発環境内で重複しています。"
+            L10n.text("プロセス名「\(name)」が開発環境内で重複しています。")
         case let .duplicateServiceID(id):
-            "プロセス ID が重複しています（\(id.uuidString)）。"
+            L10n.text("プロセス ID が重複しています（\(id.uuidString)）。")
         case let .duplicateServiceIDAcrossProjects(id):
-            "プロセス ID が別の開発環境と重複しています（\(id.uuidString)）。"
+            L10n.text("プロセス ID が別の開発環境と重複しています（\(id.uuidString)）。")
         case let .executableEmpty(service):
-            "プロセス「\(service)」の実行ファイルが空です。"
+            L10n.text("プロセス「\(service)」の実行ファイルが空です。")
         case let .emptyArgument(service, index):
-            "プロセス「\(service)」の \(index + 1) 番目の引数が空文字です。"
+            L10n.text("プロセス「\(service)」の \(index + 1) 番目の引数が空文字です。")
         case let .invalidArgumentsJSON(service, reason):
-            "プロセス「\(service)」の引数はJSONの文字列配列で指定してください。\n\(reason)"
+            L10n.text("プロセス「\(service)」の引数はJSONの文字列配列で指定してください。\n\(reason)")
         case let .workingDirectoryMissing(service, url):
-            "プロセス「\(service)」の作業ディレクトリが存在しません（\(url.path)）。"
+            L10n.text("プロセス「\(service)」の作業ディレクトリが存在しません（\(url.path)）。")
         case let .portNotANumber(service, value):
-            "プロセス「\(service)」のポート「\(value)」は数値として解釈できません。"
+            L10n.text("プロセス「\(service)」のポート「\(value)」は数値として解釈できません。")
         case let .portOutOfRange(service, port):
-            "プロセス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。"
+            L10n.text("プロセス「\(service)」のポート \(port) が範囲外です（\(PortSpec.validRange.lowerBound)〜\(PortSpec.validRange.upperBound)）。")
         case let .duplicatePortInService(service, port):
-            "プロセス「\(service)」でポート \(port) が重複しています。"
+            L10n.text("プロセス「\(service)」でポート \(port) が重複しています。")
         case let .duplicatePortIDInService(service, id):
-            "プロセス「\(service)」内でポート ID が重複しています（\(id.uuidString)）。"
+            L10n.text("プロセス「\(service)」内でポート ID が重複しています（\(id.uuidString)）。")
         case let .missingPrimaryPort(service):
-            "プロセス「\(service)」に代表ポートが指定されていません。"
+            L10n.text("プロセス「\(service)」に代表ポートが指定されていません。")
         case let .multiplePrimaryPorts(service):
-            "プロセス「\(service)」に代表ポートが複数指定されています。1つだけ指定してください。"
+            L10n.text("プロセス「\(service)」に代表ポートが複数指定されています。1つだけ指定してください。")
         case let .portLabelEmpty(service, port):
-            "プロセス「\(service)」のポート \(port) のラベルが空文字です。ラベルを入力するか未設定にしてください。"
+            L10n.text("プロセス「\(service)」のポート \(port) のラベルが空文字です。ラベルを入力するか未設定にしてください。")
         case let .invalidOpenURL(service, value):
-            "プロセス「\(service)」の開く URL「\(value)」は http / https の URL として解釈できません。"
+            L10n.text("プロセス「\(service)」の開く URL「\(value)」は http / https の URL として解釈できません。")
         case let .stopOrderMissingService(service):
-            "終了順にプロセス「\(service)」が含まれていません。終了順を指定する場合は全プロセスを並べてください。"
+            L10n.text("終了順にプロセス「\(service)」が含まれていません。終了順を指定する場合は全プロセスを並べてください。")
         case let .stopOrderUnknownService(id):
-            "終了順に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
+            L10n.text("終了順に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。")
         case let .stopOrderDuplicate(service):
-            "終了順でプロセス「\(service)」が重複しています。"
+            L10n.text("終了順でプロセス「\(service)」が重複しています。")
         case let .enabledNowUnknownService(id):
-            "起動対象の指定に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。"
+            L10n.text("起動対象の指定に、この開発環境に存在しないプロセス ID が含まれています（\(id.uuidString)）。")
         case let .stopExecutableEmpty(service):
-            "プロセス「\(service)」の終了コマンドの実行ファイルが空です。"
+            L10n.text("プロセス「\(service)」の終了コマンドの実行ファイルが空です。")
         case let .stopEmptyArgument(service, index):
-            "プロセス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。"
+            L10n.text("プロセス「\(service)」の終了コマンドの \(index + 1) 番目の引数が空文字です。")
         case let .managedStackConfigurationInvalid(stack, issue):
             issue.validationMessage(stackName: stack)
         case let .managedStackLimitExceeded(type, limit, stacks):
-            "1つの開発環境に登録できる \(type.displayName) は\(limit)件までです（\(stacks.joined(separator: " / "))）。起動対象から外していても登録できません。"
+            L10n.text("1つの開発環境に登録できる \(type.displayName) は\(limit)件までです（\(stacks.joined(separator: " / "))）。起動対象から外していても登録できません。")
         case let .managedStackIdentityUnresolved(stack, type, reason):
-            "\(type.displayName)「\(stack)」の \(type.identityLabel) を取得できません。\n\(reason)"
+            L10n.text("\(type.displayName)「\(stack)」の \(type.identityLabel) を取得できません。\n\(reason)")
         case let .duplicateManagedStackIdentity(identity, otherProject):
-            "\(identity.type.displayName) の \(identity.type.identityLabel)「\(identity.value)」は開発環境「\(otherProject)」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。"
+            L10n.text("\(identity.type.displayName) の \(identity.type.identityLabel)「\(identity.value)」は開発環境「\(otherProject)」で既に使用されています。同じスタックを複数の開発環境から扱う構成は対象外です。")
         }
     }
 }

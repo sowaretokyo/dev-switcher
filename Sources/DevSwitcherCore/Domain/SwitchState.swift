@@ -25,13 +25,13 @@ public enum SwitchState: Equatable, Sendable {
 
     public var label: String {
         switch self {
-        case .idle: "待機中"
-        case let .stopping(service, index, total): "\(service) を停止（\(index)/\(total)）"
-        case let .verifyingRelease(released, total): "停止元のポート解放を確認（\(released)/\(total)）"
-        case let .starting(service, index, total): "\(service) を起動（\(index)/\(total)）"
-        case let .observingStartup(service): "\(service) の起動を確認"
-        case let .rollingBack(service): "\(service) を停止（巻き戻し）"
-        case .completed: "完了"
+        case .idle: L10n.text("待機中")
+        case let .stopping(service, index, total): L10n.text("\(service) を停止（\(index)/\(total)）")
+        case let .verifyingRelease(released, total): L10n.text("停止元のポート解放を確認（\(released)/\(total)）")
+        case let .starting(service, index, total): L10n.text("\(service) を起動（\(index)/\(total)）")
+        case let .observingStartup(service): L10n.text("\(service) の起動を確認")
+        case let .rollingBack(service): L10n.text("\(service) を停止（巻き戻し）")
+        case .completed: L10n.text("完了")
         }
     }
 }
@@ -47,9 +47,9 @@ public enum PortOwnership: Equatable, Sendable {
 
     public var label: String {
         switch self {
-        case let .ownedByUs(_, serviceName): "Dev Switcher（\(serviceName)）"
-        case .external: "外部プロセス"
-        case .systemOwned: "システムまたは別ユーザー"
+        case let .ownedByUs(_, serviceName): L10n.text("Dev Switcher（\(serviceName)）")
+        case .external: L10n.text("外部プロセス")
+        case .systemOwned: L10n.text("システムまたは別ユーザー")
         }
     }
 
@@ -77,8 +77,8 @@ public struct ResolvedPortHolder: Equatable, Sendable {
     }
 
     public var description: String {
-        let commandLabel = command ?? "コマンド取得不能"
-        return ":\(port) — PID \(pid) \(commandLabel)（\(ownership.label)）"
+        let commandLabel = command ?? L10n.text("コマンド取得不能")
+        return L10n.text(":\(port) — PID \(pid) \(commandLabel)（\(ownership.label)）")
     }
 }
 
@@ -126,15 +126,15 @@ public struct ProjectFact: Equatable, Sendable {
     /// 「Bell は停止しました。」のように、いまどうなっているかを1行で断言する。
     public var statement: String {
         switch phase {
-        case .stopped: "「\(projectName)」は停止しました。"
-        case .starting: "「\(projectName)」は起動処理の途中です。"
-        case .running: "「\(projectName)」は起動済みです。"
+        case .stopped: L10n.text("「\(projectName)」は停止しました。")
+        case .starting: L10n.text("「\(projectName)」は起動処理の途中です。")
+        case .running: L10n.text("「\(projectName)」は起動済みです。")
         case let .degraded(stoppedServices):
-            "「\(projectName)」は一部停止です（停止中: \(stoppedServices.joined(separator: " / "))）。"
-        case .stopping: "「\(projectName)」は終了処理の途中です。"
-        case .switching: "「\(projectName)」は切替処理の途中です。"
-        case let .failed(reason): "「\(projectName)」は失敗しました（\(reason)）。"
-        case .residual: "「\(projectName)」に停止しきれていないプロセスが残っています。"
+            L10n.text("「\(projectName)」は一部停止です（停止中: \(stoppedServices.joined(separator: " / "))）。")
+        case .stopping: L10n.text("「\(projectName)」は終了処理の途中です。")
+        case .switching: L10n.text("「\(projectName)」は切替処理の途中です。")
+        case let .failed(reason): L10n.text("「\(projectName)」は失敗しました（\(reason)）。")
+        case .residual: L10n.text("「\(projectName)」に停止しきれていないプロセスが残っています。")
         }
     }
 }
@@ -194,8 +194,8 @@ public struct StopFailureDetail: Equatable, Sendable, Identifiable {
     }
 
     public var description: String {
-        let group = processGroupID.map { "プロセスグループ \($0)" } ?? "プロセスグループ不明"
-        return "\(serviceName)（\(group)）: \(reason)"
+        let group = processGroupID.map { L10n.text("プロセスグループ \($0)") } ?? L10n.text("プロセスグループ不明")
+        return L10n.text("\(serviceName)（\(group)）: \(reason)")
     }
 }
 
@@ -234,50 +234,52 @@ public struct SwitchFailure: Error, Equatable, Sendable, CustomStringConvertible
 
         public var title: String {
             switch self {
-            case .stopFailed: "停止できない"
-            case .portsNotReleased: "ポートが解放されない"
-            case .startFailed: "起動に失敗"
-            case .cancelled: "切替を中止した"
-            case .unsupportedConfiguration: "未対応の設定"
-            case let .managedStackConfirmationRequired(plan): "\(plan.primaryEntry.identity.type.displayName)の確認"
-            case let .managedStackObservationFailed(types, _): "\(Self.displayNames(of: types))の状態を確認できない"
-            case let .managedStackStopFailed(identity, _, _, _): "既存の\(identity.type.displayName)を停止できない"
-            case .portObservationFailed: "ポートを確認できない"
-            case .operationInProgress: "処理が実行中"
+            case .stopFailed: L10n.text("停止できない")
+            case .portsNotReleased: L10n.text("ポートが解放されない")
+            case .startFailed: L10n.text("起動に失敗")
+            case .cancelled: L10n.text("切替を中止した")
+            case .unsupportedConfiguration: L10n.text("未対応の設定")
+            case let .managedStackConfirmationRequired(plan): L10n.text("\(plan.primaryEntry.identity.type.displayName)の確認")
+            case let .managedStackObservationFailed(types, _): L10n.text("\(Self.displayNames(of: types))の状態を確認できない")
+            case let .managedStackStopFailed(identity, _, _, _): L10n.text("既存の\(identity.type.displayName)を停止できない")
+            case .portObservationFailed: L10n.text("ポートを確認できない")
+            case .operationInProgress: L10n.text("処理が実行中")
             }
         }
 
         public var detail: String {
             switch self {
             case let .stopFailed(services):
-                "停止しきれなかったサービス:\n"
+                L10n.text("停止しきれなかったサービス:\n")
                     + services.map(\.description).joined(separator: "\n")
             case let .portsNotReleased(holders):
-                "解放されていないポート:\n"
+                L10n.text("解放されていないポート:\n")
                     + holders.map(\.description).joined(separator: "\n")
             case let .startFailed(service, reason):
-                "サービス「\(service)」を起動できませんでした。\n\(reason)"
+                L10n.text("サービス「\(service)」を起動できませんでした。\n\(reason)")
             case .cancelled:
-                "切替元の停止は完了しました。切替先は起動していません。"
+                L10n.text("切替元の停止は完了しました。切替先は起動していません。")
             case let .unsupportedConfiguration(message):
                 message
             case let .managedStackConfirmationRequired(plan):
-                "サービス「\(plan.primaryStackName)」の起動前に、既存の\(plan.primaryEntry.identity.type.displayName)スタックの扱いを確認してください。\n"
+                L10n.text("サービス「\(plan.primaryStackName)」の起動前に、既存の\(plan.primaryEntry.identity.type.displayName)スタックの扱いを確認してください。\n")
                     + plan.entries
-                    .map { "\($0.identity): \($0.state.label) → \($0.action.label)（\($0.registrationLabel)）" }
+                    .map { L10n.text("\($0.identity): \($0.state.label) → \($0.action.label)（\($0.registrationLabel)）") }
                     .joined(separator: "\n")
             case let .managedStackObservationFailed(types, details):
-                "\(Self.displayNames(of: types))スタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。\n"
+                L10n.text("\(Self.displayNames(of: types))スタックの状態を確定できませんでした。停止中とは判断できないため、変更操作へ進みません。\n")
                     + details.joined(separator: "\n")
             case let .managedStackStopFailed(identity, reason, stopped, remaining):
-                "既存の\(identity.type.displayName)「\(identity)」を停止できませんでした。\n\(reason)\n"
-                    + "停止済み: \(stopped.isEmpty ? "なし" : stopped.joined(separator: " / "))\n"
-                    + "未処理: \(remaining.isEmpty ? "なし" : remaining.joined(separator: " / "))\n"
-                    + "停止済みのスタックは自動で再起動しません。"
+                L10n.text("""
+                    既存の\(identity.type.displayName)「\(identity)」を停止できませんでした。\n\(reason)\n\
+                    停止済み: \(stopped.isEmpty ? L10n.text("なし") : stopped.joined(separator: " / "))\n\
+                    未処理: \(remaining.isEmpty ? L10n.text("なし") : remaining.joined(separator: " / "))\n\
+                    停止済みのスタックは自動で再起動しません。
+                    """)
             case let .portObservationFailed(context, reason):
-                "\(context)に失敗しました。空いているとは判断できないため、起動を中止しました。\n\(reason)"
+                L10n.text("\(context)に失敗しました。空いているとは判断できないため、起動を中止しました。\n\(reason)")
             case .operationInProgress:
-                "ほかの切替処理が実行中です。完了してから操作してください。"
+                L10n.text("ほかの切替処理が実行中です。完了してから操作してください。")
             }
         }
     }
@@ -301,7 +303,7 @@ extension ManagedStackConfirmationPlan {
     /// Phase A の確認 plan は起動先 1 件、停止行の順に並ぶ。
     public var primaryEntry: ManagedStackConfirmationTarget {
         guard let first = entries.first else {
-            preconditionFailure("確認 plan に行がありません。")
+            preconditionFailure(L10n.text("確認 plan に行がありません。"))
         }
         return first
     }
@@ -314,7 +316,7 @@ extension ManagedStackConfirmationPlan {
     /// 起動先スタックの名前。先頭行の登録情報は plan の生成時に保証済み。
     public var primaryStackName: String {
         guard let registration = primaryEntry.registration else {
-            preconditionFailure("確認 plan の先頭行に registration がありません。")
+            preconditionFailure(L10n.text("確認 plan の先頭行に registration がありません。"))
         }
         return registration.stackName
     }

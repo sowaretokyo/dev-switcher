@@ -71,12 +71,12 @@ public enum SupabaseDockerContract {
         for record in records {
             guard let rawLabel = record.projectLabel else {
                 return .unobservable(
-                    reason: "コンテナ \(record.normalizedName) に `\(projectLabel)` ラベルがありません。"
+                    reason: L10n.text("コンテナ \(record.normalizedName) に `\(projectLabel)` ラベルがありません。")
                 )
             }
             guard let projectID = SupabaseProjectID(rawValue: rawLabel) else {
                 return .unobservable(
-                    reason: "コンテナ \(record.normalizedName) の `\(projectLabel)` ラベル「\(rawLabel)」を解釈できません。"
+                    reason: L10n.text("コンテナ \(record.normalizedName) の `\(projectLabel)` ラベル「\(rawLabel)」を解釈できません。")
                 )
             }
             grouped[projectID, default: []].append(record)
@@ -98,12 +98,12 @@ public enum SupabaseDockerContract {
         }
         guard databases.count <= 1 else {
             return .indeterminate(
-                reason: "\(projectID) のDBコンテナ候補が複数あります（\(databases.map(\.normalizedName).sorted().joined(separator: ", "))）。"
+                reason: L10n.text("\(projectID) のDBコンテナ候補が複数あります（\(databases.map(\.normalizedName).sorted().joined(separator: ", "))）。")
             )
         }
         guard let database = databases.first else {
             return .degraded(
-                reason: "\(projectID) のコンテナは \(containers.count) 件ありますが、DBコンテナがありません。"
+                reason: L10n.text("\(projectID) のコンテナは \(containers.count) 件ありますが、DBコンテナがありません。")
             )
         }
 
@@ -113,27 +113,27 @@ public enum SupabaseDockerContract {
             case "healthy":
                 return .databaseHealthy
             case "unhealthy":
-                return .degraded(reason: "\(database.normalizedName) が unhealthy です。")
+                return .degraded(reason: L10n.text("\(database.normalizedName) が unhealthy です。"))
             case "starting":
-                return .indeterminate(reason: "\(database.normalizedName) の health が starting です。")
+                return .indeterminate(reason: L10n.text("\(database.normalizedName) の health が starting です。"))
             case .none:
                 return .indeterminate(
-                    reason: "\(database.normalizedName) に healthcheck の結果がありません。"
+                    reason: L10n.text("\(database.normalizedName) に healthcheck の結果がありません。")
                 )
             case let .some(other):
                 return .indeterminate(
-                    reason: "\(database.normalizedName) の health「\(other)」は未対応です。"
+                    reason: L10n.text("\(database.normalizedName) の health「\(other)」は未対応です。")
                 )
             }
         case "exited", "dead", "created", "paused", "removing":
             return .degraded(
-                reason: "\(database.normalizedName) が \(database.status) 状態です。"
+                reason: L10n.text("\(database.normalizedName) が \(database.status) 状態です。")
             )
         case "restarting":
-            return .indeterminate(reason: "\(database.normalizedName) が restarting 中です。")
+            return .indeterminate(reason: L10n.text("\(database.normalizedName) が restarting 中です。"))
         default:
             return .indeterminate(
-                reason: "\(database.normalizedName) の status「\(database.status)」は未対応です。"
+                reason: L10n.text("\(database.normalizedName) の status「\(database.status)」は未対応です。")
             )
         }
     }
@@ -253,13 +253,13 @@ public enum SupabaseInventoryError: Error, Equatable, Sendable, CustomStringConv
     public var description: String {
         switch self {
         case let .dockerUnavailable(reason):
-            "docker コマンドを実行できません。\n\(reason)"
+            L10n.text("docker コマンドを実行できません。\n\(reason)")
         case let .commandFailed(command, status, output):
             output.isEmpty
-                ? "\(command) が失敗しました（\(status.description)）。"
-                : "\(command) が失敗しました（\(status.description)）。\n\(output)"
+                ? L10n.text("\(command) が失敗しました（\(status.description)）。")
+                : L10n.text("\(command) が失敗しました（\(status.description)）。\n\(output)")
         case let .decodingFailed(preview):
-            "docker の出力を解釈できません。\n\(preview)"
+            L10n.text("docker の出力を解釈できません。\n\(preview)")
         }
     }
 }

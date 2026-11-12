@@ -52,11 +52,11 @@ public enum RuntimeHintSnapshotError: Error, Equatable, Sendable, CustomStringCo
     public var description: String {
         switch self {
         case let .ownerUnavailable(serviceID):
-            "サービス \(serviceID.uuidString) の所有情報を取得できないため、再検証の手掛かりを保存できません。"
+            L10n.text("サービス \(serviceID.uuidString) の所有情報を取得できないため、再検証の手掛かりを保存できません。")
         case let .runtimeUnavailable(serviceID, serviceName):
-            "サービス「\(serviceName)」（\(serviceID.uuidString)）の実行情報を取得できないため、再検証の手掛かりを保存できません。"
+            L10n.text("サービス「\(serviceName)」（\(serviceID.uuidString)）の実行情報を取得できないため、再検証の手掛かりを保存できません。")
         case let .evidenceUnavailable(serviceID, serviceName, reason):
-            "サービス「\(serviceName)」（\(serviceID.uuidString)）のプロセスグループを再同定できないため、再検証の手掛かりを保存できません。\n\(reason)"
+            L10n.text("サービス「\(serviceName)」（\(serviceID.uuidString)）のプロセスグループを再同定できないため、再検証の手掛かりを保存できません。\n\(reason)")
         }
     }
 }
@@ -152,7 +152,7 @@ public actor RuntimeRegistry {
         ]
         // キーと driver の種類がずれていると、別の種類のスタックへコマンドを送る。
         for (type, driver) in drivers where driver.type != type {
-            preconditionFailure("\(type.rawValue) のキーに \(driver.type.rawValue) の driver が登録されています。")
+            preconditionFailure(L10n.text("\(type.rawValue) のキーに \(driver.type.rawValue) の driver が登録されています。"))
         }
         self.stackDrivers = drivers
     }
@@ -179,7 +179,7 @@ public actor RuntimeRegistry {
         defer { operationInFlight = false }
 
         if ProcessCommandClassification.supabaseStart(service.start) == .certain {
-            throw RuntimeError.managedCommandInvalid(service: service.name, reason: "Supabase の起動は管理対象スタックとして登録してください。")
+            throw RuntimeError.managedCommandInvalid(service: service.name, reason: L10n.text("Supabase の起動は管理対象スタックとして登録してください。"))
         }
         // 管理対象スタックは実測と確認を伴う専用経路から起動する。
         if let existing = handles[service.id] {
@@ -268,7 +268,7 @@ public actor RuntimeRegistry {
         guard let driver = stackDrivers[type] else {
             return ManagedStackSnapshot(
                 type: type,
-                unobservable: "\(type.displayName)を観測する手段が登録されていません。"
+                unobservable: L10n.text("\(type.displayName)を観測する手段が登録されていません。")
             )
         }
         return await driver.observe(known: knownStacks(of: type))
@@ -286,7 +286,7 @@ public actor RuntimeRegistry {
         guard let driver = stackDrivers[type] else {
             throw RuntimeError.managedCommandInvalid(
                 service: stackName,
-                reason: "\(type.displayName)を操作する手段が登録されていません。"
+                reason: L10n.text("\(type.displayName)を操作する手段が登録されていません。")
             )
         }
         return driver
@@ -353,7 +353,7 @@ public actor RuntimeRegistry {
                 stack: stack.stackName,
                 identity: stack.identity,
                 state: beforeStart.state,
-                reason: beforeStart.detail ?? "開始コマンドの実行直前に既存スタックを検出しました。"
+                reason: beforeStart.detail ?? L10n.text("開始コマンドの実行直前に既存スタックを検出しました。")
             )
         }
 
@@ -364,8 +364,8 @@ public actor RuntimeRegistry {
             let afterFailure = await observe(stack.identity)
             guard afterFailure.state == .notRunning else {
                 let failureDetail = [
-                    "開始処理の失敗: \(error)",
-                    afterFailure.detail.map { "実測の詳細: \($0)" },
+                    L10n.text("開始処理の失敗: \(error)"),
+                    afterFailure.detail.map { L10n.text("実測の詳細: \($0)") },
                 ]
                     .compactMap { $0 }
                     .joined(separator: "\n")
@@ -407,7 +407,7 @@ public actor RuntimeRegistry {
         guard relationship != .launched else {
             throw RuntimeError.managedCommandInvalid(
                 service: stack.stackName,
-                reason: "引き継ぎ経路では `launched` として登録できません。"
+                reason: L10n.text("引き継ぎ経路では `launched` として登録できません。")
             )
         }
         try await checkManagedPreconditions(stackID: stack.stackID, stackName: stack.stackName, in: project)
@@ -596,7 +596,7 @@ public actor RuntimeRegistry {
     ) async throws {
         guard case let .adopted(supervisor) = handles[serviceID] else {
             throw RuntimeError.invalidHandoff(
-                service: serviceID.uuidString, reason: "ログを再開する引き継ぎ済みプロセスがありません。"
+                service: serviceID.uuidString, reason: L10n.text("ログを再開する引き継ぎ済みプロセスがありません。")
             )
         }
         let files = ServiceLogFiles(
@@ -634,7 +634,7 @@ public actor RuntimeRegistry {
         case .empty:
             throw RuntimeError.invalidHandoff(
                 service: service.name,
-                reason: "プロセスグループは既に空です。"
+                reason: L10n.text("プロセスグループは既に空です。")
             )
         case let .notIdentified(reason), let .unobservable(reason):
             throw RuntimeError.invalidHandoff(service: service.name, reason: reason)
@@ -686,13 +686,13 @@ public actor RuntimeRegistry {
         guard identity.pid == processGroupID else {
             throw RuntimeError.invalidHandoff(
                 service: service.name,
-                reason: "本体 PID \(identity.pid) とプロセスグループ \(processGroupID) が一致しません。"
+                reason: L10n.text("本体 PID \(identity.pid) とプロセスグループ \(processGroupID) が一致しません。")
             )
         }
         guard evidence.anchors.contains(identity.anchor) else {
             throw RuntimeError.invalidHandoff(
                 service: service.name,
-                reason: "実測した証拠に本体 PID \(identity.pid) の錨が含まれていません。"
+                reason: L10n.text("実測した証拠に本体 PID \(identity.pid) の錨が含まれていません。")
             )
         }
 
@@ -707,14 +707,14 @@ public actor RuntimeRegistry {
             guard verifiedEvidence.anchors.contains(identity.anchor) else {
                 throw RuntimeError.invalidHandoff(
                     service: service.name,
-                    reason: "登録直前に本体 PID \(identity.pid) が対象グループから外れました。"
+                    reason: L10n.text("登録直前に本体 PID \(identity.pid) が対象グループから外れました。")
                 )
             }
             return verifiedEvidence
         case .empty:
             throw RuntimeError.invalidHandoff(
                 service: service.name,
-                reason: "登録直前にプロセスグループが空になりました。"
+                reason: L10n.text("登録直前にプロセスグループが空になりました。")
             )
         case let .notIdentified(reason), let .unobservable(reason):
             throw RuntimeError.invalidHandoff(service: service.name, reason: reason)
@@ -801,21 +801,22 @@ public actor RuntimeRegistry {
         let commandID = UUID()
         let logDirectory = try logDirectoryOverride ?? ApplicationPaths.logDirectory()
         let files = ServiceLogFiles(directory: logDirectory, serviceID: id)
-        let supervisor = ServiceSupervisor(serviceID: commandID, serviceName: name + " の停止コマンド", command: resolved,
+        let stopCommandName = L10n.text("\(name) の停止コマンド")
+        let supervisor = ServiceSupervisor(serviceID: commandID, serviceName: stopCommandName, command: resolved,
             logDirectory: logDirectory, sharedLogFiles: files, appendOutput: true,
             identityProbe: identityProbe, groupStateProbe: groupStateProbe, signalSender: signalSender,
             portProbe: portProbe, startAbstimeProbe: startAbstimeProbe, bootSessionProbe: bootSessionProbe)
         handles[commandID] = .launched(supervisor)
-        processDefinitions[commandID] = ServiceDefinition(id: commandID, name: name + " の停止コマンド", ports: [], start: command, enabledByDefault: false, failurePolicy: .block)
+        processDefinitions[commandID] = ServiceDefinition(id: commandID, name: stopCommandName, ports: [], start: command, enabledByDefault: false, failurePolicy: .block)
         stopCommandParents[commandID] = id
         guard let owner = owners[id] else { throw RuntimeHintSnapshotError.ownerUnavailable(serviceID: id) }
-        owners[commandID] = ServiceOwner(projectID: owner.projectID, projectName: owner.projectName, serviceName: name + " の停止コマンド")
+        owners[commandID] = ServiceOwner(projectID: owner.projectID, projectName: owner.projectName, serviceName: stopCommandName)
         _ = try await supervisor.start(environment: shell.variables)
         var warning: String?
         if let status = await supervisor.waitForCommandExit(timeout: stopCommandTimeout) {
-            if !status.isSuccess { warning = "停止コマンドが失敗しました（\(status.description)）。" }
+            if !status.isSuccess { warning = L10n.text("停止コマンドが失敗しました（\(status.description)）。") }
         } else {
-            warning = "停止コマンドが \(Int(stopCommandTimeout.seconds)) 秒以内に終了しませんでした。停止コマンドのグループへ SIGTERM を送りました。"
+            warning = L10n.text("停止コマンドが \(Int(stopCommandTimeout.seconds)) 秒以内に終了しませんでした。停止コマンドのグループへ SIGTERM を送りました。")
             _ = try await supervisor.stop(grace: grace)
         }
         if let message = warning {
@@ -825,13 +826,13 @@ public actor RuntimeRegistry {
                 try output.seekToEnd()
                 try output.write(contentsOf: Data(("\n[Dev Switcher] " + message + "\n").utf8))
             } catch {
-                warning = message + "\n停止コマンドの結果をログへ書き込めません。\n\(error)"
+                warning = message + L10n.text("\n停止コマンドの結果をログへ書き込めません。\n\(error)")
             }
         }
         stopWarningMessages[id] = warning
         let outcome = await handle.waitForCommandStop(grace: grace)
         if await supervisor.isOccupyingResources(), let pgid = await supervisor.processGroupID {
-            return .residual(processGroupID: pgid, reason: (warning.map { $0 + "\n" } ?? "") + "停止コマンドのプロセスグループが残っています。対象グループと停止コマンドを保持しています。")
+            return .residual(processGroupID: pgid, reason: (warning.map { $0 + "\n" } ?? "") + L10n.text("停止コマンドのプロセスグループが残っています。対象グループと停止コマンドを保持しています。"))
         }
         switch outcome {
         case let .stopped(status, _): return .stopped(status, warning: warning)
@@ -850,14 +851,14 @@ public actor RuntimeRegistry {
     func registerStopCommandRole(_ hint: RuntimeHint) throws {
         guard let parent = hint.stopCommandFor else { return }
         guard parent != hint.serviceID, let command = hint.stopCommand, processDefinitions[hint.serviceID]?.start == command else {
-            throw RuntimeError.invalidHandoff(service: hint.serviceName, reason: "停止コマンドの設定が一致しません。")
+            throw RuntimeError.invalidHandoff(service: hint.serviceName, reason: L10n.text("停止コマンドの設定が一致しません。"))
         }
         stopCommandParents[hint.serviceID] = parent
     }
 
     public func start(service: LaunchUnit, in project: ProjectDefinition) async throws -> AsyncStream<ServiceSupervisor.Event> {
         guard let process = service.processDefinition else {
-            throw RuntimeError.managedCommandInvalid(service: service.name, reason: "スタックは専用の起動処理を使用してください。")
+            throw RuntimeError.managedCommandInvalid(service: service.name, reason: L10n.text("スタックは専用の起動処理を使用してください。"))
         }
         return try await start(service: process, in: project)
     }
@@ -1158,7 +1159,7 @@ fileprivate extension RuntimeRegistry.Handle {
                 throw RuntimeHintSnapshotError.evidenceUnavailable(
                     serviceID: serviceID,
                     serviceName: serviceName,
-                    reason: "起動セッションまたはプロセスの開始時刻を観測できません。"
+                    reason: L10n.text("起動セッションまたはプロセスの開始時刻を観測できません。")
                 )
             }
             return evidence
@@ -1176,7 +1177,7 @@ fileprivate extension RuntimeRegistry.Handle {
             throw RuntimeHintSnapshotError.evidenceUnavailable(
                 serviceID: serviceID,
                 serviceName: serviceName,
-                reason: "管理コマンドにはプロセスグループの証拠がありません。"
+                reason: L10n.text("管理コマンドにはプロセスグループの証拠がありません。")
             )
         }
     }
@@ -1265,7 +1266,7 @@ fileprivate extension RuntimeRegistry.Handle {
         case let .launched(supervisor): await supervisor.waitForCommandStop(grace: grace)
         case let .adopted(supervisor): await supervisor.waitForCommandStop(grace: grace)
         case let .residualGroup(supervisor): await supervisor.waitForCommandStop(grace: grace)
-        case .managed: .ownershipLost(reason: "スタックは通常プロセスとして停止できません。")
+        case .managed: .ownershipLost(reason: L10n.text("スタックは通常プロセスとして停止できません。"))
         }
     }
 
@@ -1281,11 +1282,11 @@ fileprivate extension RuntimeRegistry.Handle {
             case let .residual(processGroupID):
                 return .residual(
                     processGroupID: processGroupID,
-                    reason: "通常終了（SIGTERM）の猶予内にプロセスグループが空になりませんでした。"
+                    reason: L10n.text("通常終了（SIGTERM）の猶予内にプロセスグループが空になりませんでした。")
                 )
             case .ownershipLost:
                 return .ownershipLost(
-                    reason: "プロセスグループの所有権を失ったため、停止結果を判定できません。"
+                    reason: L10n.text("プロセスグループの所有権を失ったため、停止結果を判定できません。")
                 )
             }
         case let .adopted(supervisor):
@@ -1309,11 +1310,11 @@ fileprivate extension RuntimeRegistry.Handle {
             case let .residual(processGroupID):
                 return .residual(
                     processGroupID: processGroupID,
-                    reason: "強制終了（SIGKILL）後もプロセスグループにプロセスが残っています。"
+                    reason: L10n.text("強制終了（SIGKILL）後もプロセスグループにプロセスが残っています。")
                 )
             case .ownershipLost:
                 return .ownershipLost(
-                    reason: "プロセスグループの所有権を失ったため、強制終了を行いませんでした。"
+                    reason: L10n.text("プロセスグループの所有権を失ったため、強制終了を行いませんでした。")
                 )
             }
         case let .adopted(supervisor):
@@ -1340,7 +1341,7 @@ private extension ProcessGroupIdentification.Result {
             throw RuntimeHintSnapshotError.evidenceUnavailable(
                 serviceID: serviceID,
                 serviceName: serviceName,
-                reason: "プロセスグループは観測の途中で空になりました。"
+                reason: L10n.text("プロセスグループは観測の途中で空になりました。")
             )
         case let .notIdentified(reason), let .unobservable(reason):
             throw RuntimeHintSnapshotError.evidenceUnavailable(

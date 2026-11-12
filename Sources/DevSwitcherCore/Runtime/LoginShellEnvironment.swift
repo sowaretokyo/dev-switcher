@@ -33,27 +33,27 @@ public enum LoginShellEnvironmentError: Error, Equatable, Sendable, CustomString
     public var description: String {
         switch self {
         case let .launchFailed(reason):
-            "ログインシェル環境の取得コマンドを起動できませんでした。\n\(reason)"
+            L10n.text("ログインシェル環境の取得コマンドを起動できませんでした。\n\(reason)")
         case let .timedOut(seconds):
-            "ログインシェル環境の取得が \(Int(seconds)) 秒以内に完了しませんでした。"
+            L10n.text("ログインシェル環境の取得が \(Int(seconds)) 秒以内に完了しませんでした。")
         case let .commandFailed(status, standardError):
-            "ログインシェル環境の取得に失敗しました（\(status.description)）。\n\(standardError)"
+            L10n.text("ログインシェル環境の取得に失敗しました（\(status.description)）。\n\(standardError)")
         case let .unexpectedOutput(preview):
-            "ログインシェルの出力に想定外の内容が含まれています。\n\(preview)"
+            L10n.text("ログインシェルの出力に想定外の内容が含まれています。\n\(preview)")
         case .emptyOutput:
-            "ログインシェルから環境変数を取得できませんでした（出力が空です）。"
+            L10n.text("ログインシェルから環境変数を取得できませんでした（出力が空です）。")
         case .missingPATH:
-            "ログインシェルの環境に PATH が含まれていません。"
+            L10n.text("ログインシェルの環境に PATH が含まれていません。")
         case .shellNotSet:
-            "ログインシェルを特定できません。環境変数 SHELL が未設定または空です。"
+            L10n.text("ログインシェルを特定できません。環境変数 SHELL が未設定または空です。")
         case let .shellNotAbsolutePath(value):
-            "ログインシェルを特定できません。環境変数 SHELL が絶対パスではありません（\(value)）。"
+            L10n.text("ログインシェルを特定できません。環境変数 SHELL が絶対パスではありません（\(value)）。")
         case let .shellNotFound(value):
-            "ログインシェルを特定できません。環境変数 SHELL が指すパスが存在しません（\(value)）。"
+            L10n.text("ログインシェルを特定できません。環境変数 SHELL が指すパスが存在しません（\(value)）。")
         case let .shellNotExecutable(value):
-            "ログインシェルを特定できません。環境変数 SHELL が指すパスはディレクトリか、実行権限がありません（\(value)）。"
+            L10n.text("ログインシェルを特定できません。環境変数 SHELL が指すパスはディレクトリか、実行権限がありません（\(value)）。")
         case let .shellUnsupported(value):
-            "SHELL が示すシェル（\(value)）は csh 系のため対応していません。csh 系はログインシェルとしてコマンドを実行できません。SHELL を bash・zsh などに設定し、アプリを再起動してください。"
+            L10n.text("SHELL が示すシェル（\(value)）は csh 系のため対応していません。csh 系はログインシェルとしてコマンドを実行できません。SHELL を bash・zsh などに設定し、アプリを再起動してください。")
         }
     }
 }

@@ -24,7 +24,7 @@ struct SwitchSheet: View {
 
             VStack(alignment: .leading, spacing: Spacing.s) {
                 StageRow(
-                    label: "\(presentation.sourceName) を停止",
+                    label: L10n.text("\(presentation.sourceName) を停止"),
                     status: stopStatus,
                     detail: stopDetail
                 )
@@ -33,14 +33,14 @@ struct SwitchSheet: View {
                 GateBox(
                     rows: [
                         GateBox.Row(
-                            label: "\(presentation.sourceName) のポートが解放された",
+                            label: L10n.text("\(presentation.sourceName) のポートが解放された"),
                             status: releaseStatus,
                             counter: releaseCounter
                         ),
                     ]
                 )
                 StageRow(
-                    label: "\(presentation.targetName) を起動",
+                    label: L10n.text("\(presentation.targetName) を起動"),
                     status: startStatus,
                     detail: startDetail
                 )
@@ -49,12 +49,12 @@ struct SwitchSheet: View {
             Divider()
 
             if presentation.canCancel {
-                Text("中止すると、\(presentation.sourceName)の停止は最後まで実行し、\(presentation.targetName)は起動しません。")
+                Text(L10n.text("中止すると、\(presentation.sourceName)の停止は最後まで実行し、\(presentation.targetName)は起動しません。"))
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("起動フェーズに入ったため、中止は受け付けられません。送出済みの停止処理を取り消せないためです。")
+                Text(L10n.text("起動フェーズに入ったため、中止は受け付けられません。送出済みの停止処理を取り消せないためです。"))
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -66,7 +66,7 @@ struct SwitchSheet: View {
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("切替を中止") {
+                Button(L10n.text("切替を中止")) {
                     state.cancelSwitch()
                 }
                 .disabled(!presentation.canCancel)
@@ -78,7 +78,7 @@ struct SwitchSheet: View {
     }
 
     private var title: String {
-        "「\(presentation.sourceName)」から「\(presentation.targetName)」へ切り替えています"
+        L10n.text("「\(presentation.sourceName)」から「\(presentation.targetName)」へ切り替えています")
     }
 
     private var stopStatus: StageStatus {
@@ -91,7 +91,7 @@ struct SwitchSheet: View {
 
     private var stopDetail: String? {
         if case let .stopping(service, index, total) = presentation.state {
-            return "\(service)（\(index)/\(total)）"
+            return L10n.text("\(service)（\(index)/\(total)）")
         }
         return nil
     }
@@ -121,9 +121,9 @@ struct SwitchSheet: View {
 
     private var startDetail: String? {
         switch presentation.state {
-        case let .starting(service, index, total): "\(service)（\(index)/\(total)）"
-        case let .observingStartup(service): "\(service) の起動を確認"
-        case let .rollingBack(service): "\(service) を停止（巻き戻し）"
+        case let .starting(service, index, total): L10n.text("\(service)（\(index)/\(total)）")
+        case let .observingStartup(service): L10n.text("\(service) の起動を確認")
+        case let .rollingBack(service): L10n.text("\(service) を停止（巻き戻し）")
         default: nil
         }
     }

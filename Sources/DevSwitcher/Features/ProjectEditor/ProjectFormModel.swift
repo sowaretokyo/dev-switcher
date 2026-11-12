@@ -97,7 +97,7 @@ final class ProjectFormModel {
                     argumentsText = String(decoding: try encoder.encode(arguments), as: UTF8.self)
                 } catch {
                     // 文字列配列は常にJSONで表現できる。変換不能を空欄へ置き換えない。
-                    preconditionFailure("引数をJSONへ変換できませんでした。\(error)")
+                    preconditionFailure(L10n.text("引数をJSONへ変換できませんでした。\(error)"))
                 }
             } else {
                 argumentsText = lines
@@ -186,12 +186,12 @@ final class ProjectFormModel {
                 directory: definition.directory,
                 services: definition.serviceIDs.map { serviceID in
                     guard let service = project.service(id: serviceID) else {
-                        preconditionFailure("作業ディレクトリに存在しないプロセス ID が含まれています。")
+                        preconditionFailure(L10n.text("作業ディレクトリに存在しないプロセス ID が含まれています。"))
                     }
                     return ServiceDraft(service: service)
                 },
                 stacks: definition.stackIDs.map { id in
-                    guard let stack = project.managedStacks.first(where: { $0.id == id }) else { preconditionFailure("スタックの定義がありません。") }
+                    guard let stack = project.managedStacks.first(where: { $0.id == id }) else { preconditionFailure(L10n.text("スタックの定義がありません。")) }
                     return StackDraft(stack)
                 }
             )
@@ -246,12 +246,12 @@ final class ProjectFormModel {
                 Set(groupedIDs).count == groupedIDs.count
                     && groupedIDs.count == serviceOrder.count
                     && Set(groupedIDs) == Set(serviceOrder),
-                "作業ディレクトリのプロセスと起動順が一致していません。"
+                L10n.text("作業ディレクトリのプロセスと起動順が一致していません。")
             )
             let drafts = Dictionary(uniqueKeysWithValues: groupedServices.map { ($0.id, $0) })
             return serviceOrder.map { serviceID in
                 guard let service = drafts[serviceID] else {
-                    preconditionFailure("起動順に存在しないプロセス ID が含まれています。")
+                    preconditionFailure(L10n.text("起動順に存在しないプロセス ID が含まれています。"))
                 }
                 return service
             }
@@ -264,7 +264,7 @@ final class ProjectFormModel {
                     && Set(newIDs).count == newIDs.count
                     && currentIDs.count == newIDs.count
                     && Set(currentIDs) == Set(newIDs),
-                "プロセスの追加・削除は専用の操作を使用してください。"
+                L10n.text("プロセスの追加・削除は専用の操作を使用してください。")
             )
             var updatedByID = Dictionary(uniqueKeysWithValues: newValue.map { ($0.id, $0) })
             for directoryIndex in workingDirectories.indices {
@@ -275,7 +275,7 @@ final class ProjectFormModel {
                     }
                 }
             }
-            precondition(updatedByID.isEmpty, "更新したプロセスを作業ディレクトリへ反映できませんでした。")
+            precondition(updatedByID.isEmpty, L10n.text("更新したプロセスを作業ディレクトリへ反映できませんでした。"))
             serviceOrder = newValue.map(\.id)
         }
     }
@@ -290,7 +290,7 @@ final class ProjectFormModel {
 
     func removeWorkingDirectory(_ id: UUID) {
         guard let workingDirectory = workingDirectories.first(where: { $0.id == id }) else {
-            preconditionFailure("存在しない作業ディレクトリを削除できません。")
+            preconditionFailure(L10n.text("存在しない作業ディレクトリを削除できません。"))
         }
         let removedServiceIDs = Set(workingDirectory.services.map(\.id))
         workingDirectories.removeAll { $0.id == id }
@@ -317,7 +317,7 @@ final class ProjectFormModel {
 
     func addService(to workingDirectoryID: UUID) {
         guard let index = workingDirectories.firstIndex(where: { $0.id == workingDirectoryID }) else {
-            preconditionFailure("存在しない作業ディレクトリへプロセスを追加できません。")
+            preconditionFailure(L10n.text("存在しない作業ディレクトリへプロセスを追加できません。"))
         }
         let service = ServiceDraft()
         let existingIDs = workingDirectories[index].services.map(\.id)
@@ -325,7 +325,7 @@ final class ProjectFormModel {
 
         if let lastID = existingIDs.last {
             guard let lastIndex = serviceOrder.firstIndex(of: lastID) else {
-                preconditionFailure("作業ディレクトリ内のプロセスが起動順に含まれていません。")
+                preconditionFailure(L10n.text("作業ディレクトリ内のプロセスが起動順に含まれていません。"))
             }
             serviceOrder.insert(service.id, at: lastIndex + 1)
         } else {
@@ -345,7 +345,7 @@ final class ProjectFormModel {
     /// 先頭の作業ディレクトリへ追加する簡便API。
     func addService() {
         guard let firstID = workingDirectories.first?.id else {
-            preconditionFailure("作業ディレクトリが無い状態でプロセスを追加できません。")
+            preconditionFailure(L10n.text("作業ディレクトリが無い状態でプロセスを追加できません。"))
         }
         addService(to: firstID)
     }
@@ -354,7 +354,7 @@ final class ProjectFormModel {
         guard serviceOrder.contains(id), workingDirectories.contains(where: {
             $0.services.contains { $0.id == id }
         }) else {
-            preconditionFailure("存在しないプロセスを削除できません。")
+            preconditionFailure(L10n.text("存在しないプロセスを削除できません。"))
         }
         for index in workingDirectories.indices {
             workingDirectories[index].services.removeAll { $0.id == id }
@@ -374,7 +374,7 @@ final class ProjectFormModel {
         workingDirectories[directoryIndex].services.swapAt(serviceIndex, destination)
         guard let orderIndex = serviceOrder.firstIndex(of: id),
               let otherOrderIndex = serviceOrder.firstIndex(of: otherID) else {
-            preconditionFailure("プロセスの起動順が破損しています。")
+            preconditionFailure(L10n.text("プロセスの起動順が破損しています。"))
         }
         serviceOrder.swapAt(orderIndex, otherOrderIndex)
     }
@@ -403,7 +403,7 @@ final class ProjectFormModel {
     func removePort(_ portID: UUID, from serviceID: UUID) {
         updateService(serviceID) { service in
             guard service.ports.contains(where: { $0.id == portID }) else {
-                preconditionFailure("存在しないポートを削除できません。")
+                preconditionFailure(L10n.text("存在しないポートを削除できません。"))
             }
             service.ports.removeAll { $0.id == portID }
         }
@@ -412,7 +412,7 @@ final class ProjectFormModel {
     func makePrimary(_ portID: UUID, in serviceID: UUID) {
         updateService(serviceID) { service in
             guard service.ports.contains(where: { $0.id == portID }) else {
-                preconditionFailure("存在しないポートを代表に設定できません。")
+                preconditionFailure(L10n.text("存在しないポートを代表に設定できません。"))
             }
             for portIndex in service.ports.indices {
                 service.ports[portIndex].isPrimary = service.ports[portIndex].id == portID
@@ -428,17 +428,17 @@ final class ProjectFormModel {
             update(&workingDirectories[directoryIndex].services[serviceIndex])
             return
         }
-        preconditionFailure("存在しないプロセスを更新できません。")
+        preconditionFailure(L10n.text("存在しないプロセスを更新できません。"))
     }
 
     func addStack(_ type: ManagedStackType, to directoryID: UUID) {
-        guard let index = workingDirectories.firstIndex(where: { $0.id == directoryID }) else { preconditionFailure("作業ディレクトリがありません。") }
+        guard let index = workingDirectories.firstIndex(where: { $0.id == directoryID }) else { preconditionFailure(L10n.text("作業ディレクトリがありません。")) }
         let draft = StackDraft(type: type)
         workingDirectories[index].stacks.append(draft)
         stackOrder.append(draft.id)
     }
     func removeStack(_ id: UUID) {
-        precondition(stackOrder.contains(id), "スタックがありません。")
+        precondition(stackOrder.contains(id), L10n.text("スタックがありません。"))
         for index in workingDirectories.indices { workingDirectories[index].stacks.removeAll { $0.id == id } }
         stackOrder.removeAll { $0 == id }
     }
@@ -464,21 +464,21 @@ final class ProjectFormModel {
     ) throws {
         guard let index = workingDirectories.firstIndex(where: { $0.id == directoryID }),
               workingDirectories[index].directory?.standardizedFileURL == preview.directory else {
-            throw DefinitionDiscoveryError("作業ディレクトリが変わりました。候補を読み込み直してください。")
+            throw DefinitionDiscoveryError(L10n.text("作業ディレクトリが変わりました。候補を読み込み直してください。"))
         }
         guard !selectedScripts.isEmpty || includeCompose else {
-            throw DefinitionDiscoveryError("追加する候補を選択してください。")
+            throw DefinitionDiscoveryError(L10n.text("追加する候補を選択してください。"))
         }
         guard selectedScripts.isSubset(of: Set(preview.scripts.map(\.name))),
               !includeCompose || preview.compose != nil else {
-            throw DefinitionDiscoveryError("選択した候補がありません。候補を読み込み直してください。")
+            throw DefinitionDiscoveryError(L10n.text("選択した候補がありません。候補を読み込み直してください。"))
         }
         guard try DefinitionDiscovery.scan(directory: preview.directory) == preview else {
-            throw DefinitionDiscoveryError("取り込み元が変わりました。候補を読み込み直して確認してください。")
+            throw DefinitionDiscoveryError(L10n.text("取り込み元が変わりました。候補を読み込み直して確認してください。"))
         }
         var addedServices: [ServiceDraft] = []
         if !selectedScripts.isEmpty {
-            guard let manager else { throw DefinitionDiscoveryError("package manager を選択してください。") }
+            guard let manager else { throw DefinitionDiscoveryError(L10n.text("package manager を選択してください。")) }
             addedServices = preview.scripts.filter { selectedScripts.contains($0.name) }.map { script in
                 ServiceDraft(service: ServiceDefinition(
                     name: script.name, ports: [],
@@ -499,7 +499,7 @@ final class ProjectFormModel {
         var names = Set(existingNames.map { $0.trimmed.lowercased() })
         for name in addedNames {
             guard names.insert(name.trimmed.lowercased()).inserted else {
-                throw DefinitionDiscoveryError("「\(name)」というプロセスまたはスタックがすでにあります。名前を変更してから追加してください。")
+                throw DefinitionDiscoveryError(L10n.text("「\(name)」というプロセスまたはスタックがすでにあります。名前を変更してから追加してください。"))
             }
         }
 
@@ -514,7 +514,7 @@ final class ProjectFormModel {
             let insertion: Int
             if let last = existingIDs.last {
                 guard let position = serviceOrder.firstIndex(of: last) else {
-                    preconditionFailure("作業ディレクトリ内のプロセスが起動順に含まれていません。")
+                    preconditionFailure(L10n.text("作業ディレクトリ内のプロセスが起動順に含まれていません。"))
                 }
                 insertion = position + 1
             } else {
@@ -543,7 +543,7 @@ final class ProjectFormModel {
         guard requiredErrors.isEmpty else {
             let structuralPortErrors = services.enumerated().flatMap { index, draft in
                 guard let ports = parsedPorts[draft.id] else {
-                    preconditionFailure("解析済みのポートが見つかりません。")
+                    preconditionFailure(L10n.text("解析済みのポートが見つかりません。"))
                 }
                 return ProjectValidator.portErrors(
                     for: ports,
@@ -559,12 +559,12 @@ final class ProjectFormModel {
 
         for directoryDraft in workingDirectories {
             guard let directory = directoryDraft.directory else {
-                preconditionFailure("必須項目の検証後に作業ディレクトリが欠落しています。")
+                preconditionFailure(L10n.text("必須項目の検証後に作業ディレクトリが欠落しています。"))
             }
             var serviceIDs: [UUID] = []
             for draft in directoryDraft.services {
                 guard let ports = parsedPorts[draft.id] else {
-                    preconditionFailure("解析済みのポートが見つかりません。")
+                    preconditionFailure(L10n.text("解析済みのポートが見つかりません。"))
                 }
                 let service = ServiceDefinition(
                     id: draft.id,
@@ -599,7 +599,7 @@ final class ProjectFormModel {
 
         let definitions = serviceOrder.map { serviceID in
             guard let service = definitionsByID[serviceID] else {
-                preconditionFailure("起動順に存在しないプロセス ID が含まれています。")
+                preconditionFailure(L10n.text("起動順に存在しないプロセス ID が含まれています。"))
             }
             return service
         }
@@ -613,7 +613,7 @@ final class ProjectFormModel {
             workingDirectories: directoryDefinitions,
             services: definitions,
             managedStacks: stackOrder.map { id in
-                guard let stack = stacksByID[id] else { preconditionFailure("スタックの起動順が不正です。") }
+                guard let stack = stacksByID[id] else { preconditionFailure(L10n.text("スタックの起動順が不正です。")) }
                 return stack
             },
             stopOrder: ProjectFormModel.stopOrder(

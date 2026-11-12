@@ -73,7 +73,7 @@ public enum DefinitionDiscovery {
 
     public static func scan(directory: URL) throws -> Result {
         guard directory.isFileURL, directory.path.hasPrefix("/") else {
-            throw DefinitionDiscoveryError("作業ディレクトリを絶対パスで指定してください。")
+            throw DefinitionDiscoveryError(L10n.text("作業ディレクトリを絶対パスで指定してください。"))
         }
         let directory = directory.standardizedFileURL
         // 親・子ディレクトリへ探索を広げず、直下の既知のファイルだけを読む。
@@ -92,14 +92,14 @@ public enum DefinitionDiscovery {
                           let body = package.scripts[name],
                           !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                           !body.contains("\0") else {
-                        throw DefinitionDiscoveryError("scripts の名前またはコマンドが不正です（\(name)）。")
+                        throw DefinitionDiscoveryError(L10n.text("scripts の名前またはコマンドが不正です（\(name)）。"))
                     }
                     return Script(name: name, body: body)
                 }
                 declaredPackageManager = package.packageManager
                 sources["package.json"] = data
             } catch {
-                issues.append("package.json を取り込めません。\n\(error)")
+                issues.append(L10n.text("package.json を取り込めません。\n\(error)"))
             }
         }
 
@@ -114,7 +114,7 @@ public enum DefinitionDiscovery {
                 for name in files { try checkFile(directory.appendingPathComponent(name)) }
             } catch {
                 managerDetectionFailed = true
-                issues.append("\(files.joined(separator: ", ")) を確認できません。\n\(error)")
+                issues.append(L10n.text("\(files.joined(separator: ", ")) を確認できません。\n\(error)"))
             }
         }
 
@@ -132,7 +132,7 @@ public enum DefinitionDiscovery {
                                   projectName: projectName, files: files)
                 sources.merge(contents) { _, new in new }
             } catch {
-                issues.append("Compose を取り込めません。編集画面でファイルと projectName を指定できます。\n\(error)")
+                issues.append(L10n.text("Compose を取り込めません。編集画面でファイルと projectName を指定できます。\n\(error)"))
             }
         }
         return Result(directory: directory, scripts: scripts, managers: managers, compose: compose,
@@ -159,23 +159,23 @@ public enum DefinitionDiscovery {
         for path in [url, url.resolvingSymlinksInPath()] {
             let name = path.lastPathComponent
             guard name != ".env", name != ".envrc", !name.hasPrefix(".env.") else {
-                throw DefinitionDiscoveryError("環境設定ファイルは読み取りません（\(url.lastPathComponent)）。")
+                throw DefinitionDiscoveryError(L10n.text("環境設定ファイルは読み取りません（\(url.lastPathComponent)）。"))
             }
         }
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isReadableKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isReadable == true else {
-            throw DefinitionDiscoveryError("読み取り可能な通常ファイルではありません（\(url.lastPathComponent)）。")
+            throw DefinitionDiscoveryError(L10n.text("読み取り可能な通常ファイルではありません（\(url.lastPathComponent)）。"))
         }
     }
 
     private static func read(_ url: URL) throws -> Data {
         try checkFile(url)
         guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 1_048_576 else {
-            throw DefinitionDiscoveryError("取り込み元は1 MiB以下のファイルにしてください（\(url.lastPathComponent)）。")
+            throw DefinitionDiscoveryError(L10n.text("取り込み元は1 MiB以下のファイルにしてください（\(url.lastPathComponent)）。"))
         }
         let data = try Data(contentsOf: url)
         guard data.count <= 1_048_576 else {
-            throw DefinitionDiscoveryError("取り込み元が1 MiBを超えています（\(url.lastPathComponent)）。")
+            throw DefinitionDiscoveryError(L10n.text("取り込み元が1 MiBを超えています（\(url.lastPathComponent)）。"))
         }
         return data
     }

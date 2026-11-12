@@ -21,7 +21,7 @@ enum CommandOutputError: Error, Sendable, CustomStringConvertible {
     var description: String {
         switch self {
         case let .timedOut(executable, seconds):
-            "\(executable) が \(Int(seconds)) 秒以内に終了しませんでした。"
+            L10n.text("\(executable) が \(Int(seconds)) 秒以内に終了しませんでした。")
         }
     }
 }

@@ -17,8 +17,10 @@ public struct StartupObservationSpec: Equatable, Sendable {
 
     /// 何を見て起動成功と判断するのかを画面へ出すための説明。
     public var description: String {
-        "プロセスが \(Int(observationWindow.seconds)) 秒間その場で終了せず、"
-            + "観測終了時点でも管理下にあること"
+        L10n.text("""
+            プロセスが \(Int(observationWindow.seconds)) 秒間その場で終了せず、\
+            観測終了時点でも管理下にあること
+            """)
     }
 }
 
@@ -30,7 +32,7 @@ public enum StartupObservationPolicy {
 
     public static func spec(for unit: LaunchUnit, observationWindow: Duration = defaultObservationWindow, pollInterval: Duration = defaultPollInterval) throws -> StartupObservationSpec {
         guard let process = unit.processDefinition else {
-            throw RuntimeError.managedCommandInvalid(service: unit.name, reason: "スタックの観測は driver で行います。")
+            throw RuntimeError.managedCommandInvalid(service: unit.name, reason: L10n.text("スタックの観測は driver で行います。"))
         }
         return try spec(for: process, observationWindow: observationWindow, pollInterval: pollInterval)
     }

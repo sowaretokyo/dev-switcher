@@ -12,19 +12,19 @@ public enum SupabaseConfigError: Error, Equatable, Sendable, CustomStringConvert
     public var description: String {
         switch self {
         case let .fileMissing(url):
-            "Supabaseの設定ファイルがありません（\(url.path)）。"
+            L10n.text("Supabaseの設定ファイルがありません（\(url.path)）。")
         case let .unreadable(url, reason):
-            "Supabaseの設定ファイルを読めません（\(url.path)）。\n\(reason)"
+            L10n.text("Supabaseの設定ファイルを読めません（\(url.path)）。\n\(reason)")
         case let .projectIDMissing(url):
-            "Supabaseの設定ファイルにトップレベルの `project_id` がありません（\(url.path)）。"
+            L10n.text("Supabaseの設定ファイルにトップレベルの `project_id` がありません（\(url.path)）。")
         case let .projectIDEmpty(url):
-            "Supabaseの設定ファイルの `project_id` が空です（\(url.path)）。"
+            L10n.text("Supabaseの設定ファイルの `project_id` が空です（\(url.path)）。")
         case let .projectIDDuplicated(url):
-            "Supabaseの設定ファイルにトップレベルの `project_id` が複数あります（\(url.path)）。"
+            L10n.text("Supabaseの設定ファイルにトップレベルの `project_id` が複数あります（\(url.path)）。")
         case let .projectIDUnparsable(url, line):
-            "Supabaseの設定ファイルの `project_id` を解釈できません（\(url.path)）。\n該当行: \(line)"
+            L10n.text("Supabaseの設定ファイルの `project_id` を解釈できません（\(url.path)）。\n該当行: \(line)")
         case let .projectIDUnsupportedValue(url, value):
-            "Supabaseの `project_id`「\(value)」は英数字で始まり、英数字・`_`・`.`・`-` だけで構成してください（\(url.path)）。"
+            L10n.text("Supabaseの `project_id`「\(value)」は英数字で始まり、英数字・`_`・`.`・`-` だけで構成してください（\(url.path)）。")
         }
     }
 }
@@ -56,7 +56,7 @@ public enum SupabaseConfigFile {
             guard let decoded = String(data: data, encoding: .utf8) else {
                 throw SupabaseConfigError.unreadable(
                     url,
-                    reason: "UTF-8として解釈できません。"
+                    reason: L10n.text("UTF-8として解釈できません。")
                 )
             }
             text = decoded

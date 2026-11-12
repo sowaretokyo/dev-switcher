@@ -68,7 +68,7 @@ public struct RuntimeHint: Codable, Equatable, Sendable {
         stopCommandFor = try c.optional(UUID.self, forKey: .stopCommandFor)
         stopCommand = try c.optional(CommandSpec.self, forKey: .stopCommand)
         guard (stopCommandFor == nil) == (stopCommand == nil), stopCommandFor != serviceID else {
-            throw DecodingError.dataCorruptedError(forKey: .stopCommandFor, in: c, debugDescription: "停止コマンドの親 ID と設定が不正です。")
+            throw DecodingError.dataCorruptedError(forKey: .stopCommandFor, in: c, debugDescription: L10n.text("停止コマンドの親 ID と設定が不正です。"))
         }
     }
 
@@ -229,7 +229,7 @@ public struct ManagedStackHint: Codable, Equatable, Sendable {
                 key,
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "managed hintの\(key.stringValue)がありません。"
+                    debugDescription: L10n.text("managed hintの\(key.stringValue)がありません。")
                 )
             )
         }
@@ -249,21 +249,21 @@ public struct ManagedStackHint: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .relationship,
                 in: container,
-                debugDescription: "managed hintのidentity・fingerprint・relationshipは、すべて値を持つか、すべてnullである必要があります。"
+                debugDescription: L10n.text("managed hintのidentity・fingerprint・relationshipは、すべて値を持つか、すべてnullである必要があります。")
             )
         }
         if let identity, identity.type != type {
             throw DecodingError.dataCorruptedError(
                 forKey: .identity,
                 in: container,
-                debugDescription: "managed hintのidentityの種類（\(identity.type.rawValue)）がtype（\(type.rawValue)）と一致しません。"
+                debugDescription: L10n.text("managed hintのidentityの種類（\(identity.type.rawValue)）がtype（\(type.rawValue)）と一致しません。")
             )
         }
         if let fingerprint, fingerprint.type != type {
             throw DecodingError.dataCorruptedError(
                 forKey: .fingerprint,
                 in: container,
-                debugDescription: "managed hintのfingerprintの種類（\(fingerprint.type.rawValue)）がtype（\(type.rawValue)）と一致しません。"
+                debugDescription: L10n.text("managed hintのfingerprintの種類（\(fingerprint.type.rawValue)）がtype（\(type.rawValue)）と一致しません。")
             )
         }
     }
@@ -371,7 +371,7 @@ private struct ManagedRuntimeHint: Decodable {
                 key,
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "managed hintの\(key.stringValue)がありません。"
+                    debugDescription: L10n.text("managed hintの\(key.stringValue)がありません。")
                 )
             )
         }
@@ -617,13 +617,13 @@ public enum RuntimeHintStoreError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .decodingFailed(path, reason):
-            "再検証の手掛かりを読み込めませんでした（\(path)）。\n\(reason)"
+            L10n.text("再検証の手掛かりを読み込めませんでした（\(path)）。\n\(reason)")
         case let .duplicateServiceID(serviceID):
-            "再検証の手掛かりでサービス ID が重複しています（\(serviceID.uuidString)）。"
+            L10n.text("再検証の手掛かりでサービス ID が重複しています（\(serviceID.uuidString)）。")
         case let .unsupportedSchemaVersion(found, supported):
-            "再検証の手掛かりのスキーマバージョン \(found) は未対応です（対応バージョン: \(supported)）。"
+            L10n.text("再検証の手掛かりのスキーマバージョン \(found) は未対応です（対応バージョン: \(supported)）。")
         case let .writeFailed(path, reason):
-            "再検証の手掛かりを保存できませんでした（\(path)）。\n\(reason)"
+            L10n.text("再検証の手掛かりを保存できませんでした（\(path)）。\n\(reason)")
         }
     }
 }

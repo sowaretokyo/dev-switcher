@@ -94,7 +94,7 @@ actor ResidualGroupSupervisor {
         case .empty: released = true; return false
         case .matched: return true
         case let .notIdentified(reason), let .unobservable(reason):
-            throw RuntimeError.invalidHandoff(service: "停止対象", reason: reason)
+            throw RuntimeError.invalidHandoff(service: L10n.text("停止対象"), reason: reason)
         }
     }
     func waitForCommandStop(grace: Duration) async -> ServiceStopOutcome {
@@ -104,7 +104,7 @@ actor ResidualGroupSupervisor {
             if ContinuousClock.now >= deadline { break }
             do { try await Task.sleep(for: .milliseconds(50)) } catch { break }
         } while true
-        return .residual(processGroupID: processGroupIdentifier, reason: "停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。")
+        return .residual(processGroupID: processGroupIdentifier, reason: L10n.text("停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。"))
     }
 
     public func stop(grace: Duration = .seconds(10)) async -> ServiceStopOutcome {
@@ -137,19 +137,23 @@ actor ResidualGroupSupervisor {
         case let .notIdentified(reason):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "プロセスグループ \(processGroupIdentifier) を前回のものと同定できませんでした。"
-                    + "別のプロセスへシグナルを送らないため、停止操作を行いませんでした。\n\(reason)"
+                reason: L10n.text("""
+                    プロセスグループ \(processGroupIdentifier) を前回のものと同定できませんでした。\
+                    別のプロセスへシグナルを送らないため、停止操作を行いませんでした。\n\(reason)
+                    """)
             )
         case let .unobservable(reason):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "\(reason)同定できないため停止操作を行いませんでした。"
+                reason: L10n.text("\(reason)同定できないため停止操作を行いませんでした。")
             )
         case let .failed(code):
             return .residual(
                 processGroupID: processGroupIdentifier,
-                reason: "シグナルを送れませんでした（errno \(code): "
-                    + "\(CStringDecoding.errorMessage(code))）。"
+                reason: L10n.text("""
+                    シグナルを送れませんでした（errno \(code): \
+                    \(CStringDecoding.errorMessage(code))）。
+                    """)
             )
         }
 
@@ -170,7 +174,7 @@ actor ResidualGroupSupervisor {
         }
         return .residual(
             processGroupID: processGroupIdentifier,
-            reason: "猶予内にプロセスグループが空になりませんでした。"
+            reason: L10n.text("猶予内にプロセスグループが空になりませんでした。")
         )
     }
 }

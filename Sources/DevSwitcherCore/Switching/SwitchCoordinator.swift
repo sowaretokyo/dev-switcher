@@ -252,7 +252,7 @@ public actor SwitchCoordinator {
         guard project.entry(id: service.id) == service else {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "サービス「\(service.name)」の設定がプロジェクト「\(project.name)」の登録内容と一致しません。"
+                    L10n.text("サービス「\(service.name)」の設定がプロジェクト「\(project.name)」の登録内容と一致しません。")
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -260,7 +260,7 @@ public actor SwitchCoordinator {
         if case let .stack(definition, _) = service {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "\(definition.type.displayName)は通常プロセスと停止・状態確認の方法が異なるため、単体の起動・再起動はできません。"
+                    L10n.text("\(definition.type.displayName)は通常プロセスと停止・状態確認の方法が異なるため、単体の起動・再起動はできません。")
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -268,7 +268,7 @@ public actor SwitchCoordinator {
         guard await registry.occupyingServiceIDs(projectID: project.id).isEmpty == false else {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "プロジェクト「\(project.name)」は停止中です。プロジェクト単位で起動してください。"
+                    L10n.text("プロジェクト「\(project.name)」は停止中です。プロジェクト単位で起動してください。")
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -289,8 +289,8 @@ public actor SwitchCoordinator {
             throw SwitchFailure(
                 reason: .unsupportedConfiguration(
                     restarting
-                        ? "サービス「\(service.name)」は起動対象から外れています。未起動のプロセスには「起動」を使ってください。"
-                        : "サービス「\(service.name)」は追加起動できる状態ではありません。動作中または失敗したプロセスには再起動を使ってください。"
+                        ? L10n.text("サービス「\(service.name)」は起動対象から外れています。未起動のプロセスには「起動」を使ってください。")
+                        : L10n.text("サービス「\(service.name)」は追加起動できる状態ではありません。動作中または失敗したプロセスには再起動を使ってください。")
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -614,7 +614,7 @@ public actor SwitchCoordinator {
         /// 複数種類が混在するときの文言は Phase B で決める。
         var errorHeadline: String {
             errorTypes
-                .map { "\($0.displayName)の\($0.identityLabel)を確認できません。" }
+                .map { L10n.text("\($0.displayName)の\($0.identityLabel)を確認できません。") }
                 .joined(separator: "\n")
         }
     }
@@ -667,7 +667,7 @@ public actor SwitchCoordinator {
                     )
                 } catch {
                     result.appendError(
-                        "「\(project.name)」の \(definition.name): \(error)",
+                        L10n.text("「\(project.name)」の \(definition.name): \(error)"),
                         stackID: definition.id,
                         reason: "\(error)",
                         type: definition.type
@@ -703,7 +703,7 @@ public actor SwitchCoordinator {
                         RuntimeError.managedCommandInvalid(
                             service: definition.name,
                             reason: resolution.unresolvedReasons[definition.id]
-                                ?? "\(definition.type.displayName)の\(definition.type.identityLabel)を解決できていません。"
+                                ?? L10n.text("\(definition.type.displayName)の\(definition.type.identityLabel)を解決できていません。")
                         ).description
                     ),
                     facts: await facts(source: source, target: target)
@@ -959,7 +959,7 @@ public actor SwitchCoordinator {
         case .stop:
             throw RuntimeError.managedCommandInvalid(
                 service: launch.stack.stackName,
-                reason: "停止だけの計画から起動はできません。"
+                reason: L10n.text("停止だけの計画から起動はできません。")
             )
         }
     }
@@ -1009,7 +1009,7 @@ public actor SwitchCoordinator {
         registeredProjects: [ProjectDefinition]
     ) async -> ManagedRestoreOutcome {
         guard !inFlight else {
-            return .skipped(reason: "ほかの起動・停止・切替を実行中です。")
+            return .skipped(reason: L10n.text("ほかの起動・停止・切替を実行中です。"))
         }
         inFlight = true
         defer { inFlight = false }
@@ -1017,7 +1017,7 @@ public actor SwitchCoordinator {
         let hintType = hint.type
         guard hint.relationship != nil else {
             return .skipped(
-                reason: "旧形式の手掛かりには\(hintType.identityLabel)と設定の記録がないため、状態確認コマンドを実行しません。"
+                reason: L10n.text("旧形式の手掛かりには\(hintType.identityLabel)と設定の記録がないため、状態確認コマンドを実行しません。")
             )
         }
         let resolution = resolveManagedStacks(
@@ -1029,11 +1029,11 @@ public actor SwitchCoordinator {
 
         guard let stack = resolution.stacksByService[service.id] else {
             return .skipped(
-                reason: "現在の設定から\(hintType.identityLabel)を解決できないため、状態確認コマンドを実行しません。"
+                reason: L10n.text("現在の設定から\(hintType.identityLabel)を解決できないため、状態確認コマンドを実行しません。")
             )
         }
         let mismatchReason =
-            "保存時の設定ディレクトリ・起動コマンド・\(hintType.identityLabel)と一致しないため、状態確認コマンドを実行しません。"
+            L10n.text("保存時の設定ディレクトリ・起動コマンド・\(hintType.identityLabel)と一致しないため、状態確認コマンドを実行しません。")
         // 解決したスタックが、渡されたサービスと同じ開発環境・同じ設定から作られたものかを確かめる。
         // 手掛かりとの照合はサービスの設定で行うため、別の設定から解決した値でコマンドを実行しない。
         guard stack.type == hintType,
@@ -1055,7 +1055,7 @@ public actor SwitchCoordinator {
             return .notRunning
         case .unknown:
             return .skipped(
-                reason: observation.detail ?? "状態を確定できませんでした。"
+                reason: observation.detail ?? L10n.text("状態を確定できませんでした。")
             )
         case .running, .degraded:
             do {
@@ -1075,7 +1075,7 @@ public actor SwitchCoordinator {
                 // 停止導線は残す。起動済みにはしない。
                 startedServiceIDs.remove(service.id)
                 failureReasons[service.id] = observation.detail
-                    ?? "\(stack.type.displayName)の必須コンテナが揃っていません。"
+                    ?? L10n.text("\(stack.type.displayName)の必須コンテナが揃っていません。")
             }
             return .restored(observation.state)
         }
@@ -1092,7 +1092,7 @@ public actor SwitchCoordinator {
         guard !units.isEmpty else {
             return SwitchFailure(
                 reason: .unsupportedConfiguration(
-                    "プロジェクト「\(target.name)」で今回起動するサービスが1つもありません。起動対象を選んでください。"
+                    L10n.text("プロジェクト「\(target.name)」で今回起動するサービスが1つもありません。起動対象を選んでください。")
                 ),
                 facts: await facts(source: source, target: target)
             )
@@ -1143,7 +1143,7 @@ public actor SwitchCoordinator {
             do {
                 let process = try Self.process(service)
                 if ProcessCommandClassification.supabaseStart(process.start) == .certain {
-                    return SwitchFailure(reason: .unsupportedConfiguration("Supabase の起動は管理対象スタックとして登録してください。"), facts: await facts(source: source, target: target))
+                    return SwitchFailure(reason: .unsupportedConfiguration(L10n.text("Supabase の起動は管理対象スタックとして登録してください。")), facts: await facts(source: source, target: target))
                 }
                 _ = try StartupObservationPolicy.spec(for: try Self.process(service))
             } catch {
@@ -1170,7 +1170,7 @@ public actor SwitchCoordinator {
         } catch {
             throw SwitchFailure(
                 reason: .portObservationFailed(
-                    context: "サービス「\(service.name)」の実測ポート",
+                    context: L10n.text("サービス「\(service.name)」の実測ポート"),
                     reason: "\(error)"
                 ),
                 facts: await facts(source: project, target: nil)
@@ -1181,8 +1181,8 @@ public actor SwitchCoordinator {
               let observed = record.observed else {
             throw SwitchFailure(
                 reason: .portObservationFailed(
-                    context: "サービス「\(service.name)」の実測ポート",
-                    reason: "プロセスのlistenポートを取得できませんでした。"
+                    context: L10n.text("サービス「\(service.name)」の実測ポート"),
+                    reason: L10n.text("プロセスのlistenポートを取得できませんでした。")
                 ),
                 facts: await facts(source: project, target: nil)
             )
@@ -1277,7 +1277,7 @@ public actor SwitchCoordinator {
                 if target != nil {
                     throw SwitchFailure(
                         reason: .portObservationFailed(
-                            context: "サービス「\(service.name)」の実測ポート",
+                            context: L10n.text("サービス「\(service.name)」の実測ポート"),
                             reason: "\(error)"
                         ),
                         facts: await facts(source: source, target: target)
@@ -1399,7 +1399,7 @@ public actor SwitchCoordinator {
             } catch {
                 throw SwitchFailure(
                     reason: .portObservationFailed(
-                        context: "停止元のポート解放確認",
+                        context: L10n.text("停止元のポート解放確認"),
                         reason: "\(error)"
                     ),
                     facts: await facts(source: source, target: target)
@@ -1482,7 +1482,7 @@ public actor SwitchCoordinator {
                     guard let launch = stackPlan?.launch(of: definition.id) else {
                         throw RuntimeError.managedCommandInvalid(
                             service: definition.name,
-                            reason: "既存スタックの実測結果がないため、\(definition.type.displayName)を起動しません。"
+                            reason: L10n.text("既存スタックの実測結果がないため、\(definition.type.displayName)を起動しません。")
                         )
                     }
                     stream = try await beginManagedStack(launch, in: target)
@@ -1529,7 +1529,7 @@ public actor SwitchCoordinator {
 
             progress(.observingStartup(service: service.name))
             guard let spec else {
-                preconditionFailure("通常プロセスの起動確認条件がありません。")
+                preconditionFailure(L10n.text("通常プロセスの起動確認条件がありません。"))
             }
             let result = await awaitStartupObservation(service: service, spec: spec)
             switch result {
@@ -1557,7 +1557,7 @@ public actor SwitchCoordinator {
 
     private static func process(_ unit: LaunchUnit) throws -> ServiceDefinition {
         guard case let .process(service) = unit else {
-            throw RuntimeError.managedCommandInvalid(service: unit.name, reason: "スタックは通常プロセスとして操作できません。")
+            throw RuntimeError.managedCommandInvalid(service: unit.name, reason: L10n.text("スタックは通常プロセスとして操作できません。"))
         }
         return service
     }
@@ -1709,7 +1709,7 @@ public actor SwitchCoordinator {
         } catch {
             startedServiceIDs.remove(service.id)
             let existing = failureReasons[service.id].map { $0 + "\n" } ?? ""
-            failureReasons[service.id] = existing + "補償停止に失敗しました。\n\(error)"
+            failureReasons[service.id] = existing + L10n.text("補償停止に失敗しました。\n\(error)")
             if let processGroupID = await registry.occupiedProcessGroup(serviceID: service.id) {
                 residualGroups[service.id] = processGroupID
             }
@@ -1745,11 +1745,11 @@ public actor SwitchCoordinator {
             return .failed(reason: await exitReason(exit, observation: observation))
         }
         guard await registry.isRunning(serviceID: service.id) else {
-            return .failed(reason: "起動直後にプロセスが終了しました。")
+            return .failed(reason: L10n.text("起動直後にプロセスが終了しました。"))
         }
         if let observation, !(await observation.confirmStartup()) {
             guard let exit = await observation.exit else {
-                return .failed(reason: "起動直後のプロセス状態を確定できませんでした。")
+                return .failed(reason: L10n.text("起動直後のプロセス状態を確定できませんでした。"))
             }
             return .failed(reason: await exitReason(exit, observation: observation))
         }
@@ -1761,8 +1761,8 @@ public actor SwitchCoordinator {
         observation: ServiceObservation?
     ) async -> String {
         let tail = await observation?.tailText ?? ""
-        let base = "起動直後に終了しました（\(exit.status.description)）。"
-        return tail.isEmpty ? base : base + "\n直近のログ:\n" + tail
+        let base = L10n.text("起動直後に終了しました（\(exit.status.description)）。")
+        return tail.isEmpty ? base : base + L10n.text("\n直近のログ:\n") + tail
     }
 
     // MARK: - 引き継ぎ
@@ -1788,7 +1788,7 @@ public actor SwitchCoordinator {
             }
         } catch {
             // 読み取り失敗でも引き継ぎ済みの管理関係は保ち、利用者が停止できるようにする。
-            events(service.id, .logUnavailable("引き継いだプロセスのログを取得できません。\n\(error)"))
+            events(service.id, .logUnavailable(L10n.text("引き継いだプロセスのログを取得できません。\n\(error)")))
         }
 
         let spec: StartupObservationSpec
@@ -1971,7 +1971,7 @@ public actor SwitchCoordinator {
         if observations[service.id] != nil,
            let exit = await registry.observedExit(serviceID: service.id),
            !exit.requestedByUser {
-            return .failed(reason: "停止操作なしに終了しました（\(exit.status.description)）")
+            return .failed(reason: L10n.text("停止操作なしに終了しました（\(exit.status.description)）"))
         }
         // 引き継いだ通常プロセスには終了イベントの観測記録がない。
         // 初期観測を通過した本体も残存グループも確認できなければ、対象外へ戻さず失敗にする。
@@ -1979,7 +1979,7 @@ public actor SwitchCoordinator {
         if service.managedStackDefinition == nil,
            startedServiceIDs.contains(service.id),
            observations[service.id] == nil {
-            return .failed(reason: "引き継いだプロセスが停止操作なしに終了しました（終了コードは取得できません）")
+            return .failed(reason: L10n.text("引き継いだプロセスが停止操作なしに終了しました（終了コードは取得できません）"))
         }
         if !project.isEnabledNow(service.id) { return .excluded }
         return .stopped
@@ -2020,7 +2020,7 @@ public actor SwitchCoordinator {
 
         let servicesInThisRun = project.launchUnits.map { service -> (definition: LaunchUnit, phase: ServicePhase) in
             guard let fact = byID[service.id] else {
-                preconditionFailure("プロジェクトの状態判定に必要なサービスの観測結果がありません。")
+                preconditionFailure(L10n.text("プロジェクトの状態判定に必要なサービスの観測結果がありません。"))
             }
             return (definition: service, phase: fact.phase)
         }.filter { $0.phase != .excluded }
@@ -2040,7 +2040,7 @@ public actor SwitchCoordinator {
             if case let .failed(detail) = blocking.phase {
                 reason = detail
             } else {
-                reason = "サービス「\(blocking.definition.name)」が起動できていません。"
+                reason = L10n.text("サービス「\(blocking.definition.name)」が起動できていません。")
             }
             return .failed(reason: reason)
         }

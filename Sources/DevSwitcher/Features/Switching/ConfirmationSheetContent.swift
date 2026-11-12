@@ -20,19 +20,21 @@ struct ConfirmationSheetContent: Equatable {
     /// 何が起き、何が起きないかを明示する。既定へ倒した挙動を黙って実行しない。
     let notes: [String]
 
-    private static let adoptionNote = "引き継いだあとは、Dev Switcherから停止・切替できます。"
-    private static let noAutomaticRestartNote = "停止後に対象の起動が失敗しても、停止したスタックは自動で再起動しません。"
-    private static let cancelNote = "キャンセルした場合、既存スタック・切替元・切替先のいずれも変更しません。"
+    private static var adoptionNote: String { L10n.text("引き継いだあとは、Dev Switcherから停止・切替できます。") }
+    private static var noAutomaticRestartNote: String { L10n.text("停止後に対象の起動が失敗しても、停止したスタックは自動で再起動しません。") }
+    private static var cancelNote: String { L10n.text("キャンセルした場合、既存スタック・切替元・切替先のいずれも変更しません。") }
 
     init(plan: ManagedStackConfirmationPlan) {
         let multipleTargets = plan.entries.filter { $0.action != .stop }.count > 1
         if multipleTargets {
-            lead = "開発環境「\(plan.environmentName)」の起動前に、以下の管理対象スタックの扱いを確認してください。"
+            lead = L10n.text("開発環境「\(plan.environmentName)」の起動前に、以下の管理対象スタックの扱いを確認してください。")
             notes = Self.multipleTargetNotes(plan)
         } else {
             let typeName = plan.primaryEntry.identity.type.displayName
-            lead = "開発環境「\(plan.environmentName)」のサービス「\(plan.primaryStackName)」を起動する前に、"
-                + "既存のローカル\(typeName)スタックの扱いを決めてください。"
+            lead = L10n.text("""
+                開発環境「\(plan.environmentName)」のサービス「\(plan.primaryStackName)」を起動する前に、\
+                既存のローカル\(typeName)スタックの扱いを決めてください。
+                """)
             notes = Self.singleTargetNotes(plan)
         }
         rows = plan.entries.map(Self.row(for:))
@@ -49,9 +51,9 @@ struct ConfirmationSheetContent: Equatable {
                 notes.append(limitation)
             }
         case .restart:
-            notes.append("対象の \(primary.identity.type.identityLabel) だけを停止し、停止を確認してから起動し直します。")
+            notes.append(L10n.text("対象の \(primary.identity.type.identityLabel) だけを停止し、停止を確認してから起動し直します。"))
         case .start, .stop:
-            notes.append("対象は新しく起動します。")
+            notes.append(L10n.text("対象は新しく起動します。"))
         }
         if !plan.stopEntries.isEmpty {
             notes += stopScopeNotes(for: plan.stopEntries)
@@ -78,7 +80,7 @@ struct ConfirmationSheetContent: Equatable {
             notes += types(in: adopted).compactMap { ManagedStackTypePresentation($0).adoptionLimitationNote }
         }
         if plan.entries.contains(where: { $0.action == .start }) {
-            notes.append("「起動する」の行だけを新しく起動します。")
+            notes.append(L10n.text("「起動する」の行だけを新しく起動します。"))
         }
         if plan.entries.contains(where: { $0.action == .restart }), plan.stopEntries.isEmpty {
             notes.append(noAutomaticRestartNote)

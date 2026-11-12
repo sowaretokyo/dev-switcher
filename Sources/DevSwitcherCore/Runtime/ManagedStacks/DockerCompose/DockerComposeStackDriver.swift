@@ -39,21 +39,21 @@ public actor DockerComposeStackDriver: ManagedStackDriver {
             let configuration = try configuration(stack)
             let result = try await runner.run(configuration.observationCommand, policy: Self.policy(timeout: .seconds(60)))
             guard result.isSuccess else {
-                return ManagedStackObservation(identity: stack.identity, state: .unknown, detail: "Compose の状態確認に失敗しました（\(result.status.description)）。\n\(result.combinedOutput)")
+                return ManagedStackObservation(identity: stack.identity, state: .unknown, detail: L10n.text("Compose の状態確認に失敗しました（\(result.status.description)）。\n\(result.combinedOutput)"))
             }
             return ComposePsParser.observation(result.standardOutput, identity: stack.identity)
         } catch {
-            return ManagedStackObservation(identity: stack.identity, state: .unknown, detail: "Compose の状態を観測できません。\n\(error)")
+            return ManagedStackObservation(identity: stack.identity, state: .unknown, detail: L10n.text("Compose の状態を観測できません。\n\(error)"))
         }
     }
     public func start(_ stack: ResolvedManagedStack, known: [ResolvedManagedStack]) async throws -> [LogLine] {
-        try await execute(try configuration(stack).startCommand, stack: stack, expected: .running, action: "起動", window: options.startConfirmationWindow)
+        try await execute(try configuration(stack).startCommand, stack: stack, expected: .running, action: L10n.text("起動"), window: options.startConfirmationWindow)
     }
     public func stop(_ identity: ManagedStackIdentity, using context: ResolvedManagedStack, known: [ResolvedManagedStack]) async throws -> [LogLine] {
         guard identity == context.identity else {
-            throw ManagedStackOperationError.commandUnavailable(action: "停止", identity: identity, reason: "Compose は設定と同じ ID だけを停止できます。")
+            throw ManagedStackOperationError.commandUnavailable(action: L10n.text("停止"), identity: identity, reason: L10n.text("Compose は設定と同じ ID だけを停止できます。"))
         }
-        return try await execute(try configuration(context).stopCommand, stack: context, expected: .notRunning, action: "停止", window: options.stopConfirmationWindow)
+        return try await execute(try configuration(context).stopCommand, stack: context, expected: .notRunning, action: L10n.text("停止"), window: options.stopConfirmationWindow)
     }
     private func configuration(_ stack: ResolvedManagedStack) throws -> DockerComposeResolvedConfiguration {
         guard case let .dockerCompose(configuration) = stack.configuration else {

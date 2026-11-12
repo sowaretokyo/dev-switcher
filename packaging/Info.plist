@@ -16,6 +16,11 @@
     <string>APPL</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>ja</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>ja</string>
+        <string>en</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>LSApplicationCategoryType</key>

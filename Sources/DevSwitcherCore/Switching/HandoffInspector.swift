@@ -97,30 +97,36 @@ public enum HandoffRejection: Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .processGone:
-            "プロセスが存在しません。"
+            L10n.text("プロセスが存在しません。")
         case let .anchorMismatch(expected, actual):
-            "プロセスが一致しません（記録した PID \(expected.pid) の開始 abstime "
-                + "\(expected.startAbstime) / 実測 \(actual)）。"
-                + "PID が再利用された可能性があります。"
+            L10n.text("""
+                プロセスが一致しません（記録した PID \(expected.pid) の開始 abstime \
+                \(expected.startAbstime) / 実測 \(actual)）。\
+                PID が再利用された可能性があります。
+                """)
         case let .executableMismatch(expected, actual):
-            "実行ファイルが一致しません（記録 \(expected) / 実測 \(actual ?? "取得できず")）。"
+            L10n.text("実行ファイルが一致しません（記録 \(expected) / 実測 \(actual ?? L10n.text("取得できず"))）。")
         case let .workingDirectoryMismatch(expected, actual):
-            "作業ディレクトリが一致しません（記録 \(expected) / 実測 \(actual ?? "取得できず")）。"
+            L10n.text("作業ディレクトリが一致しません（記録 \(expected) / 実測 \(actual ?? L10n.text("取得できず"))）。")
         case let .observationFailed(reason):
-            "実測できませんでした（\(reason)）。一致を確認できないため引き継ぎません。"
+            L10n.text("実測できませんでした（\(reason)）。一致を確認できないため引き継ぎません。")
         case let .definitionMissing(projectID, serviceID):
-            "対応するプロジェクトまたはサービス定義が見つかりません"
-                + "（project \(projectID.uuidString) / service \(serviceID.uuidString)）。"
-                + "定義が復元されるまで手掛かりを保持します。"
+            L10n.text("""
+                対応するプロジェクトまたはサービス定義が見つかりません\
+                （project \(projectID.uuidString) / service \(serviceID.uuidString)）。\
+                定義が復元されるまで手掛かりを保持します。
+                """)
         case let .groupNotIdentified(leaderReason, groupReason):
-            "\(leaderReason)\nプロセスグループも前回のものと同定できませんでした。\n\(groupReason)"
+            L10n.text("\(leaderReason)\nプロセスグループも前回のものと同定できませんでした。\n\(groupReason)")
         case let .groupUnobservable(leaderReason, groupReason):
-            "\(leaderReason)\nプロセスグループの状態を観測できませんでした。\n\(groupReason)"
+            L10n.text("\(leaderReason)\nプロセスグループの状態を観測できませんでした。\n\(groupReason)")
         case let .inconsistentHint(reason):
-            "手掛かりの内容に矛盾があります。安全に照合できないため対象にしません。\n\(reason)"
+            L10n.text("手掛かりの内容に矛盾があります。安全に照合できないため対象にしません。\n\(reason)")
         case let .legacyLeaderUnverified(reason):
-            "旧形式の記録です。安全に照合できる情報を持たないため、"
-                + "本体を確認できたときにだけ引き継ぎ・停止の対象にします。\n\(reason)"
+            L10n.text("""
+                旧形式の記録です。安全に照合できる情報を持たないため、\
+                本体を確認できたときにだけ引き継ぎ・停止の対象にします。\n\(reason)
+                """)
         }
     }
 }
@@ -251,7 +257,7 @@ public struct HandoffInspector: Sendable {
             switch await evaluate(hint) {
             case let .adoptable(candidate):
                 if hint.stopCommandFor != nil {
-                    stoppable.append(StoppableProcessFinding(hint: hint, evidence: .matchedLeader(candidate.identity), groupEvidence: candidate.evidence, reason: "停止コマンドが残っています。稼働中サービスとしては引き継げません。"))
+                    stoppable.append(StoppableProcessFinding(hint: hint, evidence: .matchedLeader(candidate.identity), groupEvidence: candidate.evidence, reason: L10n.text("停止コマンドが残っています。稼働中サービスとしては引き継げません。")))
                 } else { candidates.append(candidate) }
             case let .stoppableOnly(finding):
                 stoppable.append(finding)
@@ -299,24 +305,24 @@ public struct HandoffInspector: Sendable {
     /// v1 の値そのものを錨として信用しない。
     private func convert(_ legacy: LegacyRuntimeHint) -> LegacyConversion {
         guard let startTime = startTimeProbe(legacy.pid) else {
-            return .unverified("記録されたプロセス（PID \(legacy.pid)）が存在しません。")
+            return .unverified(L10n.text("記録されたプロセス（PID \(legacy.pid)）が存在しません。"))
         }
         guard startTime == legacy.startTimeMicroseconds else {
-            return .unverified("PID \(legacy.pid) の開始時刻が記録と一致しません。")
+            return .unverified(L10n.text("PID \(legacy.pid) の開始時刻が記録と一致しません。"))
         }
         guard let executablePath = executablePathProbe(legacy.pid),
               executablePath == legacy.executablePath
         else {
-            return .unverified("PID \(legacy.pid) の実行ファイルが記録と一致しません。")
+            return .unverified(L10n.text("PID \(legacy.pid) の実行ファイルが記録と一致しません。"))
         }
         guard let workingDirectory = workingDirectoryProbe(legacy.pid),
               workingDirectory.standardizedFileURL.path
                 == legacy.workingDirectory.standardizedFileURL.path
         else {
-            return .unverified("PID \(legacy.pid) の作業ディレクトリが記録と一致しません。")
+            return .unverified(L10n.text("PID \(legacy.pid) の作業ディレクトリが記録と一致しません。"))
         }
         guard let leader = measureAnchor(legacy.pid) else {
-            return .unverified("PID \(legacy.pid) の開始 abstime を取得できません。")
+            return .unverified(L10n.text("PID \(legacy.pid) の開始 abstime を取得できません。"))
         }
         guard let evidence = ProcessGroupIdentification.captureEvidence(
             processGroupID: legacy.processGroupID,
@@ -325,7 +331,7 @@ public struct HandoffInspector: Sendable {
             bootSessionProbe: bootSessionProbe
         ) else {
             return .unverified(
-                "プロセスグループ \(legacy.processGroupID) の錨を実測できません。"
+                L10n.text("プロセスグループ \(legacy.processGroupID) の錨を実測できません。")
             )
         }
 
@@ -378,12 +384,14 @@ public struct HandoffInspector: Sendable {
     /// まさに回収したい残存グループを一つも扱えなくなる。
     private func structuralProblem(of hint: RuntimeHint) -> String? {
         guard hint.leader.pid == hint.processGroupID else {
-            return "本体（PID \(hint.leader.pid)）とプロセスグループ "
-                + "\(hint.processGroupID) が一致しません。"
-                + "起動したプロセスは必ずグループのリーダーになるため、この組み合わせは成立しません。"
+            return L10n.text("""
+                本体（PID \(hint.leader.pid)）とプロセスグループ \
+                \(hint.processGroupID) が一致しません。\
+                起動したプロセスは必ずグループのリーダーになるため、この組み合わせは成立しません。
+                """)
         }
         guard !hint.groupEvidence.anchors.isEmpty else {
-            return "同定に使える錨が記録されていません。"
+            return L10n.text("同定に使える錨が記録されていません。")
         }
         return nil
     }
@@ -397,7 +405,7 @@ public struct HandoffInspector: Sendable {
     private func matchLeader(_ hint: RuntimeHint) -> LeaderMatch {
         // 起動セッションが違えば mach absolute time の比較自体が無意味。
         guard let bootSessionID = bootSessionProbe() else {
-            return .mismatched(.observationFailed("起動セッションの識別子を取得できません。"))
+            return .mismatched(.observationFailed(L10n.text("起動セッションの識別子を取得できません。")))
         }
         guard bootSessionID == hint.groupEvidence.bootSessionID else {
             return .mismatched(.processGone)
@@ -412,8 +420,10 @@ public struct HandoffInspector: Sendable {
         case let .unavailable(code):
             return .mismatched(
                 .observationFailed(
-                    "PID \(hint.leader.pid) の開始時刻を取得できませんでした"
-                        + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+                    L10n.text("""
+                        PID \(hint.leader.pid) の開始時刻を取得できませんでした\
+                        （errno \(code): \(CStringDecoding.errorMessage(code))）。
+                        """)
                 )
             )
         }
@@ -443,7 +453,7 @@ public struct HandoffInspector: Sendable {
         }
 
         guard let startTime = startTimeProbe(hint.leader.pid) else {
-            return .mismatched(.observationFailed("開始時刻を取得できません。"))
+            return .mismatched(.observationFailed(L10n.text("開始時刻を取得できません。")))
         }
         let identity = ProcessIdentity(
             pid: hint.leader.pid,
@@ -460,12 +470,12 @@ public struct HandoffInspector: Sendable {
             startAbstimeProbe: startAbstimeProbe,
             bootSessionProbe: bootSessionProbe
         ) else {
-            return .mismatched(.observationFailed("プロセスグループの錨を実測できません。"))
+            return .mismatched(.observationFailed(L10n.text("プロセスグループの錨を実測できません。")))
         }
         guard evidence.anchors.contains(identity.anchor) else {
             return .mismatched(
                 .observationFailed(
-                    "本体 PID \(identity.pid) が対象のプロセスグループに属することを確認できません。"
+                    L10n.text("本体 PID \(identity.pid) が対象のプロセスグループに属することを確認できません。")
                 )
             )
         }
@@ -488,8 +498,10 @@ public struct HandoffInspector: Sendable {
                     hint: hint,
                     evidence: .matchedLeader(identity),
                     groupEvidence: evidence,
-                    reason: "listen ポートを実測できませんでした（\(error)）。"
-                        + "期待どおり動いているか確認できないため引き継ぎません。"
+                    reason: L10n.text("""
+                        listen ポートを実測できませんでした（\(error)）。\
+                        期待どおり動いているか確認できないため引き継ぎません。
+                        """)
                 )
             )
         }
@@ -502,8 +514,10 @@ public struct HandoffInspector: Sendable {
                     hint: hint,
                     evidence: .matchedLeader(identity),
                     groupEvidence: evidence,
-                    reason: "前回の listen ポートを実測できていません。"
-                        + "期待どおり動いているか確認できないため引き継ぎません。"
+                    reason: L10n.text("""
+                        前回の listen ポートを実測できていません。\
+                        期待どおり動いているか確認できないため引き継ぎません。
+                        """)
                 )
             )
         }
@@ -517,9 +531,11 @@ public struct HandoffInspector: Sendable {
                     hint: hint,
                     evidence: .matchedLeader(identity),
                     groupEvidence: evidence,
-                    reason: "listen ポートが一致しません"
-                        + "（記録 \(expectedPorts.sorted().map(String.init).joined(separator: ", "))"
-                        + " / 実測 \(actualPorts.sorted().map(String.init).joined(separator: ", "))）。"
+                    reason: L10n.text("""
+                        listen ポートが一致しません\
+                        （記録 \(expectedPorts.sorted().map(String.init).joined(separator: ", "))\
+                         / 実測 \(actualPorts.sorted().map(String.init).joined(separator: ", "))）。
+                        """)
                 )
             )
         }
@@ -556,10 +572,12 @@ public struct HandoffInspector: Sendable {
                     hint: hint,
                     evidence: .verifiedGroup(livePIDs: livePIDs),
                     groupEvidence: evidence,
-                    reason: "起動したプロセス（PID \(hint.leader.pid)）は終了していますが、"
-                        + "プロセスグループ \(hint.processGroupID) に "
-                        + "\(livePIDs.map(String.init).joined(separator: ", ")) が残っています。"
-                        + "管理できる本体が無いため引き継げません。"
+                    reason: L10n.text("""
+                        起動したプロセス（PID \(hint.leader.pid)）は終了していますが、\
+                        プロセスグループ \(hint.processGroupID) に \
+                        \(livePIDs.map(String.init).joined(separator: ", ")) が残っています。\
+                        管理できる本体が無いため引き継げません。
+                        """)
                 )
             )
         case .empty:

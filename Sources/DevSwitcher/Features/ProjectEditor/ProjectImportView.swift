@@ -13,13 +13,13 @@ struct ProjectImportView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                Text("JSONから開発環境を取り込む")
+                Text(L10n.text("JSONから開発環境を取り込む"))
                     .font(Typography.title)
-                Text("内容を確認して、新しい開発環境として一括追加します。既存設定の上書きやプロセスの起動は行いません。")
+                Text(L10n.text("内容を確認して、新しい開発環境として一括追加します。既存設定の上書きやプロセスの起動は行いません。"))
                     .font(Typography.support)
                     .foregroundStyle(.secondary)
                 HStack {
-                    Button("JSONファイルを選択…") { isChoosingFile = true }
+                    Button(L10n.text("JSONファイルを選択…")) { isChoosingFile = true }
                     if let fileName = model.fileName {
                         Text(fileName)
                             .font(Typography.support)
@@ -27,7 +27,7 @@ struct ProjectImportView: View {
                             .truncationMode(.middle)
                     }
                 }
-                Button("AI向けの作成ガイドをコピー") { copyGuide() }
+                Button(L10n.text("AI向けの作成ガイドをコピー")) { copyGuide() }
                     .font(Typography.support)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -38,19 +38,19 @@ struct ProjectImportView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.l) {
                     if let preview = model.preview {
-                        Text("開発環境 \(preview.projects.count) 件・プロセス \(preview.projects.reduce(0) { $0 + $1.services.count }) 件・スタック \(preview.projects.reduce(0) { $0 + $1.managedStacks.count }) 件")
+                        Text(L10n.text("開発環境 \(preview.projects.count) 件・プロセス \(preview.projects.reduce(0) { $0 + $1.services.count }) 件・スタック \(preview.projects.reduce(0) { $0 + $1.managedStacks.count }) 件"))
                             .font(Typography.support.weight(.semibold))
                         ForEach(preview.projects) { project in
                             projectPreview(project)
                         }
-                        DisclosureGroup("設定の全項目を確認") {
+                        DisclosureGroup(L10n.text("設定の全項目を確認")) {
                             Text(preview.json)
                                 .font(.system(.caption, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
-                        Text("Dev Switcherの設定形式のJSONを選択してください。開発環境名やIDが登録済みの設定と重複している場合は取り込めません。")
+                        Text(L10n.text("Dev Switcherの設定形式のJSONを選択してください。開発環境名やIDが登録済みの設定と重複している場合は取り込めません。"))
                             .font(Typography.support)
                             .foregroundStyle(.secondary)
                     }
@@ -75,9 +75,9 @@ struct ProjectImportView: View {
                 }
                 HStack {
                     Spacer()
-                    Button("キャンセル", role: .cancel) { dismiss() }
+                    Button(L10n.text("キャンセル"), role: .cancel) { dismiss() }
                         .keyboardShortcut(.cancelAction)
-                    Button("\(model.projectCount)件を追加") { save() }
+                    Button(L10n.text("\(model.projectCount)件を追加")) { save() }
                         .keyboardShortcut(.defaultAction)
                         .disabled(model.projectCount == 0 || !state.canChangeConfiguration)
                 }
@@ -105,7 +105,7 @@ struct ProjectImportView: View {
                 }
                 .font(Typography.support)
             }
-            Text("スタック・プロセスの起動順")
+            Text(L10n.text("スタック・プロセスの起動順"))
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
             ForEach(ProjectValidator.warnings(project).map(\.description), id: \.self) { warning in
@@ -116,7 +116,7 @@ struct ProjectImportView: View {
             }
             ForEach(Array(project.launchUnits.enumerated()), id: \.element.id) { index, service in
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("\(index + 1). \(service.name)（\(project.isEnabledNow(service.id) ? "起動対象" : "対象外")）")
+                    Text(L10n.text("\(index + 1). \(service.name)（\(project.isEnabledNow(service.id) ? L10n.text("起動対象") : L10n.text("対象外"))）"))
                     Text(service.commandDescription)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
@@ -137,7 +137,7 @@ struct ProjectImportView: View {
             try state.importProjects(preview.projects)
             dismiss()
         } catch {
-            model.errorMessage = "追加できませんでした。設定ファイルと一覧は変更していません。\n\(error)"
+            model.errorMessage = L10n.text("追加できませんでした。設定ファイルと一覧は変更していません。\n\(error)")
         }
     }
 
@@ -146,12 +146,12 @@ struct ProjectImportView: View {
             let guide = try ProjectImportModel.creationGuide()
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(guide, forType: .string) else {
-                model.errorMessage = "作成ガイドをクリップボードにコピーできませんでした。"
+                model.errorMessage = L10n.text("作成ガイドをクリップボードにコピーできませんでした。")
                 return
             }
             model.errorMessage = nil
         } catch {
-            model.errorMessage = "作成ガイドを読み込めません。\n\(error)"
+            model.errorMessage = L10n.text("作成ガイドを読み込めません。\n\(error)")
         }
     }
 }

@@ -15,12 +15,12 @@ struct SidebarView: View {
                         projectRows(project)
                     }
                 } header: {
-                    SectionLabel("動作中")
+                    SectionLabel(L10n.text("動作中"))
                 }
             }
             Section {
                 if inactiveProjects.isEmpty {
-                    Text("登録されていません")
+                    Text(L10n.text("登録されていません"))
                         .font(Typography.support)
                         .foregroundStyle(.tertiary)
                         .rowLayout(height: Metrics.serviceRowHeight, leading: Spacing.s)
@@ -29,7 +29,7 @@ struct SidebarView: View {
                     projectRows(project)
                 }
             } header: {
-                SectionLabel("開発環境")
+                SectionLabel(L10n.text("開発環境"))
             }
         }
         .listStyle(.sidebar)
@@ -39,7 +39,7 @@ struct SidebarView: View {
                 Button {
                     state.presentProjectForm()
                 } label: {
-                    Label("開発環境を追加…", systemImage: "plus")
+                    Label(L10n.text("開発環境を追加…"), systemImage: "plus")
                         .font(Typography.row)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -50,7 +50,7 @@ struct SidebarView: View {
                 Button {
                     state.presentProjectImport()
                 } label: {
-                    Label("JSONから取り込む…", systemImage: "square.and.arrow.down")
+                    Label(L10n.text("JSONから取り込む…"), systemImage: "square.and.arrow.down")
                         .font(Typography.row)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -124,7 +124,7 @@ private struct ProjectRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isExpanded ? "プロセスを隠す" : "プロセスを表示")
+            .accessibilityLabel(isExpanded ? L10n.text("プロセスを隠す") : L10n.text("プロセスを表示"))
 
             ProjectChip(project: project)
 
@@ -174,8 +174,8 @@ private struct ServiceRow: View {
         if let managedStack = state.state(of: service.id).managedStack,
            managedStack.relationship == nil, managedStack.state != .notRunning { return managedStack.label }
         // 対象外は今回起動しないので、ポートの代わりに状態を出す。
-        if state.state(of: service.id).phase == .excluded { return "対象外" }
-        guard let primary = service.primaryPort else { return "ポートなし" }
+        if state.state(of: service.id).phase == .excluded { return L10n.text("対象外") }
+        guard let primary = service.primaryPort else { return L10n.text("ポートなし") }
         let remaining = service.ports.count - 1
         return remaining > 0 ? ":\(primary.port) +\(remaining)" : ":\(primary.port)"
     }

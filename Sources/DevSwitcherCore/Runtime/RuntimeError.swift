@@ -23,35 +23,41 @@ public enum RuntimeError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .operationInProgress:
-            "ほかの起動・停止処理が実行中です。完了してから操作してください。"
+            L10n.text("ほかの起動・停止処理が実行中です。完了してから操作してください。")
         case let .otherProjectRunning(running, requested):
-            "プロジェクト「\(running)」が起動済みです。同時に動かせるプロジェクトは1つだけのため、「\(requested)」は起動できません。先に「\(running)」を停止してください。"
+            L10n.text("プロジェクト「\(running)」が起動済みです。同時に動かせるプロジェクトは1つだけのため、「\(requested)」は起動できません。先に「\(running)」を停止してください。")
         case let .alreadyRunning(service):
-            "サービス「\(service)」は既に起動しています。"
+            L10n.text("サービス「\(service)」は既に起動しています。")
         case let .notRunning(service):
-            "サービス「\(service)」は起動していません。"
+            L10n.text("サービス「\(service)」は起動していません。")
         case let .identityMismatch(service, pid):
-            "PID \(pid) は起動時に記録したプロセスと一致しません。別プロセスを終了させないため、サービス「\(service)」の停止を中止しました。"
+            L10n.text("PID \(pid) は起動時に記録したプロセスと一致しません。別プロセスを終了させないため、サービス「\(service)」の停止を中止しました。")
         case let .identityUnavailable(service, pid, residualProcessGroupID):
             if let residualProcessGroupID {
-                "サービス「\(service)」の起動直後にプロセス情報（PID \(pid)）を取得できませんでした。安全に管理できないため中止しましたが、プロセスグループ \(residualProcessGroupID) にプロセスが残っています。"
+                L10n.text("サービス「\(service)」の起動直後にプロセス情報（PID \(pid)）を取得できませんでした。安全に管理できないため中止しましたが、プロセスグループ \(residualProcessGroupID) にプロセスが残っています。")
             } else {
-                "サービス「\(service)」の起動直後にプロセス情報（PID \(pid)）を取得できませんでした。安全に管理できないため中止しました。"
+                L10n.text("サービス「\(service)」の起動直後にプロセス情報（PID \(pid)）を取得できませんでした。安全に管理できないため中止しました。")
             }
         case let .invalidHandoff(service, reason):
-            "サービス「\(service)」の引き継ぎ候補を登録直前に再検証できませんでした。"
-                + "別プロセスを管理対象にしないため、引き継ぎを中止しました。\n\(reason)"
+            L10n.text("""
+                サービス「\(service)」の引き継ぎ候補を登録直前に再検証できませんでした。\
+                別プロセスを管理対象にしないため、引き継ぎを中止しました。\n\(reason)
+                """)
         case let .ownershipLost(service):
-            "サービス「\(service)」のプロセスグループ所有権を失いました。"
-                + "再利用された可能性のあるPGIDへ送らないため、停止結果を判定できません。"
+            L10n.text("""
+                サービス「\(service)」のプロセスグループ所有権を失いました。\
+                再利用された可能性のあるPGIDへ送らないため、停止結果を判定できません。
+                """)
         case let .residualProcessesRemain(service, processGroupID):
-            "サービス「\(service)」の前回のプロセスが残っています（プロセスグループ \(processGroupID)）。残りを停止してから起動してください。"
+            L10n.text("サービス「\(service)」の前回のプロセスが残っています（プロセスグループ \(processGroupID)）。残りを停止してから起動してください。")
         case let .managedCommandInvalid(service, reason):
-            "サービス「\(service)」の管理コマンドを構成できません。\n\(reason)"
+            L10n.text("サービス「\(service)」の管理コマンドを構成できません。\n\(reason)")
         case let .managedStartOwnershipUnconfirmed(stack, identity, state, reason):
-            "サービス「\(stack)」の\(identity.type.displayName)「\(identity)」は起動処理の前後で"
-                + "\(state.label)と観測されましたが、Dev Switcherが起動したスタックか確定できません。"
-                + "停止権限を持たないため自動停止していません。再度起動操作を行い、現在のスタックの扱いを確認してください。\n\(reason)"
+            L10n.text("""
+                サービス「\(stack)」の\(identity.type.displayName)「\(identity)」は起動処理の前後で\
+                \(state.label)と観測されましたが、Dev Switcherが起動したスタックか確定できません。\
+                停止権限を持たないため自動停止していません。再度起動操作を行い、現在のスタックの扱いを確認してください。\n\(reason)
+                """)
         }
     }
 }

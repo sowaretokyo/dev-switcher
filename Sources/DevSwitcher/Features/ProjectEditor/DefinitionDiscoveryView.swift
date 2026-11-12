@@ -24,7 +24,7 @@ struct DefinitionDiscoveryView: View {
             if let preview {
                 candidates(preview)
             } else {
-                Button("定義から追加…", systemImage: "doc.badge.plus") { read() }
+                Button(L10n.text("定義から追加…"), systemImage: "doc.badge.plus") { read() }
                     .disabled(directory == nil)
             }
             if let errorMessage {
@@ -49,9 +49,9 @@ struct DefinitionDiscoveryView: View {
                 HStack {
                     Text("Docker Compose").font(Typography.heading)
                     Spacer()
-                    DiscoveryDetails("Compose の停止範囲") {
-                        Text("停止範囲").font(Typography.heading)
-                        Text("同じプロジェクト名の全 profile")
+                    DiscoveryDetails(L10n.text("Compose の停止範囲")) {
+                        Text(L10n.text("停止範囲")).font(Typography.heading)
+                        Text(L10n.text("同じプロジェクト名の全 profile"))
                     }
                 }
                 .padding(Spacing.m)
@@ -69,18 +69,18 @@ struct DefinitionDiscoveryView: View {
                 .padding(.bottom, Spacing.m)
             }
             if result.scripts.isEmpty && result.compose == nil && result.issues.isEmpty {
-                Label("候補が見つかりません", systemImage: "doc.text.magnifyingglass")
+                Label(L10n.text("候補が見つかりません"), systemImage: "doc.text.magnifyingglass")
                     .font(Typography.row)
                     .padding(Spacing.l)
             }
             Divider()
             HStack(spacing: Spacing.s) {
-                Button("読み込み直す", systemImage: "arrow.clockwise") { read() }
+                Button(L10n.text("読み込み直す"), systemImage: "arrow.clockwise") { read() }
                     .labelStyle(.iconOnly)
-                    .help("読み込み直す")
+                    .help(L10n.text("読み込み直す"))
                 Spacer()
-                Button("キャンセル") { reset() }
-                Button("\(selectionCount)件を追加") {
+                Button(L10n.text("キャンセル")) { reset() }
+                Button(L10n.text("\(selectionCount)件を追加")) {
                     do {
                         try add(result, selectedScripts, manager, includeCompose)
                         reset()
@@ -105,8 +105,8 @@ struct DefinitionDiscoveryView: View {
             HStack(spacing: Spacing.s) {
                 Text("package.json").font(Typography.heading)
                 Spacer()
-                Picker("実行ツール", selection: $manager) {
-                    Text("実行ツールを選択").tag(Optional<ScriptPackageManager>.none)
+                Picker(L10n.text("実行ツール"), selection: $manager) {
+                    Text(L10n.text("実行ツールを選択")).tag(Optional<ScriptPackageManager>.none)
                     ForEach(ScriptPackageManager.allCases, id: \.self) { value in
                         Text(value.rawValue).tag(Optional(value))
                     }
@@ -114,10 +114,10 @@ struct DefinitionDiscoveryView: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .fixedSize()
-                DiscoveryDetails("実行ツールの検出結果") {
+                DiscoveryDetails(L10n.text("実行ツールの検出結果")) {
                     Text("lockfile").font(Typography.heading)
                     if result.managers.isEmpty {
-                        Text("未検出")
+                        Text(L10n.text("未検出"))
                     } else {
                         Text(result.managers.flatMap(\.files).joined(separator: "\n"))
                             .font(Typography.mono)
@@ -130,7 +130,7 @@ struct DefinitionDiscoveryView: View {
                     if let manager {
                         Text("\(manager.rawValue) run <script>").font(Typography.mono)
                     }
-                    Text("関連する pre/post script も実行される場合があります。コンテナの起動は管理対象スタックに登録してください。")
+                    Text(L10n.text("関連する pre/post script も実行される場合があります。コンテナの起動は管理対象スタックに登録してください。"))
                 }
             }
             .padding(Spacing.m)
@@ -146,7 +146,7 @@ struct DefinitionDiscoveryView: View {
                     .font(Typography.row)
                     .frame(width: Metrics.discoveryNameWidth, alignment: .leading)
                     .help(manager.map { $0.command(script: script.name, directory: result.directory).displayCommandLine }
-                          ?? "実行ツールを選択してください")
+                          ?? L10n.text("実行ツールを選択してください"))
                     Text(script.body)
                         .font(Typography.mono)
                         .textSelection(.enabled)
@@ -170,7 +170,7 @@ struct DefinitionDiscoveryView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if lines.count > 1 {
-                DiscoveryDetails("エラーの詳細") {
+                DiscoveryDetails(L10n.text("エラーの詳細")) {
                     Text(lines.dropFirst().joined(separator: "\n")).font(Typography.mono)
                 }
             }
@@ -180,12 +180,12 @@ struct DefinitionDiscoveryView: View {
     private func read() {
         reset()
         do {
-            guard let directory else { throw DefinitionDiscoveryError("作業ディレクトリを選択してください。") }
+            guard let directory else { throw DefinitionDiscoveryError(L10n.text("作業ディレクトリを選択してください。")) }
             let result = try DefinitionDiscovery.scan(directory: directory)
             preview = result
             manager = result.suggestedManager
         } catch {
-            errorMessage = "候補を読み込めません。\n\(error)"
+            errorMessage = L10n.text("候補を読み込めません。\n\(error)")
         }
     }
 

@@ -13,14 +13,14 @@ public enum ProjectColor: String, Codable, Sendable, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .blue: "ブルー"
-        case .purple: "パープル"
-        case .pink: "ピンク"
-        case .red: "レッド"
-        case .orange: "オレンジ"
-        case .yellow: "イエロー"
-        case .green: "グリーン"
-        case .teal: "ティール"
+        case .blue: L10n.text("ブルー")
+        case .purple: L10n.text("パープル")
+        case .pink: L10n.text("ピンク")
+        case .red: L10n.text("レッド")
+        case .orange: L10n.text("オレンジ")
+        case .yellow: L10n.text("イエロー")
+        case .green: L10n.text("グリーン")
+        case .teal: L10n.text("ティール")
         }
     }
 }
@@ -113,7 +113,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
         guard let stopOrder else { return services.reversed() }
         return stopOrder.map { serviceID in
             guard let service = service(id: serviceID) else {
-                preconditionFailure("終了順に存在しないプロセス ID が含まれています。")
+                preconditionFailure(L10n.text("終了順に存在しないプロセス ID が含まれています。"))
             }
             return service
         }
@@ -122,7 +122,7 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
     /// 今回そのサービスを起動するか。`enabledNow`が未設定なら`enabledByDefault`に従う。
     public func isEnabledNow(_ serviceID: UUID) -> Bool {
         guard let unit = entry(id: serviceID) else {
-            preconditionFailure("存在しないプロセス・スタックの起動対象は取得できません。")
+            preconditionFailure(L10n.text("存在しないプロセス・スタックの起動対象は取得できません。"))
         }
         return enabledNow[serviceID] ?? unit.enabledByDefault
     }
@@ -191,11 +191,11 @@ public struct ProjectDefinition: Codable, Equatable, Sendable, Identifiable {
                 throw DecodingError.dataCorruptedError(
                     forKey: .enabledNow,
                     in: container,
-                    debugDescription: "起動対象のキー「\(key)」をサービス ID として解釈できません。"
+                    debugDescription: L10n.text("起動対象のキー「\(key)」をサービス ID として解釈できません。")
                 )
             }
             guard parsed[serviceID] == nil else {
-                throw DecodingError.dataCorruptedError(forKey: .enabledNow, in: container, debugDescription: "起動対象の ID が重複しています。")
+                throw DecodingError.dataCorruptedError(forKey: .enabledNow, in: container, debugDescription: L10n.text("起動対象の ID が重複しています。"))
             }
             parsed[serviceID] = value
         }

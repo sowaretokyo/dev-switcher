@@ -77,7 +77,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
         let configuration = Self.configuration(of: stack)
         return try await executeAndConfirm(
             configuration.derived.start,
-            action: "開始",
+            action: L10n.text("開始"),
             identity: stack.identity,
             known: known,
             expected: .running,
@@ -97,7 +97,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
         let projectID = try SupabaseProjectID(identity: identity)
         return try await executeAndConfirm(
             Self.configuration(of: context).derived.stopCommand(projectID: projectID),
-            action: "停止",
+            action: L10n.text("停止"),
             identity: identity,
             known: known,
             expected: .notRunning,
@@ -110,7 +110,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
     private static func configuration(of stack: ResolvedManagedStack) -> SupabaseResolvedConfiguration {
         switch stack.configuration {
         case let .supabase(configuration): configuration
-        case .dockerCompose: preconditionFailure("Supabase driver に Compose 設定は渡せません。")
+        case .dockerCompose: preconditionFailure(L10n.text("Supabase driver に Compose 設定は渡せません。"))
         }
     }
 
@@ -175,7 +175,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
                 return ManagedStackObservation(
                     identity: identity,
                     state: .unknown,
-                    detail: "DBコンテナはhealthyですが `supabase status` が失敗しました（\(result.status.description)）。\n"
+                    detail: L10n.text("DBコンテナはhealthyですが `supabase status` が失敗しました（\(result.status.description)）。\n")
                         + result.combinedOutput
                 )
             }
@@ -184,7 +184,7 @@ public actor SupabaseStackDriver: ManagedStackDriver {
             return ManagedStackObservation(
                 identity: identity,
                 state: .unknown,
-                detail: "`supabase status` を実行できません。\n\(error)"
+                detail: L10n.text("`supabase status` を実行できません。\n\(error)")
             )
         }
     }

@@ -48,12 +48,12 @@ public enum ManagedStackOperationError: Error, Equatable, Sendable, CustomString
     public var description: String {
         switch self {
         case let .commandFailed(action, identity, status, output):
-            let head = "\(identity.type.displayName)「\(identity)」の\(action)コマンドが失敗しました（\(status.description)）。"
-            return output.isEmpty ? head : head + "\n直近の出力:\n" + output
+            let head = L10n.text("\(identity.type.displayName)「\(identity)」の\(action)コマンドが失敗しました（\(status.description)）。")
+            return output.isEmpty ? head : head + L10n.text("\n直近の出力:\n") + output
         case let .commandUnavailable(action, identity, reason):
-            return "\(identity.type.displayName)「\(identity)」の\(action)コマンドを実行できません。\n\(reason)"
+            return L10n.text("\(identity.type.displayName)「\(identity)」の\(action)コマンドを実行できません。\n\(reason)")
         case let .stateNotConfirmed(action, identity, expected, actual, detail):
-            let head = "\(identity.type.displayName)「\(identity)」の\(action)後に\(expected.label)を確認できませんでした（実測: \(actual.label)）。"
+            let head = L10n.text("\(identity.type.displayName)「\(identity)」の\(action)後に\(expected.label)を確認できませんでした（実測: \(actual.label)）。")
             return detail.map { head + "\n\($0)" } ?? head
         }
     }

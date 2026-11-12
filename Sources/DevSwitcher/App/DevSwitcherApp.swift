@@ -30,8 +30,14 @@ public struct DevSwitcherRootApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 生成時から保持する。あとから結び付ける形にすると、
     /// 結び付く前の終了要求が `.terminateNow` になり、保存を飛ばしてしまう。
-    let appState = AppState()
+    let appState: AppState
     private lazy var termination = TerminationCoordinator(appState: appState)
+
+    override init() {
+        AppLocalization.install()
+        appState = AppState()
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)

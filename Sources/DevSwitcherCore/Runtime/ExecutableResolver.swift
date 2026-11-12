@@ -10,15 +10,15 @@ public enum ExecutableResolutionError: Error, Equatable, Sendable, CustomStringC
     public var description: String {
         switch self {
         case .executableEmpty:
-            "実行ファイルが指定されていません。"
+            L10n.text("実行ファイルが指定されていません。")
         case let .notFoundInSearchPath(name, searchPath):
-            "コマンド「\(name)」がログインシェルの PATH に見つかりません。\nPATH: \(searchPath.joined(separator: ":"))"
+            L10n.text("コマンド「\(name)」がログインシェルの PATH に見つかりません。\nPATH: \(searchPath.joined(separator: ":"))")
         case let .notFound(path):
-            "実行ファイルが見つかりません（\(path)）。"
+            L10n.text("実行ファイルが見つかりません（\(path)）。")
         case let .notExecutable(path):
-            "実行権限がありません（\(path)）。"
+            L10n.text("実行権限がありません（\(path)）。")
         case let .workingDirectoryMissing(url):
-            "作業ディレクトリが存在しません（\(url.path)）。"
+            L10n.text("作業ディレクトリが存在しません（\(url.path)）。")
         }
     }
 }

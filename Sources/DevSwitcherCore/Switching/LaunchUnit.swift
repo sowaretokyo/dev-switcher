@@ -80,7 +80,7 @@ extension ProjectDefinition {
     public var launchUnits: [LaunchUnit] {
         managedStacks.map { stack in
             guard let directory = workingDirectories.first(where: { $0.stackIDs.contains(stack.id) }) else {
-                preconditionFailure("スタックの作業ディレクトリがありません。")
+                preconditionFailure(L10n.text("スタックの作業ディレクトリがありません。"))
             }
             return .stack(stack, workingDirectory: directory.directory)
         } + startupOrder.map(LaunchUnit.process)

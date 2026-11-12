@@ -175,9 +175,11 @@ public actor ServiceSupervisor {
     /// 観測できないことを黙って握りつぶさず、警告として画面へ流す。
     private func noteGroupStateUnavailable(_ processGroupID: pid_t) {
         guard case let .unavailable(code) = groupStateProbe(processGroupID) else { return }
-        let message = "プロセスグループ \(processGroupID) の状態を取得できませんでした"
-            + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
-            + "残っている可能性があるため占有中として扱います。"
+        let message = L10n.text("""
+            プロセスグループ \(processGroupID) の状態を取得できませんでした\
+            （errno \(code): \(CStringDecoding.errorMessage(code))）。\
+            残っている可能性があるため占有中として扱います。
+            """)
         guard lastWarning != message else { return }
         lastWarning = message
         continuation?.yield(.warning(message))
@@ -313,7 +315,7 @@ public actor ServiceSupervisor {
             releaseProcessGroupOwnership()
             return .stopped(status)
         }
-        return .residual(processGroupID: pgid, reason: "停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。")
+        return .residual(processGroupID: pgid, reason: L10n.text("停止コマンド後の猶予内に対象のプロセスグループが空になりませんでした。"))
     }
 
     func completeCommandStopObservation() {
@@ -409,8 +411,10 @@ public actor ServiceSupervisor {
         // 既に誰も居ないグループへの送信は警告にもしない。
         guard code != ESRCH else { return true }
 
-        let message = "プロセスグループ \(processGroupID) へシグナル \(signal) を送れませんでした"
-            + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+        let message = L10n.text("""
+            プロセスグループ \(processGroupID) へシグナル \(signal) を送れませんでした\
+            （errno \(code): \(CStringDecoding.errorMessage(code))）。
+            """)
         if lastWarning != message {
             lastWarning = message
             continuation?.yield(.warning(message))
@@ -423,8 +427,10 @@ public actor ServiceSupervisor {
     private func releaseOwnershipWithoutSignal() {
         guard launchedProcessGroupID != nil else { return }
         launchedProcessGroupID = nil
-        let message = "プロセスグループの所有権を失ったため、停止操作を行いません。"
-            + "別のプロセスへシグナルを送らないためです。"
+        let message = L10n.text("""
+            プロセスグループの所有権を失ったため、停止操作を行いません。\
+            別のプロセスへシグナルを送らないためです。
+            """)
         guard lastWarning != message else { return }
         lastWarning = message
         continuation?.yield(.warning(message))

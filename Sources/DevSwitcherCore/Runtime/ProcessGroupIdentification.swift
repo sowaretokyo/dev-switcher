@@ -32,7 +32,7 @@ enum ProcessGroupIdentification {
             case let .notIdentified(reason), let .unobservable(reason):
                 reason
             case let .failed(code):
-                "シグナルを送れませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+                L10n.text("シグナルを送れませんでした（errno \(code): \(CStringDecoding.errorMessage(code))）。")
             case .sent, .notPresent, .empty:
                 nil
             }
@@ -54,19 +54,21 @@ enum ProcessGroupIdentification {
         bootSessionProbe: @escaping BootSessionProbe = { ProcessInspector.bootSessionID() }
     ) -> Result {
         guard processGroupID > 0 else {
-            return .notIdentified(reason: "プロセスグループ ID が不正です（\(processGroupID)）。")
+            return .notIdentified(reason: L10n.text("プロセスグループ ID が不正です（\(processGroupID)）。"))
         }
         guard !evidence.isEmpty else {
-            return .notIdentified(reason: "同定に使える記録がありません。")
+            return .notIdentified(reason: L10n.text("同定に使える記録がありません。"))
         }
 
         guard let bootSessionID = bootSessionProbe() else {
-            return .unobservable(reason: "起動セッションの識別子を取得できませんでした。")
+            return .unobservable(reason: L10n.text("起動セッションの識別子を取得できませんでした。"))
         }
         guard bootSessionID == evidence.bootSessionID else {
             return .notIdentified(
-                reason: "記録したときと起動セッションが違います。"
-                    + "再起動をまたいでいるため、同じプロセスグループとは扱いません。"
+                reason: L10n.text("""
+                    記録したときと起動セッションが違います。\
+                    再起動をまたいでいるため、同じプロセスグループとは扱いません。
+                    """)
             )
         }
 
@@ -85,8 +87,10 @@ enum ProcessGroupIdentification {
         let saved = Set(evidence.anchors)
         guard let matchedAnchor = firstAnchors.first(where: { saved.contains($0) }) else {
             return .notIdentified(
-                reason: "記録したプロセスが、このプロセスグループに1つも残っていません。"
-                    + "プロセスグループ ID が再利用された可能性があるため、同一とは扱いません。"
+                reason: L10n.text("""
+                    記録したプロセスが、このプロセスグループに1つも残っていません。\
+                    プロセスグループ ID が再利用された可能性があるため、同一とは扱いません。
+                    """)
             )
         }
 
@@ -205,8 +209,10 @@ enum ProcessGroupIdentification {
             return .success(members.filter { !$0.isZombie })
         case let .unavailable(code):
             return .failure(
-                "プロセスグループ \(processGroupID) の状態を取得できませんでした"
-                    + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+                L10n.text("""
+                    プロセスグループ \(processGroupID) の状態を取得できませんでした\
+                    （errno \(code): \(CStringDecoding.errorMessage(code))）。
+                    """)
             )
         }
     }
@@ -225,8 +231,10 @@ enum ProcessGroupIdentification {
                 continue
             case let .unavailable(code):
                 return .failure(
-                    "プロセスグループ内の PID \(member.pid) の開始時刻を取得できませんでした"
-                        + "（errno \(code): \(CStringDecoding.errorMessage(code))）。"
+                    L10n.text("""
+                        プロセスグループ内の PID \(member.pid) の開始時刻を取得できませんでした\
+                        （errno \(code): \(CStringDecoding.errorMessage(code))）。
+                        """)
                 )
             }
         }
@@ -235,8 +243,10 @@ enum ProcessGroupIdentification {
 
     private static func movedAnchor(_ anchor: ProcessAnchor) -> Result {
         .notIdentified(
-            reason: "確認の途中で、根拠にしたプロセス（PID \(anchor.pid)）が"
-                + "このプロセスグループから外れました。同一とは扱いません。"
+            reason: L10n.text("""
+                確認の途中で、根拠にしたプロセス（PID \(anchor.pid)）が\
+                このプロセスグループから外れました。同一とは扱いません。
+                """)
         )
     }
 }

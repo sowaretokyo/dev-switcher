@@ -6,9 +6,9 @@ public enum ValidationWarning: Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .containerCommandAsProcess(service, executable):
-            "プロセス「\(service)」は \(executable) を実行します。停止はプロセスグループ単位であり、コンテナは残り得ます。コンテナまで管理する場合は Docker Compose スタックとして登録してください。"
+            L10n.text("プロセス「\(service)」は \(executable) を実行します。停止はプロセスグループ単位であり、コンテナは残り得ます。コンテナまで管理する場合は Docker Compose スタックとして登録してください。")
         case let .possibleSupabaseStart(service):
-            "プロセス「\(service)」は Supabase の起動コマンドの可能性があります。Supabase の起動なら管理対象スタックとして登録してください。"
+            L10n.text("プロセス「\(service)」は Supabase の起動コマンドの可能性があります。Supabase の起動なら管理対象スタックとして登録してください。")
         }
     }
 }

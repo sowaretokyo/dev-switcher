@@ -35,6 +35,8 @@ jobs:
           bash -n scripts/build-app.sh
           bash -n scripts/build-dmg.sh
           plutil -lint packaging/Info.plist
+      - name: Validate translations
+        run: python3 scripts/localization.py --check
       - run: swift build
 
   test:

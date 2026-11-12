@@ -19,14 +19,14 @@ public enum ServicePhase: Equatable, Sendable {
     /// 状態を色だけで伝えないため、常にテキストも返す。
     public var label: String {
         switch self {
-        case .excluded: "対象外"
-        case .stopped: "停止中"
-        case .starting: "起動処理中"
-        case .running: "起動中"
-        case .healthy: "起動済み"
-        case .stopping: "停止処理中"
-        case .failed: "失敗"
-        case .residual: "残存あり"
+        case .excluded: L10n.text("対象外")
+        case .stopped: L10n.text("停止中")
+        case .starting: L10n.text("起動処理中")
+        case .running: L10n.text("起動中")
+        case .healthy: L10n.text("起動済み")
+        case .stopping: L10n.text("停止処理中")
+        case .failed: L10n.text("失敗")
+        case .residual: L10n.text("残存あり")
         }
     }
 
@@ -53,14 +53,14 @@ public enum ProjectPhase: Equatable, Sendable {
 
     public var label: String {
         switch self {
-        case .stopped: "停止中"
-        case .starting: "起動中"
-        case .running: "起動済み"
-        case .degraded: "一部停止"
-        case .stopping: "停止処理中"
-        case .switching: "切替中"
-        case .failed: "失敗"
-        case .residual: "残存あり"
+        case .stopped: L10n.text("停止中")
+        case .starting: L10n.text("起動中")
+        case .running: L10n.text("起動済み")
+        case .degraded: L10n.text("一部停止")
+        case .stopping: L10n.text("停止処理中")
+        case .switching: L10n.text("切替中")
+        case .failed: L10n.text("失敗")
+        case .residual: L10n.text("残存あり")
         }
     }
 
