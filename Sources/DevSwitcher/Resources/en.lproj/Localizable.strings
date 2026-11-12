@@ -258,7 +258,6 @@
 "スタックを追加" = "Add Stack";
 "スタック・プロセスの起動順" = "Stack and process startup order";
 "タグ（任意）" = "Tag (optional)";
-"チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。" = "Unchecked processes will not start this time. Excluded processes do not count as warnings or partial failures.";
 "ツールバーの開発環境に起動・停止の進捗または停止以外の操作が選ばれました。" = "The toolbar environment has an unsupported operation.";
 "ティール" = "Teal";
 "ディレクトリ名から Compose のプロジェクト名を決められません。projectName を明示してください。" = "Cannot determine the Compose project name from the directory name. Specify projectName.";
@@ -283,7 +282,6 @@
 "プロセス" = "Process";
 "プロセス ID が別の開発環境と重複しています（{0}）。" = "A process ID is already used in another environment ({0}).";
 "プロセス ID が重複しています（{0}）。" = "Duplicate process ID ({0}).";
-"プロセス {0} 件・スタック {1} 件" = "Processes: {0} · Stacks: {1}";
 "プロセス「{0}」が複数の作業ディレクトリに登録されています。" = "Process “{0}” belongs to multiple working directories.";
 "プロセス「{0}」でポート {1} が重複しています。" = "Duplicate port {1} in process “{0}”.";
 "プロセス「{0}」に代表ポートが指定されていません。" = "Process “{0}” has no primary port.";
@@ -377,6 +375,7 @@
 "中止すると、{0}の停止は最後まで実行し、{1}は起動しません。" = "Cancelling finishes stopping {0} and does not start {1}.";
 "中止を受け付けられませんでした。起動フェーズに入ったか、すでに処理が完了しています。送出済みの停止処理は取り消せません。" = "Could not cancel the operation. The start phase has begun, or the operation has already finished. Stop operations already sent cannot be undone.";
 "今回このサービスを起動するかどうかを切り替えます。" = "Choose whether to start this service in this session.";
+"今回の起動対象" = "Startup selection";
 "今回の起動対象の指定を消し、プロセスごとの既定に従わせます。" = "Clear this session’s selection and use each process’s default.";
 "今回起動" = "Started here";
 "今回起動するプロセスが選ばれていません。1つ以上チェックしてください。" = "No processes are selected. Select at least one to start.";
@@ -386,7 +385,6 @@
 "作成ガイドを読み込めません。\n{0}" = "Cannot load the guide.\n{0}";
 "作業ディレクトリ" = "Working directory";
 "作業ディレクトリ ID が重複しています（{0}）。" = "Duplicate working directory ID ({0}).";
-"作業ディレクトリ {0} 件・プロセス {1} 件・スタック {2} 件" = "Directories: {0} · Processes: {1} · Stacks: {2}";
 "作業ディレクトリ「{0}」が存在しません（{1}）。" = "Working directory “{0}” does not exist ({1}).";
 "作業ディレクトリ「{0}」にプロセスが1件も登録されていません。" = "No processes are registered in working directory “{0}”.";
 "作業ディレクトリ「{0}」に存在しないプロセス ID が含まれています（{1}）。" = "Working directory “{0}” contains an unknown process ID ({1}).";
@@ -401,7 +399,6 @@
 "作業ディレクトリが変わりました。候補を読み込み直してください。" = "The working directory changed. Reload the candidates.";
 "作業ディレクトリが存在しません（{0}）。" = "Working directory does not exist ({0}).";
 "作業ディレクトリが無い状態でプロセスを追加できません。" = "Cannot add a process without a working directory.";
-"作業ディレクトリとプロセス" = "Directories and processes";
 "作業ディレクトリに存在しないプロセス ID が含まれています。" = "The working directory contains an unknown process ID.";
 "作業ディレクトリのプロセスと起動順が一致していません。" = "The working directory’s processes do not match the startup order.";
 "作業ディレクトリを前へ" = "Move directory earlier";
@@ -549,7 +546,7 @@
 "対象は新しく起動します。" = "The target will be started as a new stack.";
 "対象不明" = "Unknown target";
 "対象外" = "Excluded";
-"左端の番号は起動順です。" = "The numbers on the left show the startup order.";
+"対象外は警告や一部停止として扱いません。" = "Excluded items do not count as warnings or partial failures.";
 "引き継いだあとは、Dev Switcherから停止・切替できます。" = "After adoption, Dev Switcher can stop the stack or switch environments.";
 "引き継いだスタックと操作前から管理していたサービスは稼働を維持しています。" = "Adopted stacks and services managed before this operation remain running.";
 "引き継いだプロセスが停止操作なしに終了しました（終了コードは取得できません）" = "The adopted process exited without a stop request (exit code unavailable)";
@@ -708,7 +705,6 @@
 "起動処理中" = "Starting";
 "起動対象" = "Startup selection";
 "起動対象 {0} / {1} 件" = "Selected: {0} / {1}";
-"起動対象 {0} / {1} 件（対象外 {2}）" = "Selected: {0} / {1} (excluded: {2})";
 "起動対象の ID が不正または重複しています（{0}）。" = "Invalid or duplicate startup selection ID ({0}).";
 "起動対象の ID が重複しています。" = "Duplicate ID in startup selection.";
 "起動対象のキー「{0}」をサービス ID として解釈できません。" = "Cannot interpret startup selection key “{0}” as a service ID.";
@@ -722,6 +718,8 @@
 "起動確認" = "Startup check";
 "起動追加引数" = "Additional startup arguments";
 "起動追加引数（JSON配列）" = "Additional startup arguments (JSON array)";
+"起動順" = "Startup order";
+"起動順 {0}" = "Startup order {0}";
 "起動順に存在しないプロセス ID が含まれています。" = "The startup order contains an unknown process ID.";
 "起動順の逆（既定）" = "Reverse startup order (default)";
 "起動順を1つ前へ" = "Move earlier in startup order";

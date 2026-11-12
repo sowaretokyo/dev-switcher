@@ -28,19 +28,14 @@ struct ProjectDetailView: View {
 
     /// 稼働中プロジェクトの操作はツールバーが持つ。ここは「いま選んでいるのはどれか」だけを示す。
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.tight) {
-            HStack(spacing: Spacing.s) {
-                ProjectChip(project: project)
-                Text(project.name)
-                    .font(Typography.title)
-                    .lineLimit(1)
-                ProjectStatusLabel(phase: state.phase(of: project))
-                Spacer(minLength: Spacing.s)
-                moreMenu
-            }
-            Text(L10n.text("作業ディレクトリ \(project.workingDirectories.count) 件・プロセス \(project.services.count) 件・スタック \(project.managedStacks.count) 件"))
-                .font(Typography.support)
-                .foregroundStyle(.secondary)
+        HStack(spacing: Spacing.s) {
+            ProjectChip(project: project)
+            Text(project.name)
+                .font(Typography.title)
+                .lineLimit(1)
+            ProjectStatusLabel(phase: state.phase(of: project))
+            Spacer(minLength: Spacing.s)
+            moreMenu
         }
     }
 
@@ -157,11 +152,7 @@ struct ProjectDetailView: View {
     }
 
     private var startSummary: String {
-        let excluded = project.launchUnits.filter { !project.isEnabledNow($0.id) }.count
-        if excluded > 0 {
-            return L10n.text("起動対象 \(enabledCount) / \(project.launchUnits.count) 件（対象外 \(excluded)）")
-        }
-        return L10n.text("起動対象 \(enabledCount) / \(project.launchUnits.count) 件")
+        L10n.text("起動対象 \(enabledCount) / \(project.launchUnits.count) 件")
     }
 
     // MARK: - サービス
@@ -169,7 +160,8 @@ struct ProjectDetailView: View {
     private var servicesSection: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack {
-                SectionLabel(L10n.text("作業ディレクトリとプロセス"))
+                SectionLabel(L10n.text("今回の起動対象"))
+                    .help(L10n.text("対象外は警告や一部停止として扱いません。"))
                 Spacer()
                 if isStopped {
                     Button(L10n.text("既定に戻す")) {
@@ -186,17 +178,12 @@ struct ProjectDetailView: View {
             }
             // 起動コマンドと実測ポートはサービス詳細が持つ。ここへ並べると1画面で
             // 読み切れず、「今回どれを起動するか」という本来の判断が埋もれる。
-            Text(
-                isStopped
-                    ? L10n.text("チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。")
-                    : L10n.text("コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。")
-            )
-            .font(Typography.caption)
-            .foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
-            Text(L10n.text("左端の番号は起動順です。"))
-                .font(Typography.caption)
-                .foregroundStyle(.tertiary)
+            if !isStopped {
+                Text(L10n.text("コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。"))
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             ForEach(project.workingDirectories) { workingDirectory in
                 WorkingDirectorySummary(
@@ -251,9 +238,6 @@ private struct WorkingDirectorySummary: View {
                 Text(workingDirectory.name)
                     .font(Typography.heading)
                 Spacer(minLength: Spacing.s)
-                Text(L10n.text("プロセス \(workingDirectory.serviceIDs.count) 件・スタック \(workingDirectory.stackIDs.count) 件"))
-                    .font(Typography.caption)
-                    .foregroundStyle(.tertiary)
             }
             Text(workingDirectory.directory.path)
                 .font(Typography.monoSmall)
@@ -266,6 +250,13 @@ private struct WorkingDirectorySummary: View {
             if !directoryIsAvailable {
                 NoteText(L10n.text("このディレクトリを利用できません。"), tint: .red)
             }
+
+            Text(L10n.text("起動順"))
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: Metrics.startupOrderColumnWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, Spacing.m + Spacing.m)
 
             ForEach(services) { service in
                 ServiceSummaryRow(project: project, service: service)
@@ -302,6 +293,8 @@ struct ServiceSummaryRow: View {
                 Text("\(startupPosition)")
                     .font(Typography.monoSmall.weight(.bold))
                     .foregroundStyle(.tertiary)
+                    .frame(width: Metrics.startupOrderColumnWidth)
+                    .accessibilityLabel(L10n.text("起動順 \(startupPosition)"))
                 // 起動対象のチェックは停止中だけ変更できる。
                 Toggle(isOn: Binding(
                     get: { isEnabled },
@@ -311,6 +304,7 @@ struct ServiceSummaryRow: View {
                 }
                 .labelsHidden()
                 .toggleStyle(.checkbox)
+                .frame(width: Metrics.checkboxIndent)
                 .disabled(state.configurationBlockedReason(for: project) != nil)
                 .accessibilityLabel(L10n.text("\(service.name) を今回起動する"))
                 .help(
@@ -344,22 +338,26 @@ struct ServiceSummaryRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.leading, Metrics.checkboxIndent)
+            .padding(.leading, detailsIndent)
 
             if let warning = uiState.warning {
-                NoteText(warning, tint: .orange, indent: Metrics.checkboxIndent)
+                NoteText(warning, tint: .orange, indent: detailsIndent)
             }
             if let detail = uiState.managedStack?.detail {
-                NoteText(detail, tint: .orange, indent: Metrics.checkboxIndent)
+                NoteText(detail, tint: .orange, indent: detailsIndent)
             }
             if case let .failed(reason) = uiState.phase {
-                NoteText(reason, tint: .red, indent: Metrics.checkboxIndent)
+                NoteText(reason, tint: .red, indent: detailsIndent)
             }
         }
         .padding(Spacing.m)
         .cardBackground()
         // 対象外は色を持たせない。警告色を使うと、外した日に毎回警告が出ることになる。
         .opacity(uiState.phase == .excluded ? 0.55 : 1)
+    }
+
+    private var detailsIndent: CGFloat {
+        Metrics.startupOrderColumnWidth + Spacing.s + Metrics.checkboxIndent + Spacing.s
     }
 
     private var configuredPorts: String {

@@ -93,6 +93,8 @@ enum Metrics {
 
     /// チェックボックスの幅ぶんのインデント。補助情報をラベルの真下へ揃える。
     static let checkboxIndent: CGFloat = 20
+    /// 起動対象一覧の番号列。日英の見出しと複数桁の番号を同じ幅で揃える。
+    static let startupOrderColumnWidth: CGFloat = 72
     /// 状態を表す点。
     static let statusDot: CGFloat = 7
     /// プロジェクトチップ。

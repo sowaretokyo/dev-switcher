@@ -1446,23 +1446,6 @@
         }
       }
     },
-    "作業ディレクトリ {0} 件・プロセス {1} 件・スタック {2} 件": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作業ディレクトリ {0} 件・プロセス {1} 件・スタック {2} 件"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Directories: {0} · Processes: {1} · Stacks: {2}"
-          }
-        }
-      }
-    },
     "編集…": {
       "extractionState": "manual",
       "localizations": {
@@ -1582,23 +1565,6 @@
         }
       }
     },
-    "作業ディレクトリとプロセス": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作業ディレクトリとプロセス"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Directories and processes"
-          }
-        }
-      }
-    },
     "既定に戻す": {
       "extractionState": "manual",
       "localizations": {
@@ -1633,23 +1599,6 @@
         }
       }
     },
-    "チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "チェックを外したプロセスは今回起動しません。対象外は警告や一部停止として扱いません。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unchecked processes will not start this time. Excluded processes do not count as warnings or partial failures."
-          }
-        }
-      }
-    },
     "コマンドと実測ポートはサイドバーからプロセスを選ぶと表示します。": {
       "extractionState": "manual",
       "localizations": {
@@ -1663,23 +1612,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Select a process in the sidebar to see its command and observed ports."
-          }
-        }
-      }
-    },
-    "左端の番号は起動順です。": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "左端の番号は起動順です。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The numbers on the left show the startup order."
           }
         }
       }
@@ -1748,23 +1680,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The working directory contains an unknown process ID."
-          }
-        }
-      }
-    },
-    "プロセス {0} 件・スタック {1} 件": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロセス {0} 件・スタック {1} 件"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Processes: {0} · Stacks: {1}"
           }
         }
       }
@@ -12813,86 +12728,70 @@
         }
       }
     },
-    "起動対象 {0} / {1} 件（対象外 {2}）": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "起動対象 {0} / {1} 件（対象外 {2}）"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Selected: {0} / {1} (excluded: {2})"
-          }
-        }
-      }
-    },
-    "このスタックを削除": {
+    "今回の起動対象": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このスタックを削除"
+            "value": "今回の起動対象"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remove this stack"
+            "value": "Startup selection"
           }
         }
       }
     },
-    "アップデートを確認…": {
+    "対象外は警告や一部停止として扱いません。": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アップデートを確認…"
+            "value": "対象外は警告や一部停止として扱いません。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check for Updates…"
+            "value": "Excluded items do not count as warnings or partial failures."
           }
         }
       }
     },
-    "アップデートを確認できません。": {
+    "起動順": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アップデートを確認できません。"
+            "value": "起動順"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unable to check for updates."
+            "value": "Startup order"
           }
         }
       }
     },
-    "アップデートを自動確認": {
+    "起動順 {0}": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アップデートを自動確認"
+            "value": "起動順 {0}"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Automatically Check for Updates"
+            "value": "Startup order {0}"
           }
         }
       }
@@ -12927,6 +12826,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Updates are unavailable in development builds. Use the distributed version of Dev Switcher."
+          }
+        }
+      }
+    },
+    "アップデートを確認できません。": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認できません。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to check for updates."
+          }
+        }
+      }
+    },
+    "アップデートを確認…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        }
+      }
+    },
+    "アップデートを自動確認": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを自動確認"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically Check for Updates"
+          }
+        }
+      }
+    },
+    "このスタックを削除": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスタックを削除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove this stack"
           }
         }
       }
